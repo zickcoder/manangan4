@@ -1,11 +1,11 @@
-﻿import { defineConfig } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
   root: 'frontend',
   plugins: [react()],
-  base: '/',
+  base: './',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './frontend/src'),
@@ -15,6 +15,7 @@ export default defineConfig({
     outDir: '../dist',
     emptyOutDir: true,
     assetsDir: 'assets',
+    sourcemap: false,
   },
   server: {
     port: 5173,
