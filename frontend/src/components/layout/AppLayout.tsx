@@ -1,32 +1,57 @@
-import React, { useState } from 'react';
-import { Outlet, Navigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
 import { AppHeader } from './AppHeader';
 
-export function AppLayout() {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const user = localStorage.getItem('govserve_user');
+function getUser() {
+  try {
+    const s = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
+    return s ? JSON.parse(s) : null;
+  } catch {
+    return null;
+  }
+}
 
+export function AppLayout() {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const location = useLocation();
+
+  // Re-read user from tab-isolated sessionStorage or localStorage on every render
+  const user = getUser();
+
+  // Close mobile sidebar on route change
+  useEffect(() => {
+    setIsSidebarOpen(false);
+  }, [location.pathname]);
+
+  // Not logged in → go to citizen login
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-canvas">
-      {/* Dark Navy Sidebar */}
+      {/* Mobile backdrop overlay */}
+      {isSidebarOpen && (
+        <div
+          onClick={() => setIsSidebarOpen(false)}
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-30 md:hidden"
+        />
+      )}
+
+      {/* Dark navy sidebar */}
       <AppSidebar
-        isCollapsed={isSidebarCollapsed}
-        onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
       />
 
-      {/* Main Content Viewport */}
+      {/* Main content area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <AppHeader
-          onToggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-        />
+        <AppHeader onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 animate-fade-in">
-          <div className="max-w-7xl mx-auto space-y-6">
+        <main className="flex-1 overflow-y-auto">
+          <div className="p-3 sm:p-5 md:p-6 lg:p-8 max-w-7xl mx-auto w-full">
             <Outlet />
           </div>
         </main>

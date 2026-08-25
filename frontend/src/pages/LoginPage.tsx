@@ -1,27 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { 
-  Building2, 
   Lock, 
   Mail, 
   ArrowRight, 
   Eye, 
   EyeOff, 
-  KeyRound,
-  ShieldAlert,
-  Unlock,
-  Sparkles
+  KeyRound, 
+  ShieldAlert, 
+  Unlock, 
+  User, 
+  Phone, 
+  UserCheck, 
+  Sparkles,
+  Shield,
+  CheckCircle2
 } from 'lucide-react';
-import { loginStaff } from '../lib/api';
+import { loginStaff, loginCitizen, registerCitizen } from '../lib/api';
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('admin@govserve.gov.ph');
-  const [password, setPassword] = useState('admin');
+  const [authMode, setAuthMode] = useState<'citizen_login' | 'citizen_register' | 'staff_login'>('citizen_login');
+
+  // Form states
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('juan.delacruz@citizen.gov.ph');
+  const [phone, setPhone] = useState('+63 917 123 4567');
+  const [password, setPassword] = useState('password123');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
+  const [successMsg, setSuccessMsg] = useState('');
+
   // Security Lockout State (5 failed attempts = 5 minutes lock)
   const [failedAttempts, setFailedAttempts] = useState<number>(() => {
     const saved = localStorage.getItem('govserve_login_fails');
@@ -44,32 +54,75 @@ export function LoginPage() {
     }
   }, [lockedUntil]);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleTabChange = (mode: 'citizen_login' | 'citizen_register' | 'staff_login') => {
+    setAuthMode(mode);
+    setError('');
+    setSuccessMsg('');
+    if (mode === 'staff_login') {
+      setEmail('admin@govserve.gov.ph');
+      setPassword('admin');
+    } else if (mode === 'citizen_login') {
+      setEmail('juan.delacruz@citizen.gov.ph');
+      setPassword('password123');
+    } else if (mode === 'citizen_register') {
+      setName('');
+      setEmail('');
+      setPhone('');
+      setPassword('');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (isLocked) {
-      setError('Access Temporarily Suspended: Security lockout is active. Please wait 5 minutes before trying again.');
+      setError('Access Temporarily Suspended: Security lockout is active. Please wait.');
       return;
     }
 
     setLoading(true);
     setError('');
+    setSuccessMsg('');
 
     try {
-      const res = await loginStaff(email, password);
-      if (res.success) {
-        // Reset counters on success
-        localStorage.removeItem('govserve_login_fails');
-        localStorage.removeItem('govserve_locked_until');
-        localStorage.setItem('govserve_user', JSON.stringify(res.user));
-        navigate('/dashboard');
+      if (authMode === 'citizen_register') {
+        if (!name || !email || !phone || !password) {
+          setError('Please fill in all required registration fields.');
+          setLoading(false);
+          return;
+        }
+
+        const res = await registerCitizen({ name, email, phone, password });
+        if (res.success) {
+          setSuccessMsg('Account registered successfully! Logging you in...');
+          localStorage.setItem('govserve_user', JSON.stringify(res.user));
+          setTimeout(() => navigate('/dashboard'), 800);
+        } else {
+          setError(res.message || 'Registration failed.');
+        }
+      } else if (authMode === 'citizen_login') {
+        const res = await loginCitizen(email, password);
+        if (res.success) {
+          localStorage.removeItem('govserve_login_fails');
+          localStorage.removeItem('govserve_locked_until');
+          localStorage.setItem('govserve_user', JSON.stringify(res.user));
+          navigate('/dashboard');
+        } else {
+          handleFailedAttempt(res.message || 'Invalid citizen login credentials.');
+        }
       } else {
-        handleFailedAttempt(res.message || 'Invalid email or password.');
+        // Staff Login
+        const res = await loginStaff(email, password);
+        if (res.success) {
+          localStorage.removeItem('govserve_login_fails');
+          localStorage.removeItem('govserve_locked_until');
+          localStorage.setItem('govserve_user', JSON.stringify(res.user));
+          navigate('/dashboard');
+        } else {
+          handleFailedAttempt('Invalid staff credentials. Use admin@govserve.gov.ph / admin');
+        }
       }
     } catch (err) {
-      if (password === 'admin' || password === 'admin123') {
-        localStorage.removeItem('govserve_login_fails');
-        localStorage.removeItem('govserve_locked_until');
+      if (authMode === 'staff_login' && (password === 'admin' || password === 'admin123')) {
         localStorage.setItem('govserve_user', JSON.stringify({ 
           name: 'Atty. Elena Ramos', 
           role: 'Super Admin', 
@@ -78,7 +131,7 @@ export function LoginPage() {
         }));
         navigate('/dashboard');
       } else {
-        handleFailedAttempt('Invalid credentials. Please verify your email and password.');
+        setError('An unexpected error occurred. Please verify your credentials.');
       }
     } finally {
       setLoading(false);
@@ -91,12 +144,12 @@ export function LoginPage() {
     localStorage.setItem('govserve_login_fails', newFails.toString());
 
     if (newFails >= 5) {
-      const lockTime = Date.now() + 5 * 60 * 1000; // 5 minutes lock
+      const lockTime = Date.now() + 5 * 60 * 1000;
       setLockedUntil(lockTime);
       localStorage.setItem('govserve_locked_until', lockTime.toString());
-      setError('Access Suspended: Maximum login attempts exceeded (5/5). Account locked for 5 minutes due to security policy.');
+      setError('Access Suspended: Maximum login attempts exceeded (5/5). Account locked for 5 minutes.');
     } else {
-      setError(`${msg} (Attempt ${newFails} of 5 before 5-minute security lock)`);
+      setError(`${msg} (Attempt ${newFails} of 5)`);
     }
   };
 
@@ -108,18 +161,10 @@ export function LoginPage() {
     localStorage.removeItem('govserve_locked_until');
   };
 
-  const handleAutofillAdmin = () => {
-    setEmail('admin@govserve.gov.ph');
-    setPassword('admin');
-    setError('');
-  };
-
   return (
     <div className="min-h-screen w-full relative flex flex-col justify-center items-center p-4 sm:p-8 lg:p-12 bg-[#071120] overflow-hidden selection:bg-blue-600 selection:text-white">
       
-      {/* =========================================================================
-          BACKGROUND: AMBIENT GLOW & LARGE BLURRED LOGO
-         ========================================================================= */}
+      {/* Background Ambient Glow */}
       <div className="absolute inset-0 pointer-events-none select-none flex items-center justify-center overflow-hidden">
         <img
           src="/logo.png"
@@ -130,30 +175,28 @@ export function LoginPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-[#071120] via-transparent to-[#071120]/90" />
       </div>
 
-      {/* =========================================================================
-          CENTER FLOATING CONTAINER BOX (1.5X SCALE)
-         ========================================================================= */}
-      <div className="relative z-10 w-full max-w-6xl min-h-[620px] rounded-[36px] overflow-hidden shadow-2xl border border-slate-700/60 flex flex-col md:flex-row bg-[#0b182f] animate-fade-in my-auto">
+      {/* Main Container Card */}
+      <div className="relative z-10 w-full max-w-5xl min-h-[600px] rounded-[32px] overflow-hidden shadow-2xl border border-slate-700/60 flex flex-col md:flex-row bg-[#0b182f] animate-fade-in my-auto">
         
-        {/* ── LEFT SIDE: DEEP NAVY WITH 3-SECOND GLOWING LOGO ANIMATION ── */}
-        <div className="md:w-1/2 relative bg-gradient-to-br from-[#091527] via-[#0d2243] to-[#06101d] text-white p-8 sm:p-12 lg:p-16 flex flex-col justify-between overflow-hidden border-b md:border-b-0 md:border-r border-slate-800">
+        {/* ── LEFT PANEL: DEEP NAVY SEAL & BRANDING ── */}
+        <div className="md:w-5/12 relative bg-gradient-to-br from-[#091527] via-[#0d2243] to-[#06101d] text-white p-8 sm:p-10 lg:p-12 flex flex-col justify-between overflow-hidden border-b md:border-b-0 md:border-r border-slate-800">
           
-          {/* Glowing Animated Seal in the Background (Breathing animation every 3s) */}
+          {/* Animated Glowing Seal in background */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
-            <div className="w-[450px] h-[450px] lg:w-[540px] lg:h-[540px] rounded-full border-[14px] border-white/[0.03] flex items-center justify-center relative">
+            <div className="w-[380px] h-[380px] rounded-full border-[12px] border-white/[0.03] flex items-center justify-center relative">
               <img
                 src="/logo.png"
                 alt="Seal"
-                className="w-[280px] h-[280px] lg:w-[360px] lg:h-[360px] object-contain animate-pulse-glow"
+                className="w-[240px] h-[240px] object-contain animate-pulse-glow"
                 onError={(e) => { e.currentTarget.style.display = 'none'; }}
               />
             </div>
           </div>
 
-          {/* Top Brand Header */}
+          {/* Top Logo */}
           <div className="relative z-10">
-            <div className="flex items-center gap-3.5">
-              <div className="h-12 w-12 flex items-center justify-center shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-11 flex items-center justify-center shrink-0">
                 <img
                   src="/logo.png"
                   alt="Logo"
@@ -162,179 +205,285 @@ export function LoginPage() {
                 />
               </div>
               <div>
-                <span className="font-black text-sm tracking-[0.2em] font-display text-blue-400 uppercase block">
+                <span className="font-black text-sm tracking-wider font-display text-blue-400 uppercase block">
                   GOVSERVE • LGU PORTAL
                 </span>
-                <span className="text-[11px] text-slate-400 font-semibold tracking-wider uppercase">
+                <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase">
                   Republic of the Philippines
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Center Title Only (Cleaned per user request) */}
-          <div className="relative z-10 my-auto py-10 space-y-4">
-            <h1 className="text-3xl sm:text-4xl lg:text-[46px] font-black font-display tracking-tight text-white leading-[1.18]">
-              Municipal Facilities & Public Asset Management System
+          {/* Center Title */}
+          <div className="relative z-10 my-auto py-8 space-y-3">
+            <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
+              Barangay 178 Management System
+            </span>
+            <h1 className="text-2xl sm:text-3xl lg:text-[34px] font-black font-display tracking-tight text-white leading-tight">
+              Public Assets & Facilities Portal
             </h1>
+            <p className="text-xs text-slate-300 leading-relaxed font-medium">
+              Citizen request tracking, online facility reservations, water & drainage response, and municipal asset transparency.
+            </p>
           </div>
 
           {/* Bottom Tagline */}
-          <div className="relative z-10 pt-4 border-t border-white/10 flex items-center justify-between text-[11px] sm:text-xs text-slate-400 font-bold tracking-widest uppercase">
-            <span>OFFICIAL GOVERNMENT PORTAL</span>
-            <span className="hidden sm:inline">SERVICE • INTEGRITY • PROGRESS</span>
+          <div className="relative z-10 pt-3 border-t border-white/10 flex items-center justify-between text-[10px] text-slate-400 font-bold tracking-widest uppercase">
+            <span>OFFICIAL MUNICIPAL PORTAL</span>
+            <span className="hidden sm:inline">SERVICE • INTEGRITY</span>
           </div>
         </div>
 
-        {/* ── RIGHT SIDE: CLEAN WHITE LOGIN INPUT FORM ── */}
-        <div className="md:w-1/2 bg-white p-8 sm:p-12 lg:p-16 flex flex-col justify-center relative">
-          <div className="space-y-6 max-w-lg mx-auto w-full">
+        {/* ── RIGHT PANEL: CLEAN FORM WITH TABS ── */}
+        <div className="md:w-7/12 bg-white p-6 sm:p-10 lg:p-12 flex flex-col justify-center relative">
+          <div className="space-y-5 max-w-md mx-auto w-full">
             
-            {/* Form Header */}
-            <div>
-              <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold font-display text-slate-900 tracking-tight">
-                Welcome back, Admin!
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-500 mt-1.5">
-                Enter your credentials to access the municipal administrator portal.
-              </p>
+            {/* 3-Way Mode Switcher Tabs */}
+            <div className="p-1 bg-slate-100 rounded-2xl flex items-center gap-1 border border-slate-200">
+              <button
+                type="button"
+                onClick={() => handleTabChange('citizen_login')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+                  authMode === 'citizen_login'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Citizen Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTabChange('citizen_register')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+                  authMode === 'citizen_register'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Register Account
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTabChange('staff_login')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+                  authMode === 'staff_login'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Staff / Admin
+              </button>
             </div>
 
-            {/* Security Lockout Banner */}
-            {isLocked ? (
-              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 space-y-2">
-                <div className="flex items-center gap-2 font-bold text-xs sm:text-sm text-amber-800">
-                  <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
-                  <span>Security Lockout Active</span>
-                </div>
-                <p className="text-xs text-amber-700 leading-relaxed font-medium">
-                  You are locked out for <strong>5 minutes</strong> due to multiple failed login attempts.
-                </p>
-                <div className="pt-2 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={handleDeveloperUnlock}
-                    className="px-3 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Unlock className="w-3.5 h-3.5" />
-                    <span>Developer Unlock (Testing)</span>
-                  </button>
-                </div>
+            {/* Header Content */}
+            <div>
+              {authMode === 'citizen_register' ? (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold font-display text-slate-900 tracking-tight">
+                    Create an Account
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                    Register to submit and track LGU requests
+                  </p>
+                </>
+              ) : authMode === 'citizen_login' ? (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold font-display text-slate-900 tracking-tight">
+                    Citizen Sign In
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                    Sign in to track your facility reservations, drainage tickets, and burial permits.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold font-display text-slate-900 tracking-tight">
+                    Staff & Admin Portal
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                    Enter municipal personnel credentials to manage modules.
+                  </p>
+                </>
+              )}
+            </div>
+
+            {/* Alerts */}
+            {successMsg && (
+              <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{successMsg}</span>
               </div>
-            ) : error ? (
-              <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-xs sm:text-sm text-red-700 font-semibold flex items-center gap-2.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0"></span>
+            )}
+
+            {error && (
+              <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-700 font-semibold flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
                 <span>{error}</span>
               </div>
-            ) : null}
+            )}
 
-            {/* Form Fields */}
-            <form onSubmit={handleLogin} className="space-y-5">
+            {/* FORM */}
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Full Name for Registration only */}
+              {authMode === 'citizen_register' && (
+                <div>
+                  <label className="block text-[11px] font-bold tracking-wider text-slate-700 uppercase mb-1">
+                    Full Name *
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="e.g. Juan M. Dela Cruz"
+                      className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white text-slate-900"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Email Address */}
               <div>
-                <label className="block text-xs font-bold tracking-wider text-slate-700 uppercase mb-1.5">
-                  EMAIL ADDRESS
+                <label className="block text-[11px] font-bold tracking-wider text-slate-700 uppercase mb-1">
+                  Email Address *
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="email"
                     required
-                    disabled={isLocked}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@govserve.gov.ph"
-                    className="w-full pl-11 pr-4 py-3 text-sm bg-slate-50 border border-slate-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white text-slate-900 font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    placeholder={authMode === 'staff_login' ? 'admin@govserve.gov.ph' : 'your.email@gmail.com'}
+                    className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white text-slate-900"
                   />
                 </div>
               </div>
 
+              {/* Contact Number for Registration only */}
+              {authMode === 'citizen_register' && (
+                <div>
+                  <label className="block text-[11px] font-bold tracking-wider text-slate-700 uppercase mb-1">
+                    Contact Number *
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="tel"
+                      required
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+63 917 000 0000"
+                      className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white text-slate-900"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Password */}
               <div>
-                <label className="block text-xs font-bold tracking-wider text-slate-700 uppercase mb-1.5">
-                  PASSWORD
+                <label className="block text-[11px] font-bold tracking-wider text-slate-700 uppercase mb-1">
+                  Password *
                 </label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
-                    disabled={isLocked}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-11 pr-11 py-3 text-sm bg-slate-50 border border-slate-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white text-slate-900 font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full pl-10 pr-10 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white text-slate-900"
                   />
                   <button
                     type="button"
-                    disabled={isLocked}
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
 
-              {/* Submit Button */}
+              {/* Action Button */}
               <button
                 type="submit"
-                disabled={loading || isLocked}
-                className="w-full py-3.5 px-5 rounded-2xl bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-bold text-sm tracking-wide shadow-xl shadow-blue-500/25 transition-all flex items-center justify-center gap-2 mt-3 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
+                className={`w-full py-3 px-4 rounded-xl text-white font-bold text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  authMode === 'staff_login'
+                    ? 'bg-slate-900 hover:bg-slate-800 shadow-slate-900/20'
+                    : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/25'
+                }`}
               >
                 {loading ? (
-                  <span>Signing in...</span>
+                  <span>Processing...</span>
+                ) : authMode === 'citizen_register' ? (
+                  <>
+                    <span>Register Account</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                ) : authMode === 'citizen_login' ? (
+                  <>
+                    <span>Sign In to Citizen Account</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
                 ) : (
                   <>
-                    <span>Sign In</span>
+                    <span>Sign In as Staff / Admin</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
             </form>
 
-            {/* Quick Autofill Admin Pill & Dev Unlock button */}
-            <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
-              <div 
-                onClick={handleAutofillAdmin}
-                className="p-3.5 bg-blue-50/70 hover:bg-blue-50 rounded-2xl border border-blue-200/80 cursor-pointer transition-all flex items-center justify-between text-xs group"
-                title="Click to autofill official admin credentials"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-blue-600 text-white shadow-sm">
-                    <KeyRound className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-900 text-xs leading-tight">Admin Credentials</p>
-                    <p className="text-[11px] text-slate-600 font-mono mt-0.5">admin@govserve.gov.ph • admin</p>
-                  </div>
+            {/* Bottom Toggle switch links */}
+            <div className="pt-2 text-center text-xs">
+              {authMode === 'citizen_register' ? (
+                <p className="text-slate-600">
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => handleTabChange('citizen_login')}
+                    className="font-bold text-blue-600 hover:underline"
+                  >
+                    Sign in here
+                  </button>
+                </p>
+              ) : authMode === 'citizen_login' ? (
+                <p className="text-slate-600">
+                  Don't have an account yet?{' '}
+                  <button
+                    type="button"
+                    onClick={() => handleTabChange('citizen_register')}
+                    className="font-bold text-blue-600 hover:underline"
+                  >
+                    Register here
+                  </button>
+                </p>
+              ) : (
+                <div 
+                  onClick={() => {
+                    setEmail('admin@govserve.gov.ph');
+                    setPassword('admin');
+                  }}
+                  className="p-2.5 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 cursor-pointer flex items-center justify-between text-[11px]"
+                >
+                  <span className="font-mono text-slate-700">admin@govserve.gov.ph / admin</span>
+                  <span className="font-bold text-blue-600">Click to Autofill</span>
                 </div>
-                <span className="text-xs font-bold text-blue-600 bg-white px-2.5 py-1 rounded-xl border border-blue-200 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                  Autofill
-                </span>
-              </div>
-
-              {/* Developer Unlock Action (always available) */}
-              <button
-                type="button"
-                onClick={handleDeveloperUnlock}
-                className="text-[10px] text-slate-400 hover:text-slate-600 text-center font-medium transition-colors flex items-center justify-center gap-1"
-              >
-                <Unlock className="w-3 h-3" />
-                <span>Reset Security Lock / Clear Attempts</span>
-              </button>
+              )}
             </div>
-
-            {/* Support Note */}
-            <p className="text-xs text-center text-slate-400">
-              Need access or assistance? Contact your system administrator.
-            </p>
           </div>
         </div>
       </div>
 
       {/* Return to Public Portal Link */}
-      <div className="relative z-10 text-center pt-6">
-        <Link to="/portal" className="text-xs sm:text-sm font-bold text-slate-400 hover:text-white transition-colors">
-          ← Looking for Citizen Services? Go to Public Portal
+      <div className="relative z-10 text-center pt-5">
+        <Link to="/portal" className="text-xs font-bold text-slate-400 hover:text-white transition-colors">
+          ← No account? Browse Public Portal without login
         </Link>
       </div>
     </div>

@@ -2,8 +2,9 @@ export interface User {
   id: number;
   name: string;
   email: string;
-  role: string;
+  role: 'Super Admin' | 'Staff Officer' | 'Citizen' | string;
   department: string;
+  phone?: string;
   avatar?: string;
   created_at: string;
 }
@@ -32,6 +33,7 @@ export interface FacilityReservation {
   applicant_email: string;
   applicant_phone: string;
   purpose: string;
+  special_equipment?: string[];
   event_date: string;
   start_time: string;
   end_time: string;
@@ -63,19 +65,34 @@ export interface CemeteryPlot {
 export interface BurialRecord {
   id: number;
   reference_no: string;
+  permit_no: string;
+  // Section A: Deceased Information
   deceased_name: string;
   date_of_birth?: string;
   date_of_death: string;
+  cause_of_death?: string;
+  deceased_address?: string;
+  attending_physician?: string;
+  // Section B: Burial Details
   burial_date: string;
+  burial_time?: string;
   plot_id?: number;
   plot_code?: string;
   section?: string;
   cemetery_name?: string;
   plot_type?: string;
+  // Section C: Applicant Information
   contact_person: string;
+  applicant_relationship?: string;
   contact_phone: string;
+  applicant_email?: string;
+  applicant_address?: string;
+  // Section D: Requirements
+  death_certificate_url?: string;
+  valid_id_url?: string;
+  // Section E: Declaration
+  declaration_accepted?: boolean;
   status: 'Pending Review' | 'Approved' | 'Completed';
-  permit_no: string;
   created_at: string;
 }
 
@@ -84,8 +101,10 @@ export interface UtilityRequest {
   ticket_no: string;
   citizen_name: string;
   citizen_phone: string;
-  service_type: 'Water Main Leak' | 'Low Water Pressure' | 'Drainage Declogging' | 'Canal Wall Repair' | 'Sewer Overflow';
+  service_type: 'Water Main Leak' | 'Low Water Pressure' | 'Drainage Declogging' | 'Canal Wall Repair' | 'Sewer Overflow' | 'Flash Flooding';
   location: string;
+  affected_households?: string;
+  photo_url?: string;
   description: string;
   urgency: 'Urgent' | 'High' | 'Normal';
   ai_priority_score: number;
@@ -109,6 +128,8 @@ export interface Asset {
   last_maintenance_date?: string;
   next_maintenance_due?: string;
   ai_maintenance_alert?: string;
+  specs?: string;
+  image_url?: string;
   created_at: string;
 }
 

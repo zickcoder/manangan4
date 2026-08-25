@@ -115,10 +115,10 @@ export function FacilitiesModule() {
     }
   };
 
-  const filtered = reservations.filter(r =>
-    r.reference_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.applicant_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.purpose.toLowerCase().includes(searchQuery.toLowerCase())
+  const filtered = (reservations || []).filter(r =>
+    (r.reference_no || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
+    (r.applicant_name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
+    (r.purpose || '').toLowerCase().includes((searchQuery || '').toLowerCase())
   );
 
   return (
@@ -220,7 +220,7 @@ export function FacilitiesModule() {
                       <p className="text-[10px] text-slate-500 truncate">{r.purpose}</p>
                     </td>
                     <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap">
-                      {new Date(r.event_date).toLocaleDateString()}
+                      {r.event_date ? new Date(r.event_date).toLocaleDateString() : '—'}
                       <span className="block text-[10px] text-slate-400">{r.start_time} - {r.end_time}</span>
                     </td>
                     <td className="py-3.5 px-4 text-slate-700">{r.attendees} Pax</td>
@@ -255,35 +255,78 @@ export function FacilitiesModule() {
       <Modal
         isOpen={isReviewModalOpen}
         onClose={() => setIsReviewModalOpen(false)}
-        title={`Review Reservation ${selectedRes?.reference_no}`}
-        description="Verify facility availability and set approval status."
+        title={`Review Reservation — ${selectedRes?.reference_no}`}
+        description="Full citizen-submitted booking details. Approve or reject with remarks."
+        maxWidth="lg"
       >
         {selectedRes && (
           <div className="space-y-4 text-xs">
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-              <p><span className="font-bold text-slate-700">Facility:</span> {selectedRes.facility_name}</p>
-              <p><span className="font-bold text-slate-700">Applicant:</span> {selectedRes.applicant_name} ({selectedRes.applicant_phone})</p>
-              <p><span className="font-bold text-slate-700">Purpose:</span> {selectedRes.purpose}</p>
-              <p><span className="font-bold text-slate-700">Schedule:</span> {new Date(selectedRes.event_date).toLocaleDateString()} ({selectedRes.start_time} - {selectedRes.end_time})</p>
+            {/* Status Banner */}
+            <div className="flex items-center justify-between">
+              <Badge variant={selectedRes.status === 'Approved' ? 'success' : selectedRes.status === 'Rejected' ? 'destructive' : 'warning'} size="md">
+                {selectedRes.status}
+              </Badge>
+              <span className="text-[10px] font-mono text-slate-400">{selectedRes.reference_no}</span>
             </div>
 
+            {/* Facility & Schedule */}
+            <div className="p-3.5 bg-blue-50 rounded-xl border border-blue-200 space-y-1.5">
+              <p className="font-bold text-blue-900 text-xs uppercase tracking-wider">📍 Venue & Schedule</p>
+              <p><span className="font-bold text-slate-700">Facility:</span> {selectedRes.facility_name}</p>
+              <p><span className="font-bold text-slate-700">Date:</span> {new Date(selectedRes.event_date).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              <p><span className="font-bold text-slate-700">Time:</span> {selectedRes.start_time} – {selectedRes.end_time}</p>
+              <p><span className="font-bold text-slate-700">Expected Attendees:</span> <strong className="text-blue-800">{selectedRes.attendees} Pax</strong></p>
+            </div>
+
+            {/* Applicant Info */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+              <p className="font-bold text-slate-900 text-xs uppercase tracking-wider">👤 Citizen / Applicant Information</p>
+              <p><span className="font-bold text-slate-700">Name:</span> {selectedRes.applicant_name}</p>
+              <p><span className="font-bold text-slate-700">Email:</span> {selectedRes.applicant_email || '—'}</p>
+              <p><span className="font-bold text-slate-700">Contact:</span> {selectedRes.applicant_phone || '—'}</p>
+            </div>
+
+            {/* Purpose & Equipment */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+              <p className="font-bold text-slate-900 text-xs uppercase tracking-wider">📋 Event Details</p>
+              <p><span className="font-bold text-slate-700">Purpose:</span> {selectedRes.purpose}</p>
+              {(selectedRes as any).special_equipment?.length > 0 && (
+                <div>
+                  <span className="font-bold text-slate-700 block mb-1">Requested Equipment:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {((selectedRes as any).special_equipment || []).map((eq: string, i: number) => (
+                      <span key={i} className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-semibold rounded-full border border-blue-200">{eq}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(selectedRes as any).remarks && (
+                <p><span className="font-bold text-slate-700">Additional Remarks:</span> {(selectedRes as any).remarks}</p>
+              )}
+            </div>
+
+            {/* Admin Review Remarks */}
             <div>
-              <label className="block text-xs font-semibold text-[#334155] mb-1">Approval / Review Remarks:</label>
+              <label className="block text-xs font-bold text-[#334155] mb-1.5">Admin Approval / Rejection Remarks:</label>
               <textarea
                 rows={3}
                 value={reviewRemarks}
                 onChange={(e) => setReviewRemarks(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 p-2 text-xs"
+                placeholder="Add official remarks, conditions, or reason for rejection..."
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs focus:outline-none focus:border-blue-600"
               />
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
               <Button size="sm" variant="danger" onClick={() => handleUpdateStatus('Rejected')}>
-                Reject
+                ✕ Reject Booking
               </Button>
               <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setIsReviewModalOpen(false)}>
+                  Cancel
+                </Button>
                 <Button size="sm" variant="success" onClick={() => handleUpdateStatus('Approved')}>
-                  Approve Reservation
+                  ✓ Approve Reservation
                 </Button>
               </div>
             </div>

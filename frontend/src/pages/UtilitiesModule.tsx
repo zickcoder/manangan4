@@ -9,7 +9,13 @@ import {
   Sparkles, 
   Truck, 
   Send, 
-  Eye 
+  Eye,
+  Image as ImageIcon,
+  User,
+  MapPin,
+  Home,
+  Check,
+  X
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -35,6 +41,7 @@ export function UtilitiesModule() {
     citizen_phone: '',
     service_type: 'Water Main Leak',
     location: '',
+    affected_households: '2 - 5 Households (Compound / Immediate Neighbors)',
     description: '',
     urgency: 'Urgent',
   });
@@ -59,7 +66,7 @@ export function UtilitiesModule() {
         selectedReq.id,
         status,
         dispatchTeam,
-        resolutionNotes || `Status updated to ${status}`
+        resolutionNotes || `Status updated to ${status} by Municipal Dispatch`
       );
       setIsDispatchModalOpen(false);
       loadData();
@@ -95,21 +102,21 @@ export function UtilitiesModule() {
             <div className="p-2 rounded-xl bg-cyan-600 text-white shadow-sm">
               <Droplet className="w-5 h-5" />
             </div>
-            <span>Water Supply & Drainage Incident Dispatch</span>
+            <span>Water Supply & Drainage Incident Dispatch Desk</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Emergency pipe bursts, pressure complaints, storm drainage declogging, and field crew deployment.
+            Review citizen-submitted hazard reports, verify photo evidence, and dispatch emergency response crews.
           </p>
         </div>
 
         <Button
           size="sm"
           variant="primary"
-          className="bg-cyan-600 hover:bg-cyan-700 font-bold"
+          className="bg-cyan-600 hover:bg-cyan-700 font-bold shadow-cyan shadow-sm"
           leftIcon={<Plus className="w-4 h-4" />}
           onClick={() => setIsNewModalOpen(true)}
         >
-          Log Utility Ticket
+          Log Incident Ticket
         </Button>
       </div>
 
@@ -119,7 +126,7 @@ export function UtilitiesModule() {
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search tickets by ID, street, citizen..."
+            placeholder="Search tickets by ID, street, reporter..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-cyan-600 focus:bg-white text-slate-800"
@@ -151,21 +158,31 @@ export function UtilitiesModule() {
               <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
                 <tr>
                   <th className="py-3 px-4">Ticket ID</th>
-                  <th className="py-3 px-4">Service Issue</th>
-                  <th className="py-3 px-4">Location</th>
-                  <th className="py-3 px-4">Citizen Contact</th>
-                  <th className="py-3 px-4">AI Priority</th>
-                  <th className="py-3 px-4">Assigned Team</th>
+                  <th className="py-3 px-4">Service Hazard</th>
+                  <th className="py-3 px-4">Location & Households</th>
+                  <th className="py-3 px-4">Citizen Reporter</th>
+                  <th className="py-3 px-4">AI Score</th>
+                  <th className="py-3 px-4">Assigned Crew</th>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Dispatch</th>
+                  <th className="py-3 px-4 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {filtered.map((u) => (
                   <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3.5 px-4 font-mono font-bold text-cyan-700">{u.ticket_no}</td>
-                    <td className="py-3.5 px-4 font-bold text-slate-900">{u.service_type}</td>
-                    <td className="py-3.5 px-4 text-slate-600 max-w-[200px] truncate">{u.location}</td>
+                    <td className="py-3.5 px-4">
+                      <p className="font-bold text-slate-900">{u.service_type}</p>
+                      {u.photo_url && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-cyan-700 font-semibold bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 mt-0.5">
+                          <ImageIcon className="w-3 h-3" /> Photo Attached
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 max-w-[220px]">
+                      <p className="text-slate-800 font-semibold truncate">{u.location}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{u.affected_households || '1 Household'}</p>
+                    </td>
                     <td className="py-3.5 px-4 text-slate-700">
                       <p className="font-semibold">{u.citizen_name}</p>
                       <p className="text-[10px] text-slate-400">{u.citizen_phone}</p>
@@ -200,7 +217,7 @@ export function UtilitiesModule() {
                           setIsDispatchModalOpen(true);
                         }}
                       >
-                        Manage
+                        Manage Ticket
                       </Button>
                     </td>
                   </tr>
@@ -211,53 +228,110 @@ export function UtilitiesModule() {
         </CardContent>
       </Card>
 
-      {/* Modal: Dispatch & Resolution */}
+      {/* Modal: Full Citizen Ticket Details & Dispatch Controls */}
       <Modal
         isOpen={isDispatchModalOpen}
         onClose={() => setIsDispatchModalOpen(false)}
-        title={`Manage Incident: ${selectedReq?.ticket_no}`}
-        description="Dispatch maintenance crew and log field resolution."
+        title={`Manage Incident Ticket — ${selectedReq?.ticket_no}`}
+        description="Verify citizen-submitted incident report, photo evidence, and manage crew dispatch."
+        maxWidth="lg"
       >
         {selectedReq && (
           <div className="space-y-4 text-xs">
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-              <p><span className="font-bold text-slate-700">Issue:</span> {selectedReq.service_type}</p>
-              <p><span className="font-bold text-slate-700">Location:</span> {selectedReq.location}</p>
-              <p><span className="font-bold text-slate-700">Description:</span> "{selectedReq.description}"</p>
-              <p><span className="font-bold text-slate-700">AI Triage:</span> Urgency: <strong className="text-red-600">{selectedReq.urgency}</strong> (Score: {selectedReq.ai_priority_score} pts)</p>
+            {/* Status & Priority Header */}
+            <div className="flex items-center justify-between p-3 bg-slate-900 text-white rounded-xl">
+              <div className="flex items-center gap-2">
+                <Badge variant={selectedReq.status === 'Resolved' ? 'success' : selectedReq.status === 'Dispatched' ? 'info' : 'warning'}>
+                  {selectedReq.status}
+                </Badge>
+                <span className="font-mono font-bold text-cyan-400">{selectedReq.ticket_no}</span>
+              </div>
+              <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5" />
+                AI Triage: {selectedReq.ai_priority_score} pts ({selectedReq.urgency})
+              </span>
             </div>
 
+            {/* Reporter Details */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+              <p className="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-cyan-600" />
+                <span>Citizen Reporter Information</span>
+              </p>
+              <p><span className="font-bold text-slate-700">Full Name:</span> {selectedReq.citizen_name}</p>
+              <p><span className="font-bold text-slate-700">Contact Number:</span> {selectedReq.citizen_phone}</p>
+              <p><span className="font-bold text-slate-700">Registered Email:</span> {selectedReq.citizen_email || 'juan.delacruz@citizen.gov.ph'}</p>
+            </div>
+
+            {/* Location & Impact */}
+            <div className="p-3.5 bg-cyan-50/60 rounded-xl border border-cyan-200 space-y-1.5">
+              <p className="font-bold text-cyan-950 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-cyan-700" />
+                <span>Incident Location & Affected Scope</span>
+              </p>
+              <p><span className="font-bold text-slate-700">Hazard Type:</span> <strong className="text-cyan-900">{selectedReq.service_type}</strong></p>
+              <p><span className="font-bold text-slate-700">Location Landmark:</span> {selectedReq.location}</p>
+              <p><span className="font-bold text-slate-700">Affected Households Range:</span> <span className="font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-200">{selectedReq.affected_households || '1 Household'}</span></p>
+              <p><span className="font-bold text-slate-700">Detailed Description:</span> "{selectedReq.description}"</p>
+            </div>
+
+            {/* Attached Photo Preview or No Photo Proof Badge */}
+            {selectedReq.photo_url ? (
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                <p className="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  <ImageIcon className="w-3.5 h-3.5 text-cyan-600" />
+                  <span>Citizen Uploaded Hazard Photo Evidence</span>
+                </p>
+                <div className="rounded-xl overflow-hidden border border-slate-300 max-h-56 bg-slate-900 flex items-center justify-center">
+                  <img src={selectedReq.photo_url} alt="Hazard Photo" className="max-h-56 w-auto object-contain" />
+                </div>
+              </div>
+            ) : (
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-slate-500 font-semibold text-xs flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                <span>📷 No photo proof provided (Text description only)</span>
+              </div>
+            )}
+
+            {/* Response Crew Selection */}
             <div>
-              <label className="block text-xs font-semibold text-[#334155] mb-1">Assign Response Crew:</label>
+              <label className="block text-xs font-bold text-[#334155] mb-1.5">Assign Municipal Field Response Crew:</label>
               <select
                 value={dispatchTeam}
                 onChange={(e) => setDispatchTeam(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 p-2 text-xs"
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-medium focus:border-cyan-600 focus:outline-none"
               >
-                <option value="Quick Response Water Crew Alpha">Quick Response Water Crew Alpha (Mainlines)</option>
-                <option value="Drainage Cleanout Team 2">Drainage Cleanout Team 2 (Heavy Jetting)</option>
-                <option value="Engineering Masonry Team">Engineering Masonry Team (Canal Walls)</option>
-                <option value="Emergency Flood Pumping Taskforce">Emergency Flood Pumping Taskforce</option>
+                <option value="Quick Response Water Crew Alpha">Quick Response Water Crew Alpha (Mainlines & Pipe Bursts)</option>
+                <option value="Drainage Cleanout Team 2">Drainage Cleanout Team 2 (Heavy Jetting & Culverts)</option>
+                <option value="Engineering Masonry Team">Engineering Masonry Team (Canal Walls & Revetments)</option>
+                <option value="Emergency Flood Pumping Taskforce">Emergency Flood Pumping Taskforce (Dewatering Pumps)</option>
               </select>
             </div>
 
+            {/* Resolution Notes */}
             <div>
-              <label className="block text-xs font-semibold text-[#334155] mb-1">Field Resolution Notes:</label>
+              <label className="block text-xs font-bold text-[#334155] mb-1.5">Field Dispatch / Resolution Log Notes:</label>
               <textarea
                 rows={3}
                 value={resolutionNotes}
                 onChange={(e) => setResolutionNotes(e.target.value)}
-                placeholder="Log repair completion details, replaced valves, or declogged meters..."
-                className="w-full rounded-xl border border-slate-300 p-2 text-xs"
+                placeholder="Log dispatch orders, repair completion details, replaced valves, or declogged meters..."
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs focus:border-cyan-600 focus:outline-none"
               />
             </div>
 
+            {/* Action Buttons */}
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
               <Button size="sm" variant="outline" onClick={() => handleUpdateStatus('Dispatched')}>
-                Mark Dispatched
+                <Truck className="w-3.5 h-3.5 mr-1" />
+                Dispatch Response Crew
               </Button>
               <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setIsDispatchModalOpen(false)}>
+                  Cancel
+                </Button>
                 <Button size="sm" variant="success" onClick={() => handleUpdateStatus('Resolved')}>
+                  <Check className="w-3.5 h-3.5 mr-1" />
                   Mark Resolved & Repaired
                 </Button>
               </div>
@@ -266,12 +340,12 @@ export function UtilitiesModule() {
         )}
       </Modal>
 
-      {/* Modal: Add New Ticket */}
+      {/* Modal: Log New Incident */}
       <Modal
         isOpen={isNewModalOpen}
         onClose={() => setIsNewModalOpen(false)}
-        title="Log Water / Drainage Incident"
-        description="Direct staff intake for utility complaints."
+        title="Direct Intake: Log Water / Drainage Incident"
+        description="Internal intake for walk-in or hotline utility complaints."
       >
         <form onSubmit={handleCreate} className="space-y-3 text-xs">
           <Input
@@ -298,6 +372,7 @@ export function UtilitiesModule() {
                 <option value="Low Water Pressure">Low Water Pressure</option>
                 <option value="Drainage Declogging">Drainage Declogging</option>
                 <option value="Canal Wall Repair">Canal Wall Repair</option>
+                <option value="Flash Flooding">Flash Flooding</option>
               </select>
             </div>
             <Input
@@ -321,7 +396,7 @@ export function UtilitiesModule() {
             <Button size="sm" variant="outline" type="button" onClick={() => setIsNewModalOpen(false)}>
               Cancel
             </Button>
-            <Button size="sm" variant="primary" className="bg-cyan-600 hover:bg-cyan-700" type="submit">
+            <Button size="sm" variant="primary" className="bg-cyan-600 hover:bg-cyan-700 font-bold" type="submit">
               Log & AI Triage
             </Button>
           </div>
