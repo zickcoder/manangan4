@@ -12,7 +12,6 @@ frontend/dist/
 dist/
 web-build/
 expo-env.d.ts
-.env
 
 
 # Native
