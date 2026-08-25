@@ -1,8 +1,59 @@
-// Smart Hybrid API Client with Complete Browser Storage Fallback for GOVSERVE
+// Smart Hybrid API Client — supports eProvider Cloud DB, custom backend, or browser localStorage fallback
 const rawBase = (import.meta as any).env?.VITE_API_URL || '';
 const API_BASE = rawBase ? `${rawBase.replace(/\/$/, '')}/api` : '/api';
-// Only attempt real API calls when a backend URL is explicitly configured
 const HAS_BACKEND = Boolean(rawBase);
+
+// eProvider (Supabase-compatible) Cloud Database - robust detection with fallbacks
+const env = (import.meta as any).env || {};
+const EP_URL = (
+  env.VITE_EPROVIDER_URL ||
+  env.VITE_EPROVIDER_API_URL ||
+  env.VITE_EPROVIDER_API_BASE_URL ||
+  env.VITE_SUPABASE_URL ||
+  'http://supa.eprovider.site/330a2e7808deec92591a'
+).replace(/\/$/, '');
+
+const EP_KEY = (
+  env.VITE_EPROVIDER_ANON_KEY ||
+  env.EPROVIDER_ANON_KEY ||
+  env.VITE_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsInByb2plY3RfaWQiOiIzNTg1YzBlYy00NzRkLTRiNWItOWUwOS01MDQ2MjM2ZTNjZGIiLCJpYXQiOjE3ODc2NzY1MDAsImV4cCI6MjEwMzI1MjUwMCwiYXVkIjoiZXByb3ZpZGVyLXJlc3QiLCJpc3OiOiJlcHJvdmlkZXItY29udHJvbC1wbGFuZSJ9.TNqBEgJmHn1BI9y9nOIzxSL9uABoaJ5CsrS8PZjyNBY'
+);
+
+const HAS_EPROVIDER = Boolean(EP_URL && EP_KEY);
+const EP_REST = HAS_EPROVIDER ? `${EP_URL}/rest/v1` : '';
+const EP_HEADERS = {
+  'apikey': EP_KEY,
+  'Authorization': `Bearer ${EP_KEY}`,
+  'Content-Type': 'application/json',
+  'Prefer': 'return=representation'
+};
+
+async function epGet(table: string, query = '') {
+  const res = await fetch(`${EP_REST}/${table}${query ? '?' + query : ''}`, { headers: EP_HEADERS });
+  if (!res.ok) throw new Error(`eProvider GET ${table} failed: ${res.status}`);
+  return res.json();
+}
+
+async function epPost(table: string, body: any) {
+  const res = await fetch(`${EP_REST}/${table}`, {
+    method: 'POST',
+    headers: EP_HEADERS,
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`eProvider POST ${table} failed: ${res.status}`);
+  return res.json();
+}
+
+async function epPatch(table: string, query: string, body: any) {
+  const res = await fetch(`${EP_REST}/${table}?${query}`, {
+    method: 'PATCH',
+    headers: { ...EP_HEADERS, 'Prefer': 'return=representation' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`eProvider PATCH ${table} failed: ${res.status}`);
+  return res.json();
+}
 
 // Initial Seed Data (from database_schema_and_seed.sql)
 const DEFAULT_FACILITIES = [
@@ -367,86 +418,81 @@ export async function fetchStats() {
 }
 
 export async function fetchFacilities(category = 'all') {
+  if (HAS_EPROVIDER) try {
+    const q = category !== 'all' ? `category=ilike.*${encodeURIComponent(category)}*` : '';
+    const data = await epGet('facilities', q + '&order=id.asc');
+    return Array.isArray(data) ? data : [];
+  } catch {}
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/facilities?category=${encodeURIComponent(category)}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.data) return data.data;
-    }
+    if (res.ok) { const data = await res.json(); if (data?.data) return data.data; }
   } catch {}
-
   let list = getStore('facilities', DEFAULT_FACILITIES);
-  if (category !== 'all') {
-    list = list.filter((f: any) => f.category.toLowerCase() === category.toLowerCase());
-  }
+  if (category !== 'all') list = list.filter((f: any) => f.category.toLowerCase() === category.toLowerCase());
   return list;
 }
 
 export async function fetchReservations(status = 'all', category = 'all') {
+  if (HAS_EPROVIDER) try {
+    const q = status !== 'all' ? `status=eq.${encodeURIComponent(status)}&order=id.desc` : 'order=id.desc';
+    const data = await epGet('facility_reservations', q);
+    return Array.isArray(data) ? data : [];
+  } catch {}
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/facilities/reservations?status=${encodeURIComponent(status)}&category=${encodeURIComponent(category)}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.data) return data.data;
-    }
+    if (res.ok) { const data = await res.json(); if (data?.data) return data.data; }
   } catch {}
-
   let list = getStore('reservations', DEFAULT_RESERVATIONS);
-  if (status !== 'all') {
-    list = list.filter((r: any) => r.status.toLowerCase() === status.toLowerCase());
-  }
+  if (status !== 'all') list = list.filter((r: any) => r.status.toLowerCase() === status.toLowerCase());
   return list;
 }
 
 export async function createReservation(payload: any) {
+  let citizenMeta: any = {};
+  try {
+    const cu = JSON.parse(sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user') || '{}');
+    citizenMeta = { applicant_name: cu.name || payload.applicant_name, applicant_email: cu.email || payload.applicant_email };
+  } catch {}
+
+  if (HAS_EPROVIDER) try {
+    const reservations = await epGet('facility_reservations', 'select=id&order=id.desc&limit=1');
+    const nextNum = Array.isArray(reservations) && reservations.length > 0 ? reservations[0].id + 1 : 1;
+    const refNo = `RES-${new Date().getFullYear()}-${String(nextNum).padStart(3, '0')}`;
+    const row = { ...citizenMeta, ...payload, reference_no: refNo, status: 'Pending' };
+    const result = await epPost('facility_reservations', row);
+    const created = Array.isArray(result) ? result[0] : result;
+    return { success: true, reference_no: refNo, data: created };
+  } catch {}
+
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/facilities/reservations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     });
     if (res.ok) return await res.json();
   } catch {}
 
-  // Stamp citizen identity from logged-in session
-  let citizenMeta: any = {};
-  try {
-    const cu = JSON.parse(localStorage.getItem('govserve_user') || '{}');
-    citizenMeta = { citizen_id: cu.id, citizen_email: cu.email };
-  } catch {}
-
   const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
   const refNo = `RES-${new Date().getFullYear()}-${String(reservations.length + 1).padStart(3, '0')}`;
-  const newReservation = {
-    id: Date.now(),
-    reference_no: refNo,
-    ...citizenMeta,
-    ...payload,
-    status: 'Pending',
-    created_at: new Date().toISOString()
-  };
+  const newReservation = { id: Date.now(), reference_no: refNo, ...citizenMeta, ...payload, status: 'Pending', created_at: new Date().toISOString() };
   reservations.unshift(newReservation);
   setStore('reservations', reservations);
   return { success: true, reference_no: refNo, data: newReservation };
 }
 
 export async function updateReservationStatus(id: number, status: string, remarks?: string, reviewer_name?: string) {
+  if (HAS_EPROVIDER) try {
+    await epPatch('facility_reservations', `id=eq.${id}`, { status, remarks, reviewer_name });
+    return { success: true };
+  } catch {}
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/facilities/reservations/${id}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, remarks, reviewer_name }),
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, remarks, reviewer_name })
     });
     if (res.ok) return await res.json();
   } catch {}
-
   const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
   const item = reservations.find((r: any) => r.id === id);
-  if (item) {
-    item.status = status;
-    if (remarks) item.remarks = remarks;
-    setStore('reservations', reservations);
-  }
+  if (item) { item.status = status; if (remarks) item.remarks = remarks; setStore('reservations', reservations); }
   return { success: true };
 }
 
@@ -484,37 +530,26 @@ export async function checkDoubleBooking(facilityId: number, facilityName: strin
 }
 
 export async function cancelReservation(id: number, reason = 'Cancelled by Resident') {
+  if (HAS_EPROVIDER) try { await epPatch('facility_reservations', `id=eq.${id}`, { status: 'Cancelled', remarks: reason }); return { success: true }; } catch {}
   const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
   const item = reservations.find((r: any) => r.id === id || String(r.id) === String(id));
-  if (item) {
-    item.status = 'Cancelled';
-    item.remarks = reason;
-    setStore('reservations', reservations);
-  }
+  if (item) { item.status = 'Cancelled'; item.remarks = reason; setStore('reservations', reservations); }
   return { success: true };
 }
 
 export async function cancelUtilityRequest(id: number, reason = 'Cancelled by Resident') {
+  if (HAS_EPROVIDER) try { await epPatch('utility_requests', `id=eq.${id}`, { status: 'Cancelled', resolution_notes: reason }); return { success: true }; } catch {}
   const utilities = getStore('utilities', DEFAULT_UTILITIES);
   const item = utilities.find((u: any) => u.id === id || String(u.id) === String(id));
-  if (item) {
-    item.status = 'Cancelled';
-    item.resolution_notes = reason;
-    setStore('utilities', utilities);
-  }
+  if (item) { item.status = 'Cancelled'; item.resolution_notes = reason; setStore('utilities', utilities); }
   return { success: true };
 }
 
 export async function cancelBurial(id: number, reason = 'Cancelled by Resident') {
+  if (HAS_EPROVIDER) try { await epPatch('burial_records', `id=eq.${id}`, { status: 'Cancelled' }); return { success: true }; } catch {}
   const burials = getStore('burials', DEFAULT_BURIALS);
   const item = burials.find((b: any) => b.id === id || String(b.id) === String(id));
-  if (item) {
-    item.status = 'Cancelled';
-    setStore('burials', burials);
-    if (item.plot_id) {
-      updatePlotStatus(Number(item.plot_id), 'Available');
-    }
-  }
+  if (item) { item.status = 'Cancelled'; setStore('burials', burials); if (item.plot_id) updatePlotStatus(Number(item.plot_id), 'Available'); }
   return { success: true };
 }
 
