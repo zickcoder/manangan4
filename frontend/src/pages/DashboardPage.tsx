@@ -158,12 +158,12 @@ export function DashboardPage() {
       category: 'facility',
       type: 'Facility Booking',
       title: r.facility_name || 'Multi-Purpose Civic Center',
-      ref_no: r.reference_no,
-      date: r.event_date,
-      time: `${r.start_time} - ${r.end_time}`,
-      details: r.purpose,
-      attendees: `${r.attendees} Pax`,
-      status: r.status,
+      ref_no: r.reference_no || '',
+      date: r.event_date || '',
+      time: `${r.start_time || ''} - ${r.end_time || ''}`,
+      details: r.purpose || r.purpose_event_name || 'Event Booking',
+      attendees: `${r.attendees || 0} Pax`,
+      status: r.status || 'Pending',
       remarks: r.remarks || 'Under verification by LGU Facilities Bureau',
       badgeVariant: r.status === 'Approved' ? 'success' : r.status === 'Rejected' ? 'destructive' : 'warning'
     })),
@@ -172,15 +172,15 @@ export function DashboardPage() {
       raw: u,
       category: 'utility',
       type: 'Water & Drainage Ticket',
-      title: u.service_type,
-      ref_no: u.ticket_no,
+      title: u.service_type || 'Utility Report',
+      ref_no: u.ticket_no || '',
       date: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : '2026-08-25',
-      time: u.urgency || 'Urgent',
-      details: u.location,
-      affected_households: u.affected_households,
-      photo_url: u.photo_url,
-      status: u.status,
-      assigned_team: u.assigned_team,
+      time: u.urgency || (u as any).urgency_level || 'Urgent',
+      details: u.location || (u as any).specific_location || (u as any).incident_description || 'See ticket',
+      affected_households: u.affected_households || '',
+      photo_url: u.photo_url || '',
+      status: u.status || 'Pending',
+      assigned_team: u.assigned_team || '',
       remarks: u.resolution_notes || (u.assigned_team ? `Assigned to ${u.assigned_team}` : 'Ticket queued for priority dispatch'),
       badgeVariant: u.status === 'Resolved' ? 'success' : u.status === 'Dispatched' ? 'info' : 'warning'
     })),
@@ -189,21 +189,31 @@ export function DashboardPage() {
       raw: b,
       category: 'cemetery',
       type: 'Burial Permit Application',
-      title: `Deceased: ${b.deceased_name}`,
-      ref_no: b.permit_no || b.reference_no,
-      date: b.burial_date,
+      title: `Deceased: ${(b as any).deceased_full_name || b.deceased_name || 'Individual'}`,
+      ref_no: b.permit_no || b.reference_no || '',
+      date: b.burial_date || '',
       time: 'Interment Date',
       details: b.plot_code || 'Columbarium Wall Alpha',
-      cause_of_death: b.cause_of_death,
-      status: b.status,
+      cause_of_death: b.cause_of_death || '',
+      status: b.status || 'Pending',
       remarks: `Burial plot registered at ${b.plot_code || 'Columbarium Alpha'}`,
       badgeVariant: b.status === 'Approved' || b.status === 'Completed' ? 'purple' : 'warning'
     }))
   ];
 
   const filteredSubmissions = mySubmissions.filter(item => {
-    if (citizenFilter === 'all') return true;
-    return item.category === citizenFilter;
+    // Category filter
+    if (citizenFilter !== 'all' && item.category !== citizenFilter) return false;
+    // Search query filter
+    if (!ticketSearchQuery.trim()) return true;
+    const q = ticketSearchQuery.toLowerCase().trim();
+    return (
+      (item.ref_no || '').toLowerCase().includes(q) ||
+      (item.title || '').toLowerCase().includes(q) ||
+      (item.details || '').toLowerCase().includes(q) ||
+      (item.status || '').toLowerCase().includes(q) ||
+      (item.type || '').toLowerCase().includes(q)
+    );
   });
 
   // =========================================================================
@@ -343,18 +353,18 @@ export function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left 2 Columns: Search a Ticket Bar & Real-time Lookup */}
           <div className="lg:col-span-2 space-y-6">
-            <Card className="border-[#cbd5e1] overflow-hidden shadow-md">
-              <div className="p-6 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white relative">
-                <div className="relative z-10 space-y-2">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 text-xs font-bold">
-                    <Search className="w-3.5 h-3.5" />
+            <Card className="border-[#cbd5e1] overflow-hidden shadow-sm bg-white">
+              <div className="p-6 bg-white text-slate-900 border-b border-slate-100">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold">
+                    <Search className="w-3.5 h-3.5 text-blue-600" />
                     <span>Real-Time Ticket Tracker</span>
                   </div>
-                  <h3 className="text-xl sm:text-2xl font-extrabold font-display tracking-tight">
+                  <h3 className="text-xl sm:text-2xl font-extrabold font-display tracking-tight text-slate-900">
                     Search a Ticket & Application Status
                   </h3>
-                  <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
-                    Enter your reference tracking code (e.g. <span className="font-mono text-blue-300">RES-2026-001</span>, <span className="font-mono text-cyan-300">REQ-2026-001</span>, <span className="font-mono text-purple-300">BUR-2026-001</span>) or keyword to view official LGU verification details.
+                  <p className="text-xs text-slate-600 max-w-xl leading-relaxed">
+                    Enter your reference tracking code (e.g. <span className="font-mono font-bold text-blue-600">RES-2026-001</span>, <span className="font-mono font-bold text-cyan-600">REQ-2026-001</span>, <span className="font-mono font-bold text-purple-600">BUR-2026-001</span>) or keyword to view official LGU verification details.
                   </p>
                 </div>
               </div>

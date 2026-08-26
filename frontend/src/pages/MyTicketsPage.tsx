@@ -102,34 +102,34 @@ export function MyTicketsPage() {
     ...myUtilities.map((u) => ({
       id: `util-${u.id}`,
       originalId: u.id,
-      ref_no: u.ticket_no,
+      ref_no: u.ticket_no || u.ticket_no || '',
       category: 'utility',
       type: 'Water & Drainage Request',
-      title: `${u.service_type} (${u.urgency_level})`,
+      title: `${u.service_type || 'Utility'} (${(u as any).urgency_level || u.urgency || 'Urgent'})`,
       date: new Date(u.created_at || Date.now()).toLocaleDateString(),
       time: new Date(u.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: u.status,
+      status: u.status || 'Pending',
       badgeVariant: u.status === 'Resolved' ? 'success' : u.status === 'Dispatched' ? 'info' : 'warning',
-      details: u.incident_description,
-      applicant: u.citizen_name,
-      contact: u.contact_number,
-      location: u.specific_location,
+      details: (u as any).incident_description || u.description || u.location || 'See details',
+      applicant: u.citizen_name || '',
+      contact: (u as any).contact_number || u.citizen_phone || '',
+      location: (u as any).specific_location || u.location || '',
       created_at: u.created_at || 'Recently'
     })),
     ...myBurials.map((b) => ({
       id: `bur-${b.id}`,
       originalId: b.id,
-      ref_no: b.reference_no,
+      ref_no: b.reference_no || b.permit_no || '',
       category: 'cemetery',
       type: 'Burial Permit & Niche',
-      title: `Deceased: ${b.deceased_full_name}`,
-      date: b.burial_date,
-      time: b.burial_time,
-      status: b.status,
+      title: `Deceased: ${(b as any).deceased_full_name || b.deceased_name || 'Individual'}`,
+      date: b.burial_date || '',
+      time: b.burial_time || '',
+      status: b.status || 'Pending',
       badgeVariant: b.status === 'Approved' ? 'success' : 'purple',
       details: `Plot Code: ${b.plot_code || 'Assigned Niche'}`,
-      applicant: b.contact_person,
-      contact: b.contact_number,
+      applicant: b.contact_person || '',
+      contact: (b as any).contact_number || b.contact_phone || '',
       created_at: b.created_at || 'Recently'
     }))
   ];
@@ -139,26 +139,28 @@ export function MyTicketsPage() {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
     return (
-      item.ref_no.toLowerCase().includes(q) ||
-      item.title.toLowerCase().includes(q) ||
-      item.details.toLowerCase().includes(q) ||
-      item.status.toLowerCase().includes(q)
+      (item.ref_no || '').toLowerCase().includes(q) ||
+      (item.title || '').toLowerCase().includes(q) ||
+      (item.details || '').toLowerCase().includes(q) ||
+      (item.status || '').toLowerCase().includes(q) ||
+      (item.type || '').toLowerCase().includes(q) ||
+      (item.applicant || '').toLowerCase().includes(q)
     );
   });
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
       {/* Top Banner Header */}
-      <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white shadow-xl relative overflow-hidden">
+      <div className="p-6 sm:p-8 rounded-3xl bg-white text-slate-900 border border-slate-200 shadow-sm relative overflow-hidden">
         <div className="relative z-10 space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 text-xs font-bold">
-            <FileText className="w-3.5 h-3.5" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold">
+            <FileText className="w-3.5 h-3.5 text-blue-600" />
             <span>Citizen Application Ledger</span>
           </div>
-          <h1 className="text-2xl sm:text-4xl font-extrabold font-display tracking-tight">
+          <h1 className="text-2xl sm:text-4xl font-extrabold font-display tracking-tight text-slate-900">
             My Submitted Applications & Tickets
           </h1>
-          <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+          <p className="text-xs sm:text-sm text-slate-600 max-w-2xl leading-relaxed">
             Comprehensive list of all your filed facility bookings, water/drainage incident tickets, and cemetery burial permits.
           </p>
         </div>
