@@ -101,7 +101,7 @@ export function LandingPage() {
             {/* LGU Tag */}
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold shadow-xs">
               <ShieldCheck className="w-4 h-4 text-blue-600" />
-              <span>Official Local Government Unit • Barangay 178</span>
+              <span>Official Local Government Portal</span>
             </div>
 
             {/* Main Headline with Typewriter */}
@@ -186,7 +186,7 @@ export function LandingPage() {
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
           <div className="flex items-center gap-2">
             <span className="font-bold font-display text-white">GOVSERVE • LGU</span>
-            <span>• Barangay 178 Municipal Portal</span>
+            <span>• Public Assets & Facilities Portal</span>
           </div>
           <div className="flex items-center gap-4">
             <Link to="/login" className="hover:text-white">Citizen Login</Link>

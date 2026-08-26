@@ -30,7 +30,6 @@ export function PublicNavbar() {
         <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-[#475569]">
           <Link to="/" className="text-blue-600 hover:text-blue-700 transition-colors">Home</Link>
           <a href="#services" className="hover:text-blue-600 transition-colors">Municipal Services</a>
-          <a href="#about" className="hover:text-blue-600 transition-colors">About Barangay 178</a>
         </nav>
 
         {/* Actions (Login & Register) */}

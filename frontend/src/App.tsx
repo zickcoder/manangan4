@@ -13,6 +13,7 @@ import { CemeteryModule } from './pages/CemeteryModule';
 import { UtilitiesModule } from './pages/UtilitiesModule';
 import { AssetsModule } from './pages/AssetsModule';
 import { ReportsModule } from './pages/ReportsModule';
+import { MyTicketsPage } from './pages/MyTicketsPage';
 
 // Reads role from sessionStorage (tab-isolated) first, falling back to localStorage
 function getUser() {
@@ -52,6 +53,7 @@ export function App() {
         {/* Authenticated shell — AppLayout guards login */}
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/my-tickets" element={<MyTicketsPage />} />
           <Route path="/citizen/services" element={<CitizenServicesPage />} />
 
           <Route path="/facilities" element={<SmartRoute staffElement={<FacilitiesModule />} citizenTab="reserve" />} />

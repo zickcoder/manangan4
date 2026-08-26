@@ -1,3 +1,5 @@
+import { addNotification } from './notifications';
+
 // Smart Hybrid API Client — supports eProvider Cloud DB, custom backend, or browser localStorage fallback
 const rawBase = (import.meta as any).env?.VITE_API_URL || '';
 const API_BASE = rawBase ? `${rawBase.replace(/\/$/, '')}/api` : '/api';
@@ -454,14 +456,30 @@ export async function createReservation(payload: any) {
     citizenMeta = { applicant_name: cu.name || payload.applicant_name, applicant_email: cu.email || payload.applicant_email };
   } catch {}
 
+  const refNo = `RES-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+
+  // Trigger real-time notifications
+  addNotification({
+    title: 'New Facility Booking Submitted',
+    text: `${citizenMeta.applicant_name || 'Resident'} booked ${payload.facility_name || 'Facility'} for ${payload.event_date || 'scheduled date'}.`,
+    targetRole: 'Admin',
+    category: 'reservation',
+  });
+  addNotification({
+    title: 'Reservation Ticket Created',
+    text: `Your reservation request (${refNo}) has been successfully submitted and is under LGU review.`,
+    targetRole: 'Citizen',
+    category: 'reservation',
+  });
+
   if (HAS_EPROVIDER) try {
     const reservations = await epGet('facility_reservations', 'select=id&order=id.desc&limit=1');
     const nextNum = Array.isArray(reservations) && reservations.length > 0 ? reservations[0].id + 1 : 1;
-    const refNo = `RES-${new Date().getFullYear()}-${String(nextNum).padStart(3, '0')}`;
-    const row = { ...citizenMeta, ...payload, reference_no: refNo, status: 'Pending' };
+    const computedRef = `RES-${new Date().getFullYear()}-${String(nextNum).padStart(3, '0')}`;
+    const row = { ...citizenMeta, ...payload, reference_no: computedRef, status: 'Pending' };
     const result = await epPost('facility_reservations', row);
     const created = Array.isArray(result) ? result[0] : result;
-    return { success: true, reference_no: refNo, data: created };
+    return { success: true, reference_no: computedRef, data: created };
   } catch {}
 
   if (HAS_BACKEND) try {
@@ -472,7 +490,6 @@ export async function createReservation(payload: any) {
   } catch {}
 
   const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
-  const refNo = `RES-${new Date().getFullYear()}-${String(reservations.length + 1).padStart(3, '0')}`;
   const newReservation = { id: Date.now(), reference_no: refNo, ...citizenMeta, ...payload, status: 'Pending', created_at: new Date().toISOString() };
   reservations.unshift(newReservation);
   setStore('reservations', reservations);
@@ -480,6 +497,14 @@ export async function createReservation(payload: any) {
 }
 
 export async function updateReservationStatus(id: number, status: string, remarks?: string, reviewer_name?: string) {
+  // Trigger real-time notification to Citizen
+  addNotification({
+    title: `Reservation ${status}`,
+    text: `Your reservation request #${id} status has been updated to "${status}". ${remarks ? 'Note: ' + remarks : ''}`,
+    targetRole: 'Citizen',
+    category: 'reservation',
+  });
+
   if (HAS_EPROVIDER) try {
     await epPatch('facility_reservations', `id=eq.${id}`, { status, remarks, reviewer_name });
     return { success: true };

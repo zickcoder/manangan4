@@ -12,7 +12,8 @@ import {
   LogOut, 
   X,
   User,
-  ShieldCheck
+  ShieldCheck,
+  FileText
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -45,6 +46,7 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
           label: 'OVERVIEW',
           items: [
             { name: 'Citizen Dashboard', path: '/dashboard', icon: LayoutDashboard },
+            { name: 'My Tickets & Applications', path: '/my-tickets', icon: FileText },
           ]
         },
         {
@@ -120,7 +122,7 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
                   {isCitizen ? 'CITIZEN' : 'LGU'}
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 truncate mt-0.5">Barangay 178 Municipal Portal</p>
+              <p className="text-[10px] text-slate-400 truncate mt-0.5">Public Assets & Facilities Portal</p>
             </div>
           </div>
 

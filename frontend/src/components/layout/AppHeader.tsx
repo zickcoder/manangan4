@@ -1,15 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Menu, 
   Search, 
   Bell, 
   Sparkles, 
-  HelpCircle, 
   CheckCircle2, 
   AlertCircle,
-  ExternalLink
+  ExternalLink,
+  CheckCheck
 } from 'lucide-react';
 import { Badge } from '../ui/Badge';
+import { 
+  getNotificationsForUser, 
+  markNotificationAsRead, 
+  markAllNotificationsAsRead, 
+  NotificationItem 
+} from '../../lib/notifications';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -19,6 +25,7 @@ interface HeaderProps {
 
 export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
   const userStr = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
   let user: any = { name: 'Atty. Elena Ramos', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
@@ -28,17 +35,30 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
 
   const isCitizen = user?.role === 'Citizen';
 
-  const notifications = isCitizen
-    ? [
-        { id: 1, title: 'Reservation Slot Confirmed', time: '15m ago', text: 'Your booking for Barangay 178 Civic Center is being endorsed.', unread: true },
-        { id: 2, title: 'Utility Ticket Dispatched', time: '1h ago', text: 'Barangay Drainage Team Alpha assigned to your report.', unread: true },
-        { id: 3, title: 'Notice: Clean-up Drive', time: '3h ago', text: 'Municipal waterway dredging along Sector 4 tomorrow.', unread: false },
-      ]
-    : [
-        { id: 1, title: 'New Facility Booking', time: '10m ago', text: 'Juan Dela Cruz submitted booking for Civic Center', unread: true },
-        { id: 2, title: 'Water Leak Incident', time: '25m ago', text: 'High-urgency drainage ticket filed in Zone 4', unread: true },
-        { id: 3, title: 'Burial Permit Endorsed', time: '1h ago', text: 'Permit BP-2026-0091 registered in Columbarium Wall Alpha', unread: false },
-      ];
+  const syncNotifications = () => {
+    const list = getNotificationsForUser(user?.role || (isCitizen ? 'Citizen' : 'Super Admin'));
+    setNotifications(list);
+  };
+
+  useEffect(() => {
+    syncNotifications();
+    window.addEventListener('govserve_notifications_updated', syncNotifications);
+    return () => {
+      window.removeEventListener('govserve_notifications_updated', syncNotifications);
+    };
+  }, [user?.role]);
+
+  const unreadCount = notifications.filter((n) => n.unread).length;
+
+  const handleMarkRead = (id: string | number) => {
+    markNotificationAsRead(id);
+    syncNotifications();
+  };
+
+  const handleMarkAllRead = () => {
+    markAllNotificationsAsRead(user?.role || (isCitizen ? 'Citizen' : 'Super Admin'));
+    syncNotifications();
+  };
 
   const getInitials = (name: string) => {
     if (!name) return 'U';
@@ -69,35 +89,9 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
         </div>
       </div>
 
-      {/* Right: Role Switcher, Notifications & Profile */}
+      {/* Right: Notifications & Profile (Role switcher removed as requested) */}
       <div className="flex items-center gap-2 md:gap-3">
-        {/* Instant Role Switcher */}
-        <button
-          onClick={() => {
-            const nextUser = isCitizen ? {
-              id: 1,
-              name: 'Atty. Elena Ramos',
-              email: 'admin@govserve.gov.ph',
-              role: 'Super Admin',
-              department: 'Municipal Executive Office'
-            } : {
-              id: 101,
-              name: 'Juan M. Dela Cruz',
-              email: 'juan.delacruz@citizen.gov.ph',
-              role: 'Citizen',
-              department: 'Barangay 178 Resident'
-            };
-
-            sessionStorage.setItem('govserve_user', JSON.stringify(nextUser));
-            localStorage.setItem('govserve_user', JSON.stringify(nextUser));
-            window.location.href = '/dashboard';
-          }}
-          className="px-2.5 py-1 rounded-xl text-[11px] sm:text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 transition-all flex items-center gap-1 cursor-pointer"
-          title="Click to instantly switch between Admin and Citizen account"
-        >
-          <span>🔄 {isCitizen ? 'Switch to Admin' : 'Switch to Citizen'}</span>
-        </button>
-        {/* Notifications Popover */}
+        {/* Live Notifications Popover */}
         <div className="relative">
           <button
             onClick={() => setNotificationsOpen(!notificationsOpen)}
@@ -105,27 +99,65 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
             title="Notifications"
           >
             <Bell className="w-5 h-5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-600 ring-2 ring-white"></span>
+            {unreadCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-white animate-pulse">
+                {unreadCount}
+              </span>
+            )}
           </button>
 
           {notificationsOpen && (
-            <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-large border border-[#e2e8f0] p-4 z-50 animate-fade-in-up">
+            <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-large border border-[#e2e8f0] p-4 z-50 animate-fade-in-up">
               <div className="flex items-center justify-between pb-3 border-b border-[#f1f5f9]">
-                <h4 className="text-xs font-bold text-[#0f172a] uppercase tracking-wider">
-                  {isCitizen ? 'Citizen Notifications' : 'System Telemetry Alerts'}
-                </h4>
-                <span className="text-[10px] bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">2 New</span>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-bold text-[#0f172a] uppercase tracking-wider">
+                    {isCitizen ? 'Citizen Notifications' : 'System Alerts'}
+                  </h4>
+                  {unreadCount > 0 && (
+                    <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">
+                      {unreadCount} New
+                    </span>
+                  )}
+                </div>
+
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAllRead}
+                    className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <CheckCheck className="w-3.5 h-3.5" />
+                    <span>Mark all read</span>
+                  </button>
+                )}
               </div>
-              <div className="divide-y divide-[#f8fafc] max-h-64 overflow-y-auto">
-                {notifications.map((n) => (
-                  <div key={n.id} className="py-2.5 hover:bg-[#f8fafc] rounded-lg px-1.5 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold text-[#0f172a]">{n.title}</p>
-                      <span className="text-[10px] text-[#94a3b8]">{n.time}</span>
-                    </div>
-                    <p className="text-[11px] text-[#64748b] mt-0.5 line-clamp-2">{n.text}</p>
+
+              <div className="divide-y divide-[#f8fafc] max-h-72 overflow-y-auto mt-1">
+                {notifications.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400 text-xs">
+                    No new notifications
                   </div>
-                ))}
+                ) : (
+                  notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      onClick={() => handleMarkRead(n.id)}
+                      className={`py-3 px-2 rounded-xl transition-colors cursor-pointer relative ${
+                        n.unread ? 'bg-blue-50/50 hover:bg-blue-50' : 'hover:bg-[#f8fafc]'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          {n.unread && <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0"></span>}
+                          <p className={`text-xs font-semibold ${n.unread ? 'text-blue-950 font-bold' : 'text-[#0f172a]'}`}>
+                            {n.title}
+                          </p>
+                        </div>
+                        <span className="text-[10px] text-[#94a3b8] shrink-0">{n.time}</span>
+                      </div>
+                      <p className="text-[11px] text-[#64748b] mt-1 leading-relaxed pl-3.5">{n.text}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}

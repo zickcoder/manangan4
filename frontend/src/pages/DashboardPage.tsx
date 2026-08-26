@@ -28,7 +28,8 @@ import {
   Check,
   QrCode,
   Image as ImageIcon,
-  Filter
+  Filter,
+  Search
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -70,6 +71,7 @@ export function DashboardPage() {
 
   // Active filter for Citizen Submissions Table
   const [citizenFilter, setCitizenFilter] = useState<'all' | 'facility' | 'utility' | 'cemetery'>('all');
+  const [ticketSearchQuery, setTicketSearchQuery] = useState('');
 
   // Selected Citizen Submission Detail Modal
   const [selectedSubmission, setSelectedSubmission] = useState<any | null>(null);
@@ -335,113 +337,136 @@ export function DashboardPage() {
               </p>
             </Card>
           </div>
-        </div>
-
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left 2 Columns: Citizen Submitted Requests Table */}
+          {/* Left 2 Columns: Search a Ticket Bar & Real-time Lookup */}
           <div className="lg:col-span-2 space-y-6">
-            <Card className="border-[#cbd5e1]">
-              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <span>My Submitted Applications & Tickets</span>
-                    {citizenFilter !== 'all' && (
-                      <Badge variant="purple" size="sm" className="capitalize">
-                        Filtered: {citizenFilter}
-                      </Badge>
-                    )}
-                  </CardTitle>
-                  <CardDescription>Click any ticket below to view full entered details & official LGU confirmation status</CardDescription>
+            <Card className="border-[#cbd5e1] overflow-hidden shadow-md">
+              <div className="p-6 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white relative">
+                <div className="relative z-10 space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 text-xs font-bold">
+                    <Search className="w-3.5 h-3.5" />
+                    <span>Real-Time Ticket Tracker</span>
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-extrabold font-display tracking-tight">
+                    Search a Ticket & Application Status
+                  </h3>
+                  <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
+                    Enter your reference tracking code (e.g. <span className="font-mono text-blue-300">RES-2026-001</span>, <span className="font-mono text-cyan-300">REQ-2026-001</span>, <span className="font-mono text-purple-300">BUR-2026-001</span>) or keyword to view official LGU verification details.
+                  </p>
+                </div>
+              </div>
+
+              <CardContent className="p-6 space-y-5 bg-white">
+                {/* Search Input Bar */}
+                <div className="relative">
+                  <Search className="w-5 h-5 text-blue-600 absolute left-4 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={ticketSearchQuery}
+                    onChange={(e) => setTicketSearchQuery(e.target.value)}
+                    placeholder="Enter Reference Tracking Code or Service Title..."
+                    className="w-full pl-12 pr-28 py-3 text-sm bg-slate-50 border-2 border-slate-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white text-slate-900 transition-all font-medium"
+                  />
+                  {ticketSearchQuery && (
+                    <button
+                      onClick={() => setTicketSearchQuery('')}
+                      className="absolute right-24 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-slate-600 px-2 py-1"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <Link to="/my-tickets" className="absolute right-2 top-1/2 -translate-y-1/2">
+                    <Button size="sm" variant="primary" className="rounded-xl text-xs font-bold">
+                      All Tickets →
+                    </Button>
+                  </Link>
                 </div>
 
-                {/* Filter Pills */}
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {[
-                    { id: 'all', label: 'All' },
-                    { id: 'facility', label: 'Facility' },
-                    { id: 'utility', label: 'Drainage' },
-                    { id: 'cemetery', label: 'Burial' },
-                  ].map((f) => (
+                {/* Quick Sample Search Tags */}
+                <div className="flex items-center gap-2 flex-wrap text-xs">
+                  <span className="text-slate-500 font-semibold">Quick Search Examples:</span>
+                  {allSubmissions.slice(0, 3).map((item) => (
                     <button
-                      key={f.id}
-                      onClick={() => setCitizenFilter(f.id as any)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
-                        citizenFilter === f.id
-                          ? 'bg-slate-900 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+                      key={item.id}
+                      onClick={() => setTicketSearchQuery(item.ref_no)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-700 font-mono text-[11px] font-bold text-slate-700 border border-slate-200 transition-all cursor-pointer"
                     >
-                      {f.label}
+                      {item.ref_no}
                     </button>
                   ))}
                 </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                      <tr>
-                        <th className="py-2.5 px-3">Tracking Code</th>
-                        <th className="py-2.5 px-3">Service / Title</th>
-                        <th className="py-2.5 px-3">Schedule / Location</th>
-                        <th className="py-2.5 px-3">LGU Status</th>
-                        <th className="py-2.5 px-3 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
-                      {filteredSubmissions.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="py-8 text-center text-slate-400 text-xs">
-                            No submitted requests found for this filter category. Click <strong>Submit New Request</strong> to log a ticket.
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredSubmissions.map((item) => (
-                          <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-3 px-3">
-                              <span className="font-mono font-bold text-blue-600 block">{item.ref_no}</span>
-                              <span className="text-[10px] text-slate-400">{item.type}</span>
-                            </td>
-                            <td className="py-3 px-3">
-                              <p className="font-bold text-slate-900">{item.title}</p>
-                              <p className="text-[10px] text-slate-500 truncate max-w-[160px]">{item.details}</p>
-                            </td>
-                            <td className="py-3 px-3 text-slate-700 whitespace-nowrap">
-                              {item.date}
-                              <span className="block text-[10px] text-slate-400">{item.time}</span>
-                            </td>
-                            <td className="py-3 px-3">
-                              <Badge variant={item.badgeVariant as any}>{item.status}</Badge>
-                            </td>
-                            <td className="py-3 px-3 text-right">
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                leftIcon={<Eye className="w-3.5 h-3.5 text-blue-600" />}
-                                onClick={() => setSelectedSubmission(item)}
-                              >
-                                View Ticket Details
-                              </Button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+
+                {/* Search Results Display */}
+                {ticketSearchQuery.trim() !== '' && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Search Results for "{ticketSearchQuery}"
+                      </p>
+                      <Badge variant="info" size="sm">{filteredSubmissions.length} Match(es)</Badge>
+                    </div>
+
+                    {filteredSubmissions.length === 0 ? (
+                      <div className="p-6 text-center bg-slate-50 rounded-2xl border border-slate-200 text-slate-500 text-xs">
+                        🚫 No active tickets found matching <strong className="font-mono text-slate-800">{ticketSearchQuery}</strong>. Please verify your tracking reference code or check <Link to="/my-tickets" className="text-blue-600 underline font-bold">My Tickets & Applications</Link>.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {filteredSubmissions.map((item) => (
+                          <div key={item.id} className="p-4 bg-slate-50 hover:bg-blue-50/40 rounded-2xl border border-slate-200 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-extrabold text-blue-600 text-sm">{item.ref_no}</span>
+                                <Badge variant={item.badgeVariant as any}>{item.status}</Badge>
+                              </div>
+                              <h4 className="font-bold text-slate-900 text-sm">{item.title}</h4>
+                              <p className="text-xs text-slate-600 max-w-md">{item.details}</p>
+                              <p className="text-[11px] text-slate-400">Scheduled: {item.date} ({item.time})</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              leftIcon={<Eye className="w-3.5 h-3.5 text-blue-600" />}
+                              onClick={() => setSelectedSubmission(item)}
+                              className="shrink-0"
+                            >
+                              View Official Voucher
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Banner Link to Sidebar Tickets */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-blue-100 text-blue-700"><FileText className="w-5 h-5" /></div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">Looking for all your filed tickets?</h4>
+                      <p className="text-[11px] text-slate-500">Access your complete application history anytime from the sidebar navigation.</p>
+                    </div>
+                  </div>
+                  <Link to="/my-tickets">
+                    <Button size="sm" variant="outline" className="text-xs font-bold w-full sm:w-auto">
+                      View My Tickets Ledger →
+                    </Button>
+                  </Link>
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Right Column: Public Advisories & Emergency Response */}
+          {/* Right Column: Public Advisories (Emergency Hotline Deleted) */}
           <div className="space-y-6">
             <Card className="border-[#cbd5e1]">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <BellRing className="w-4 h-4 text-blue-600" />
                   <div>
-                    <CardTitle className="text-sm">Barangay Public Advisories</CardTitle>
+                    <CardTitle className="text-sm">Public Advisories</CardTitle>
                     <CardDescription>Community schedule & notifications</CardDescription>
                   </div>
                 </div>
@@ -468,17 +493,8 @@ export function DashboardPage() {
                 </div>
               </CardContent>
             </Card>
-
-            <Card className="border-[#cbd5e1] p-4 bg-slate-900 text-white space-y-2 text-xs">
-              <div className="flex items-center gap-2 text-blue-400 font-bold">
-                <PhoneCall className="w-4 h-4" />
-                <span>Emergency Quick Response Hotline</span>
-              </div>
-              <p className="text-slate-300 text-[11px]">
-                Barangay 178 DRRMO & Disaster Command: <strong>(02) 8888-0178</strong> / Mobile: <strong>+63 917 111 2233</strong>
-              </p>
-            </Card>
           </div>
+        </div>
         </div>
 
         {/* Modal: Citizen Request Details & Confirmation Voucher */}
