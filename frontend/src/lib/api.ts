@@ -694,6 +694,37 @@ export async function fetchBurials() {
 }
 
 export async function createBurial(payload: any) {
+  let citizenMeta: any = {};
+  try {
+    const cu = JSON.parse(sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user') || '{}');
+    citizenMeta = { citizen_id: cu.id, citizen_email: cu.email };
+  } catch {}
+
+  const burials = getStore('burials', DEFAULT_BURIALS);
+  const refNo = `BUR-${new Date().getFullYear()}-${String(burials.length + 1).padStart(3, '0')}`;
+  const permitNo = `BP-${new Date().getFullYear()}-${String(burials.length + 89).padStart(4, '0')}`;
+
+  addNotification({
+    title: 'Burial Permit Application Submitted',
+    text: `Burial permit request (${refNo}) filed for deceased ${payload.deceased_name || payload.deceased_full_name || 'Individual'}.`,
+    targetRole: 'Admin',
+    category: 'cemetery'
+  });
+  addNotification({
+    title: 'Burial Application Registered',
+    text: `Your burial application (${refNo}) has been successfully logged and is pending LGU review.`,
+    targetRole: 'Citizen',
+    category: 'cemetery'
+  });
+
+  if (HAS_EPROVIDER) try {
+    const row = { ...citizenMeta, ...payload, reference_no: refNo, permit_no: permitNo, status: 'Pending Review' };
+    const result = await epPost('burial_records', row);
+    const created = Array.isArray(result) ? result[0] : result;
+    if (payload.plot_id) updatePlotStatus(Number(payload.plot_id), 'Reserved');
+    return { success: true, reference_no: refNo, permit_no: permitNo, data: created };
+  } catch {}
+
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/cemetery/burials`, {
       method: 'POST',
@@ -703,16 +734,6 @@ export async function createBurial(payload: any) {
     if (res.ok) return await res.json();
   } catch {}
 
-  // Stamp citizen identity from logged-in session
-  let citizenMeta: any = {};
-  try {
-    const cu = JSON.parse(localStorage.getItem('govserve_user') || '{}');
-    citizenMeta = { citizen_id: cu.id, citizen_email: cu.email };
-  } catch {}
-
-  const burials = getStore('burials', DEFAULT_BURIALS);
-  const refNo = `BUR-${new Date().getFullYear()}-${String(burials.length + 1).padStart(3, '0')}`;
-  const permitNo = `BP-${new Date().getFullYear()}-${String(burials.length + 89).padStart(4, '0')}`;
   const newBurial = {
     id: Date.now(),
     reference_no: refNo,
@@ -733,6 +754,11 @@ export async function createBurial(payload: any) {
 }
 
 export async function fetchUtilities(status = 'all', service_type = 'all') {
+  if (HAS_EPROVIDER) try {
+    const q = status !== 'all' ? `status=eq.${encodeURIComponent(status)}&order=id.desc` : 'order=id.desc';
+    const data = await epGet('utility_requests', q);
+    return Array.isArray(data) ? data : [];
+  } catch {}
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/utilities?status=${encodeURIComponent(status)}&service_type=${encodeURIComponent(service_type)}`);
     if (res.ok) {
@@ -752,6 +778,36 @@ export async function fetchUtilities(status = 'all', service_type = 'all') {
 }
 
 export async function createUtilityRequest(payload: any) {
+  let citizenMeta: any = {};
+  try {
+    const cu = JSON.parse(sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user') || '{}');
+    citizenMeta = { citizen_id: cu.id, citizen_email: cu.email };
+  } catch {}
+
+  const utilities = getStore('utilities', DEFAULT_UTILITIES);
+  const ticketNo = `UTL-${new Date().getFullYear()}-${String(utilities.length + 1).padStart(3, '0')}`;
+  const aiScore = payload.service_type === 'Flash Flooding' ? 95 : payload.urgency === 'Urgent' ? 85 : 65;
+
+  addNotification({
+    title: 'New Water/Drainage Ticket Logged',
+    text: `Incident report (${ticketNo}) filed for ${payload.service_type || 'Hazard'} at ${payload.location || 'Municipal Area'}.`,
+    targetRole: 'Admin',
+    category: 'utility'
+  });
+  addNotification({
+    title: 'Utility Ticket Created',
+    text: `Your ticket (${ticketNo}) has been filed and queued for response crew dispatch.`,
+    targetRole: 'Citizen',
+    category: 'utility'
+  });
+
+  if (HAS_EPROVIDER) try {
+    const row = { ...citizenMeta, ...payload, ticket_no: ticketNo, urgency: payload.urgency || 'Normal', ai_priority_score: aiScore, status: 'Pending' };
+    const result = await epPost('utility_requests', row);
+    const created = Array.isArray(result) ? result[0] : result;
+    return { success: true, ticket_no: ticketNo, data: created };
+  } catch {}
+
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/utilities`, {
       method: 'POST',
@@ -761,16 +817,6 @@ export async function createUtilityRequest(payload: any) {
     if (res.ok) return await res.json();
   } catch {}
 
-  // Stamp citizen identity from logged-in session
-  let citizenMeta: any = {};
-  try {
-    const cu = JSON.parse(localStorage.getItem('govserve_user') || '{}');
-    citizenMeta = { citizen_id: cu.id, citizen_email: cu.email };
-  } catch {}
-
-  const utilities = getStore('utilities', DEFAULT_UTILITIES);
-  const ticketNo = `UTL-${new Date().getFullYear()}-${String(utilities.length + 1).padStart(3, '0')}`;
-  const aiScore = payload.service_type === 'Flash Flooding' ? 95 : payload.urgency === 'Urgent' ? 85 : 65;
   const newReq = {
     id: Date.now(),
     ticket_no: ticketNo,
@@ -788,6 +834,17 @@ export async function createUtilityRequest(payload: any) {
 }
 
 export async function updateUtilityStatus(id: number, status: string, assigned_team?: string, resolution_notes?: string) {
+  addNotification({
+    title: `Utility Ticket ${status}`,
+    text: `Your utility report status updated to "${status}". ${assigned_team ? 'Assigned: ' + assigned_team : ''}`,
+    targetRole: 'Citizen',
+    category: 'utility'
+  });
+
+  if (HAS_EPROVIDER) try {
+    await epPatch('utility_requests', `id=eq.${id}`, { status, assigned_team, resolution_notes });
+    return { success: true };
+  } catch {}
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/utilities/${id}/status`, {
       method: 'PATCH',

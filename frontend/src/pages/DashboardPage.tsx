@@ -337,6 +337,8 @@ export function DashboardPage() {
               </p>
             </Card>
           </div>
+        </div>
+
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left 2 Columns: Search a Ticket Bar & Real-time Lookup */}
@@ -386,7 +388,7 @@ export function DashboardPage() {
                 {/* Quick Sample Search Tags */}
                 <div className="flex items-center gap-2 flex-wrap text-xs">
                   <span className="text-slate-500 font-semibold">Quick Search Examples:</span>
-                  {allSubmissions.slice(0, 3).map((item) => (
+                  {mySubmissions.slice(0, 3).map((item) => (
                     <button
                       key={item.id}
                       onClick={() => setTicketSearchQuery(item.ref_no)}
@@ -494,7 +496,6 @@ export function DashboardPage() {
               </CardContent>
             </Card>
           </div>
-        </div>
         </div>
 
         {/* Modal: Citizen Request Details & Confirmation Voucher */}
