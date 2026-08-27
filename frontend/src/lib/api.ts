@@ -1113,6 +1113,33 @@ export async function loginStaff(email: string, password: string) {
   return { success: false, message: 'Invalid email or password.' };
 }
 
+export async function checkEmailExists(email: string): Promise<boolean> {
+  // Check backend first
+  if (HAS_BACKEND) try {
+    const res = await fetch(`${API_BASE}/auth/check-email?email=${encodeURIComponent(email)}`);
+    if (res.ok) {
+      const data = await res.json();
+      return Boolean(data?.exists);
+    }
+  } catch {}
+
+  // Fallback: check localStorage registered_citizens
+  const registeredUsers = getStore('registered_citizens', [
+    {
+      id: 101,
+      name: 'Juan M. Dela Cruz',
+      email: 'juan.delacruz@citizen.gov.ph',
+      phone: '+63 917 123 4567',
+      password: 'password123',
+      role: 'Citizen',
+      department: 'Resident User',
+      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      created_at: new Date().toISOString()
+    }
+  ]);
+  return registeredUsers.some((u: any) => u.email.toLowerCase() === email.toLowerCase().trim());
+}
+
 export async function registerCitizen(data: { name: string; email: string; phone: string; password: string }) {
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/auth/register-citizen`, {

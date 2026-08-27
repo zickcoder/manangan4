@@ -13,7 +13,7 @@ import {
   Loader2
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
-import { registerCitizen } from '../lib/api';
+import { registerCitizen, checkEmailExists } from '../lib/api';
 
 // User's Real EmailJS Configuration
 const EMAILJS_SERVICE_ID = 'service_12mtxp4';
@@ -94,11 +94,22 @@ export function CitizenRegisterPage() {
       return;
     }
 
+    // ── Check if email is ALREADY registered BEFORE sending OTP ──
+    setSendingEmail(true);
+    try {
+      const alreadyExists = await checkEmailExists(email.trim());
+      if (alreadyExists) {
+        setError('⚠️ This email address is already registered. Please sign in instead.');
+        setSendingEmail(false);
+        return;
+      }
+    } catch {
+      // If check fails, proceed (don't block registration)
+    }
+
     // Generate random 6-digit OTP
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
-
-    setSendingEmail(true);
 
     // Dynamic template parameters covering all common EmailJS variable names
     const templateParams = {
