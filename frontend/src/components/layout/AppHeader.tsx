@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Menu, 
   Search, 
@@ -24,6 +25,7 @@ interface HeaderProps {
 }
 
 export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
+  const navigate = useNavigate();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
@@ -46,13 +48,33 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
     return () => {
       window.removeEventListener('govserve_notifications_updated', syncNotifications);
     };
-  }, [user?.role]);
+  }, []);
 
   const unreadCount = notifications.filter((n) => n.unread).length;
 
   const handleMarkRead = (id: string | number) => {
     markNotificationAsRead(id);
     syncNotifications();
+  };
+
+  const handleNotifClick = (n: NotificationItem) => {
+    markNotificationAsRead(n.id);
+    syncNotifications();
+    setNotificationsOpen(false);
+
+    if (isCitizen) {
+      navigate('/my-tickets');
+    } else {
+      if (n.category === 'facility' || n.category === 'reservation') {
+        navigate('/facilities');
+      } else if (n.category === 'utility') {
+        navigate('/utilities');
+      } else if (n.category === 'cemetery') {
+        navigate('/cemetery');
+      } else {
+        navigate('/dashboard');
+      }
+    }
   };
 
   const handleMarkAllRead = () => {
@@ -140,7 +162,7 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
                   notifications.map((n) => (
                     <div
                       key={n.id}
-                      onClick={() => handleMarkRead(n.id)}
+                      onClick={() => handleNotifClick(n)}
                       className={`py-3 px-2 rounded-xl transition-colors cursor-pointer relative ${
                         n.unread ? 'bg-blue-50/50 hover:bg-blue-50' : 'hover:bg-[#f8fafc]'
                       }`}

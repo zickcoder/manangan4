@@ -173,25 +173,36 @@ INSERT INTO facilities (name, category, capacity, hourly_rate, location, ameniti
 ('Camarin Green Urban Recreation Park', 'Park & Recreation', 500, 0.00, 'Camarin Road Sector 3', 'Jogging Trail, Children Playground, Gazebo, Covered Picnic Sheds, Solar Lights', 'https://images.unsplash.com/photo-1519331379826-f10be5486c6f?w=500&auto=format&fit=crop&q=80'),
 ('Purok 7 Community Amphitheater & Plaza', 'Park & Recreation', 400, 250.00, 'Purok 7 Hillsview', 'Open-Air Stage, Tiered Seating, Ambient Garden Lighting, Perimeter Fence', 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=500&auto=format&fit=crop&q=80');
 
--- Seed Columbarium Niche Plots
+-- Seed Burial Plots (Quezon City Municipal Cemetery)
 INSERT INTO cemetery_plots (cemetery_name, plot_code, section, block_no, lot_no, row_no, col_no, plot_type, status, price) VALUES
-('Barangay 178 Municipal Cemetery', 'COL-R01-C01', 'Columbarium Wall Alpha', 'Row 1', 'Vault 1', 1, 1, 'Columbarium Niche', 'Occupied', 18000.00),
-('Barangay 178 Municipal Cemetery', 'COL-R01-C02', 'Columbarium Wall Alpha', 'Row 1', 'Vault 2', 1, 2, 'Columbarium Niche', 'Occupied', 18000.00),
-('Barangay 178 Municipal Cemetery', 'COL-R01-C03', 'Columbarium Wall Alpha', 'Row 1', 'Vault 3', 1, 3, 'Columbarium Niche', 'Available', 18000.00),
-('Barangay 178 Municipal Cemetery', 'COL-R01-C04', 'Columbarium Wall Alpha', 'Row 1', 'Vault 4', 1, 4, 'Columbarium Niche', 'Available', 18000.00);
+('Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)', 'BW-A-R01-C01', 'Section A — North Burial Wall', 'Row 1', 'Niche 1', 1, 1, 'Burial Niche', 'Occupied', 18000.00),
+('Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)', 'BW-A-R01-C02', 'Section A — North Burial Wall', 'Row 1', 'Niche 2', 1, 2, 'Burial Niche', 'Occupied', 18000.00),
+('Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)', 'BW-A-R01-C03', 'Section A — North Burial Wall', 'Row 1', 'Niche 3', 1, 3, 'Burial Niche', 'Occupied', 18000.00),
+('Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)', 'BW-A-R01-C04', 'Section A — North Burial Wall', 'Row 1', 'Niche 4', 1, 4, 'Burial Niche', 'Occupied', 18000.00),
+('Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)', 'BW-A-R01-C05', 'Section A — North Burial Wall', 'Row 1', 'Niche 5', 1, 5, 'Burial Niche', 'Occupied', 18000.00),
+('Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)', 'BW-A-R01-C06', 'Section A — North Burial Wall', 'Row 1', 'Niche 6', 1, 6, 'Burial Niche', 'Reserved', 18000.00),
+('Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)', 'BW-A-R01-C07', 'Section A — North Burial Wall', 'Row 1', 'Niche 7', 1, 7, 'Burial Niche', 'Reserved', 18000.00);
+
+-- Seed Deceased Burial Permits (Matching 5 Occupied Plots)
+INSERT INTO burial_records (reference_no, permit_no, deceased_name, date_of_birth, date_of_death, burial_date, plot_code, cemetery_name, contact_person, contact_phone, applicant_email, status) VALUES
+('BUR-2026-081', 'BP-2026-0089', 'Severino M. Dela Cruz', '1948-03-12', '2026-08-15', '2026-08-20', 'BW-A-R01-C01', 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)', 'Juan M. Dela Cruz', '+63 917 123 4567', 'juan.delacruz@citizen.gov.ph', 'Approved'),
+('BUR-2026-082', 'BP-2026-0090', 'Florencia T. Bautista', '1955-09-24', '2026-08-18', '2026-08-24', 'BW-A-R01-C02', 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)', 'Ricardo Bautista', '+63 919 333 7712', 'ricardo.bautista@gmail.com', 'Completed'),
+('BUR-2026-083', 'BP-2026-0091', 'Hon. Benjamin G. Ramos', '1940-11-05', '2026-08-21', '2026-08-27', 'BW-A-R01-C03', 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)', 'Consuelo Ramos', '+63 922 444 1109', 'consuelo.ramos@gmail.com', 'Approved'),
+('BUR-2026-084', 'BP-2026-0092', 'Carlito V. Santos', '1962-04-18', '2026-08-22', '2026-08-28', 'BW-A-R01-C04', 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)', 'Elena Santos', '+63 917 888 2211', 'elena.santos@gmail.com', 'Completed'),
+('BUR-2026-085', 'BP-2026-0093', 'Teresa L. Mendoza', '1951-12-30', '2026-08-23', '2026-08-29', 'BW-A-R01-C05', 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)', 'Mateo Mendoza', '+63 920 111 3344', 'mateo.mendoza@gmail.com', 'Approved');
 
 -- Seed Initial Facility Reservation
 INSERT INTO facility_reservations (reference_no, facility_id, facility_name, applicant_name, applicant_email, applicant_phone, purpose, event_date, start_time, end_time, attendees, status, remarks) VALUES
-('RES-2026-001', 1, 'Barangay 178 Multi-Purpose Civic Center', 'Juan M. Dela Cruz', 'juan.delacruz@citizen.gov.ph', '+63 917 123 4567', 'Barangay Youth Sports & Leadership Assembly', '2026-09-05', '08:00 AM', '12:00 PM', 150, 'Approved', 'Approved by Executive Committee');
+('RES-2026-001', 1, 'Barangay Multi-Purpose Civic Center', 'Juan M. Dela Cruz', 'juan.delacruz@citizen.gov.ph', '+63 917 123 4567', 'Barangay Youth Sports & Leadership Assembly', '2026-09-05', '08:00 AM', '12:00 PM', 150, 'Approved', 'Approved by Executive Committee');
 
 -- Seed Initial Water & Drainage Incident Ticket
 INSERT INTO utility_requests (ticket_no, citizen_name, citizen_phone, citizen_email, service_type, location, affected_households, description, urgency, ai_priority_score, status, assigned_team) VALUES
-('UTL-2026-001', 'Juan M. Dela Cruz', '+63 917 123 4567', 'juan.delacruz@citizen.gov.ph', 'Drainage Declogging', 'Zone 2 Main Drainage Culvert', '6 - 15 Households (Entire Street / Alley)', 'Heavy storm canal blockage causing road overflow.', 'Urgent', 85, 'Dispatched', 'Quick Response Water Crew Alpha');
+('UTL-2026-001', 'Juan M. Dela Cruz', '+63 917 123 4567', 'juan.delacruz@citizen.gov.ph', 'Drainage Declogging', 'Zone 2 Main Drainage Culvert', '6 - 15 Households (Entire Street / Alley)', 'Heavy storm canal blockage causing road overflow.', 'Urgent', 85, 'In Progress', 'Quick Response Water Crew Alpha');
 
 -- Seed Assets
 INSERT INTO assets (asset_tag, name, category, serial_no, purchase_date, purchase_cost, current_condition, assigned_department, specs, image_url) VALUES
 ('AST-2026-001', 'Isuzu 5,000L Rapid Water Response Tanker', 'Heavy Equipment', 'ISZ-WT-88219', '2024-02-15', 3200000, 'Operational', 'Disaster Risk Reduction & Management (DRRMO)', 'High-pressure water cannon, 5000L tank, 4x4 off-road chassis', 'https://images.unsplash.com/photo-1596720426673-e4e14290f0cc?w=600&auto=format&fit=crop&q=80'),
-('AST-2026-002', 'Caterpillar 45kVA Civic Standby Diesel Generator', 'Water Pump & Generator', 'CAT-GEN-9901', '2023-08-20', 850000, 'Operational', 'Barangay 178 Civic Center', '45kVA 3-Phase Silent Type, Automatic Transfer Switch (ATS)', 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600&auto=format&fit=crop&q=80');
+('AST-2026-002', 'Caterpillar 45kVA Civic Standby Diesel Generator', 'Water Pump & Generator', 'CAT-GEN-9901', '2023-08-20', 850000, 'Operational', 'Barangay Civic Center', '45kVA 3-Phase Silent Type, Automatic Transfer Switch (ATS)', 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600&auto=format&fit=crop&q=80');
 
 -- Seed Initial Activity Log
 INSERT INTO activity_logs (user_name, action, module, details) VALUES

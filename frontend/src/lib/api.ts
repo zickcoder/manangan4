@@ -109,42 +109,31 @@ function generateInitialPlots() {
   const plots: any[] = [];
   let id = 1;
   for (let r = 1; r <= 8; r++) {
+    const sectionName = r <= 4 ? 'Section A — North Burial Wall' : 'Section B — South Burial Wall';
+    const secCode = r <= 4 ? 'BW-A' : 'BW-B';
     for (let c = 1; c <= 10; c++) {
       const rowStr = r < 10 ? `R0${r}` : `R${r}`;
       const colStr = c < 10 ? `C0${c}` : `C${c}`;
       let status = 'Available';
-      if ((r === 1 && c === 2) || (r === 2 && c === 5) || (r === 3 && c === 8) || (r === 5 && c === 6) || (r === 7 && c === 9)) {
+      if (r === 1 && c <= 5) {
         status = 'Occupied';
-      } else if ((r === 1 && c === 4) || (r === 4 && c === 7) || (r === 6 && c === 3)) {
+      } else if (r === 1 && (c === 6 || c === 7)) {
         status = 'Reserved';
       }
       plots.push({
         id: id++,
-        cemetery_name: 'Barangay 178 Municipal Cemetery',
-        plot_code: `COL-${rowStr}-${colStr}`,
-        section: 'Columbarium Wall Alpha',
+        cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
+        plot_code: `${secCode}-${rowStr}-${colStr}`,
+        section: sectionName,
         block_no: `Row ${r}`,
-        lot_no: `Vault ${c}`,
+        lot_no: `Niche ${c}`,
         row_no: r,
         col_no: c,
-        plot_type: 'Columbarium Niche',
+        plot_type: 'Burial Niche',
         status,
         price: 18000.00
       });
     }
-  }
-  for (let i = 1; i <= 10; i++) {
-    plots.push({
-      id: id++,
-      cemetery_name: 'Barangay 178 Municipal Cemetery',
-      plot_code: `SEC-A-B01-L${i < 10 ? '0' + i : i}`,
-      section: 'Section A - St. Peter Lawn',
-      block_no: 'Block 1',
-      lot_no: `Lot ${i}`,
-      plot_type: 'Lawn Lot',
-      status: i <= 3 ? 'Occupied' : i === 4 ? 'Reserved' : 'Available',
-      price: 25000.00
-    });
   }
   return plots;
 }
@@ -158,7 +147,8 @@ const DEFAULT_BURIALS = [
     date_of_death: '2026-08-15',
     burial_date: '2026-08-20',
     plot_id: 1,
-    plot_code: 'COL-R01-C01',
+    plot_code: 'BW-A-R01-C01',
+    cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
     contact_person: 'Juan M. Dela Cruz',
     applicant_email: 'juan.delacruz@citizen.gov.ph',
     contact_phone: '+63 917 123 4567',
@@ -173,7 +163,8 @@ const DEFAULT_BURIALS = [
     date_of_death: '2026-08-18',
     burial_date: '2026-08-24',
     plot_id: 2,
-    plot_code: 'COL-R01-C02',
+    plot_code: 'BW-A-R01-C02',
+    cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
     contact_person: 'Ricardo Bautista (Husband)',
     contact_phone: '+63 919 333 7712',
     status: 'Completed',
@@ -186,12 +177,43 @@ const DEFAULT_BURIALS = [
     date_of_birth: '1940-11-05',
     date_of_death: '2026-08-21',
     burial_date: '2026-08-27',
-    plot_id: 5,
-    plot_code: 'COL-R01-C05',
+    plot_id: 3,
+    plot_code: 'BW-A-R01-C03',
+    cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
     contact_person: 'Consuelo Ramos (Wife)',
     contact_phone: '+63 922 444 1109',
     status: 'Approved',
     permit_no: 'BP-2026-0091'
+  },
+  {
+    id: 4,
+    reference_no: 'BUR-2026-084',
+    deceased_name: 'Carlito V. Santos',
+    date_of_birth: '1962-04-18',
+    date_of_death: '2026-08-22',
+    burial_date: '2026-08-28',
+    plot_id: 4,
+    plot_code: 'BW-A-R01-C04',
+    cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
+    contact_person: 'Elena Santos (Daughter)',
+    contact_phone: '+63 917 888 2211',
+    status: 'Completed',
+    permit_no: 'BP-2026-0092'
+  },
+  {
+    id: 5,
+    reference_no: 'BUR-2026-085',
+    deceased_name: 'Teresa L. Mendoza',
+    date_of_birth: '1951-12-30',
+    date_of_death: '2026-08-23',
+    burial_date: '2026-08-29',
+    plot_id: 5,
+    plot_code: 'BW-A-R01-C05',
+    cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
+    contact_person: 'Mateo Mendoza (Son)',
+    contact_phone: '+63 920 111 3344',
+    status: 'Approved',
+    permit_no: 'BP-2026-0093'
   }
 ];
 
@@ -209,7 +231,7 @@ const DEFAULT_UTILITIES = [
     description: 'Heavy blockage causing backflow during high tide and rain.',
     urgency: 'Urgent',
     ai_priority_score: 85,
-    status: 'Dispatched',
+    status: 'In Progress',
     assigned_team: 'Barangay Drainage Team Alpha',
     resolution_notes: 'Crew Alpha dispatched with suction tanker',
     created_at: new Date(Date.now() - 86400000 * 2).toISOString()
@@ -496,28 +518,39 @@ export async function createReservation(payload: any) {
   return { success: true, reference_no: refNo, data: newReservation };
 }
 
-export async function updateReservationStatus(id: number, status: string, remarks?: string, reviewer_name?: string) {
+export async function updateReservationStatus(
+  id: number, 
+  status: string, 
+  remarks?: string, 
+  reviewer_name?: string,
+  extraData?: { fee_amount?: number; payment_due_date?: string; paid_at?: string; payment_method?: string }
+) {
   // Trigger real-time notification to Citizen
   addNotification({
     title: `Reservation ${status}`,
-    text: `Your reservation request #${id} status has been updated to "${status}". ${remarks ? 'Note: ' + remarks : ''}`,
+    text: `Your reservation request status has been updated to "${status}". ${remarks ? 'Note: ' + remarks : ''}`,
     targetRole: 'Citizen',
     category: 'reservation',
   });
 
   if (HAS_EPROVIDER) try {
-    await epPatch('facility_reservations', `id=eq.${id}`, { status, remarks, reviewer_name });
+    await epPatch('facility_reservations', `id=eq.${id}`, { status, remarks, reviewer_name, ...extraData });
     return { success: true };
   } catch {}
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/facilities/reservations/${id}/status`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, remarks, reviewer_name })
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, remarks, reviewer_name, ...extraData })
     });
     if (res.ok) return await res.json();
   } catch {}
   const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
-  const item = reservations.find((r: any) => r.id === id);
-  if (item) { item.status = status; if (remarks) item.remarks = remarks; setStore('reservations', reservations); }
+  const item = reservations.find((r: any) => r.id === id || String(r.id) === String(id));
+  if (item) { 
+    item.status = status; 
+    if (remarks) item.remarks = remarks;
+    if (extraData) Object.assign(item, extraData);
+    setStore('reservations', reservations); 
+  }
   return { success: true };
 }
 
@@ -600,8 +633,7 @@ export async function checkFacilityAI(facilityName: string, eventDate: string, s
 }
 
 export async function fetchCemeteries(): Promise<string[]> {
-  // Return plain strings so components can use them directly as option values/labels
-  return ['Barangay 178 Municipal Cemetery'];
+  return ['Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)'];
 }
 
 export async function fetchCemeteryPlots(section = 'all', status = 'all', cemetery_name = 'all') {
@@ -681,7 +713,40 @@ export async function createBatchPlots(payload: any) {
   return { success: true, count: newPlots.length };
 }
 
+function processAutoOccupancy() {
+  const burials = getStore('burials', DEFAULT_BURIALS);
+  const plots = getStore('plots', generateInitialPlots());
+  const todayStr = new Date().toISOString().split('T')[0];
+  let changedPlots = false;
+  let changedBurials = false;
+
+  burials.forEach((b: any) => {
+    // If burial is approved or paid/completed, and burial_date is today or in the past:
+    if ((b.status === 'Approved' || b.status === 'Paid' || b.status === 'Completed') && b.burial_date && b.burial_date <= todayStr) {
+      if (b.status !== 'Completed') {
+        b.status = 'Completed';
+        changedBurials = true;
+      }
+      // Update matching plot to Occupied
+      const plot = plots.find((p: any) => p.id === Number(b.plot_id) || p.plot_code === b.plot_code);
+      if (plot && plot.status !== 'Occupied') {
+        plot.status = 'Occupied';
+        plot.deceased_name = b.deceased_name;
+        plot.burial_date = b.burial_date;
+        plot.date_of_death = b.date_of_death;
+        plot.permit_no = b.permit_no;
+        plot.contact_person = b.contact_person;
+        changedPlots = true;
+      }
+    }
+  });
+
+  if (changedPlots) setStore('plots', plots);
+  if (changedBurials) setStore('burials', burials);
+}
+
 export async function fetchBurials() {
+  processAutoOccupancy();
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/cemetery/burials`);
     if (res.ok) {
@@ -691,6 +756,53 @@ export async function fetchBurials() {
   } catch {}
 
   return getStore('burials', DEFAULT_BURIALS);
+}
+
+export async function updateBurialStatus(id: number, status: string, extraData?: { fee_amount?: number; permit_no?: string; remarks?: string }) {
+  const burials = getStore('burials', DEFAULT_BURIALS);
+  const index = burials.findIndex((b: any) => b.id === id);
+  if (index !== -1) {
+    const burial = burials[index];
+    burial.status = status;
+    if (extraData?.fee_amount !== undefined) burial.fee_amount = extraData.fee_amount;
+    if (extraData?.permit_no) burial.permit_no = extraData.permit_no;
+    if (extraData?.remarks) burial.remarks = extraData.remarks;
+
+    // Handle plot state changes based on burial status:
+    if (status === 'Cancelled' || status === 'Rejected') {
+      if (burial.plot_id || burial.plot_code) {
+        const plots = getStore('plots', generateInitialPlots());
+        const plot = plots.find((p: any) => p.id === Number(burial.plot_id) || p.plot_code === burial.plot_code);
+        if (plot) {
+          plot.status = 'Available';
+          delete plot.deceased_name;
+          setStore('plots', plots);
+        }
+      }
+    } else if (status === 'Pending Payment' || status === 'Approved' || status === 'Paid') {
+      if (burial.plot_id || burial.plot_code) {
+        const plots = getStore('plots', generateInitialPlots());
+        const plot = plots.find((p: any) => p.id === Number(burial.plot_id) || p.plot_code === burial.plot_code);
+        if (plot && plot.status !== 'Occupied') {
+          plot.status = 'Reserved';
+          setStore('plots', plots);
+        }
+      }
+    }
+
+    setStore('burials', burials);
+    processAutoOccupancy();
+
+    addNotification({
+      title: `Burial Application ${status}`,
+      text: `Application ${burial.reference_no} status changed to ${status}.`,
+      targetRole: 'Citizen',
+      category: 'cemetery'
+    });
+
+    return { success: true, data: burial };
+  }
+  return { success: false, message: 'Burial record not found' };
 }
 
 export async function createBurial(payload: any) {
@@ -982,7 +1094,8 @@ export async function loginStaff(email: string, password: string) {
     if (res.ok) return await res.json();
   } catch {}
 
-  if (email === 'admin@govserve.gov.ph' && password === 'admin123') {
+  const cleanEmail = (email || '').toLowerCase().trim();
+  if (cleanEmail === 'admin@govserve.gov.ph' && (password === 'admin123' || password === 'admin')) {
     return {
       success: true,
       token: 'jwt-local-demo-token-998822',
@@ -997,22 +1110,7 @@ export async function loginStaff(email: string, password: string) {
     };
   }
 
-  if (password.length >= 4) {
-    return {
-      success: true,
-      token: 'jwt-local-demo-token-112233',
-      user: {
-        id: 2,
-        name: email.split('@')[0].toUpperCase(),
-        email: email,
-        role: 'Staff Officer',
-        department: 'Public Facilities & Services',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
-      }
-    };
-  }
-
-  return { success: false, error: 'Invalid credentials. Use admin@govserve.gov.ph / admin123' };
+  return { success: false, message: 'Invalid email or password.' };
 }
 
 export async function registerCitizen(data: { name: string; email: string; phone: string; password: string }) {
@@ -1033,14 +1131,14 @@ export async function registerCitizen(data: { name: string; email: string; phone
       phone: '+63 917 123 4567',
       password: 'password123',
       role: 'Citizen',
-      department: 'Barangay 178 Resident',
+      department: 'Resident User',
       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
       created_at: new Date().toISOString()
     }
   ]);
 
   if (registeredUsers.some((u: any) => u.email.toLowerCase() === data.email.toLowerCase())) {
-    return { success: false, message: 'Email address already registered. Please sign in.' };
+    return { success: false, message: 'Email address is already registered.' };
   }
 
   const newCitizen = {
@@ -1083,13 +1181,14 @@ export async function loginCitizen(email: string, password: string) {
       phone: '+63 917 123 4567',
       password: 'password123',
       role: 'Citizen',
-      department: 'Barangay 178 Resident',
+      department: 'Resident User',
       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
       created_at: new Date().toISOString()
     }
   ]);
 
-  const user = registeredUsers.find((u: any) => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
+  const cleanEmail = (email || '').toLowerCase().trim();
+  const user = registeredUsers.find((u: any) => u.email.toLowerCase() === cleanEmail && u.password === password);
   if (user) {
     return {
       success: true,
@@ -1106,23 +1205,36 @@ export async function loginCitizen(email: string, password: string) {
     };
   }
 
-  // Quick demo login fallback for easy grading / testing
-  if (password.length >= 4) {
-    return {
-      success: true,
-      token: 'jwt-citizen-session-token',
-      user: {
-        id: Date.now(),
-        name: email.split('@')[0].replace('.', ' ').toUpperCase(),
-        email: email,
-        phone: '+63 917 555 9999',
-        role: 'Citizen',
-        department: 'Registered Resident (Barangay 178)',
-        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
-      }
-    };
-  }
-
-  return { success: false, message: 'Invalid citizen credentials.' };
+  return { success: false, message: 'Invalid email or password.' };
 }
 
+export function getLockoutTimeRemaining(key: string = 'default'): number {
+  if (typeof window === 'undefined') return 0;
+  const until = localStorage.getItem(`govserve_locked_until_${key}`);
+  if (!until) return 0;
+  const rem = Math.ceil((parseInt(until, 10) - Date.now()) / 1000);
+  if (rem <= 0) {
+    localStorage.removeItem(`govserve_locked_until_${key}`);
+    localStorage.removeItem(`govserve_login_fails_${key}`);
+    return 0;
+  }
+  return rem;
+}
+
+export function recordFailedAttempt(key: string = 'default'): { locked: boolean; fails: number; remSeconds: number } {
+  if (typeof window === 'undefined') return { locked: false, fails: 0, remSeconds: 0 };
+  const currentFails = parseInt(localStorage.getItem(`govserve_login_fails_${key}`) || '0', 10) + 1;
+  localStorage.setItem(`govserve_login_fails_${key}`, String(currentFails));
+  if (currentFails >= 3) {
+    const lockTime = Date.now() + 180 * 1000; // 3 minutes lockout
+    localStorage.setItem(`govserve_locked_until_${key}`, String(lockTime));
+    return { locked: true, fails: currentFails, remSeconds: 180 };
+  }
+  return { locked: false, fails: currentFails, remSeconds: 0 };
+}
+
+export function recordSuccessfulLogin(key: string = 'default') {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(`govserve_login_fails_${key}`);
+  localStorage.removeItem(`govserve_locked_until_${key}`);
+}

@@ -46,7 +46,7 @@ export function InteractivePlotModal({
   const lawnLots = plots.filter(p => p.plot_type !== 'Columbarium Niche' && !p.plot_code.startsWith('COL-'));
 
   const handleCellClick = (plot: CemeteryPlot) => {
-    if (plot.status === 'Occupied' && !isStaff) return;
+    if (plot.status !== 'Available') return;
     setActivePlot(plot);
   };
 
@@ -86,28 +86,10 @@ export function InteractivePlotModal({
         {/* View Switcher & Legend Banner */}
         <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex gap-2">
-            <button
-              onClick={() => setActiveTab('columbarium')}
-              className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
-                activeTab === 'columbarium'
-                  ? 'bg-purple-700 text-white shadow-sm'
-                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-              }`}
-            >
+            <span className="px-3 py-1.5 rounded-xl font-bold bg-purple-700 text-white shadow-sm flex items-center gap-1.5">
               <Layers className="w-4 h-4" />
-              <span>Columbarium Wall (80 Marble Vaults)</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('lawn')}
-              className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
-                activeTab === 'lawn'
-                  ? 'bg-purple-700 text-white shadow-sm'
-                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              <Building2 className="w-4 h-4" />
-              <span>Lawn Lots & Family Estates</span>
-            </button>
+              <span>Municipal Burial Niche Grid (80 Niche Plots)</span>
+            </span>
           </div>
 
           {/* Color Legend */}
@@ -193,7 +175,7 @@ export function InteractivePlotModal({
                         <button
                           key={`${rowNum}-${colNum}`}
                           type="button"
-                          disabled={isOccupied && !isStaff}
+                          disabled={isOccupied || isReserved}
                           onClick={() => handleCellClick(plotObj)}
                           onMouseEnter={() => setHoveredPlot(plotObj)}
                           onMouseLeave={() => setHoveredPlot(null)}
@@ -201,12 +183,12 @@ export function InteractivePlotModal({
                             isSelected
                               ? 'bg-blue-500/30 outline outline-2 outline-blue-600 z-20 shadow-md'
                               : isOccupied
-                              ? 'bg-slate-900/60 cursor-not-allowed'
+                              ? 'bg-slate-900/60 cursor-not-allowed opacity-90'
                               : isReserved
-                              ? 'bg-amber-400/25 hover:bg-amber-400/40 cursor-pointer'
+                              ? 'bg-amber-500/40 cursor-not-allowed ring-1 ring-amber-600/50'
                               : 'bg-transparent hover:bg-white/30 cursor-pointer'
                           }`}
-                          title={`${plotObj.plot_code} • ${plotObj.status} • ₱${plotObj.price}${plotObj.deceased_name ? ' • Deceased: ' + plotObj.deceased_name : ''}`}
+                          title={`${plotObj.plot_code} • ${plotObj.status}${isReserved ? ' (Reserved - Pending Interment)' : ''}${plotObj.deceased_name ? ' • Deceased: ' + plotObj.deceased_name : ''}`}
                         >
                           {/* Clean minimalist coordinate text directly inside the marble square */}
                           <span 

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { 
   Building, 
   Droplet, 
@@ -11,16 +12,29 @@ import {
   Calendar,
   Clock,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  CreditCard,
+  Ban,
+  Printer
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Modal } from "../components/ui/Modal";
-import { fetchReservations, fetchUtilities, fetchBurials } from "../lib/api";
+import { 
+  fetchReservations, 
+  fetchUtilities, 
+  fetchBurials, 
+  updateBurialStatus,
+  updateReservationStatus,
+  cancelUtilityRequest
+} from "../lib/api";
 import { FacilityReservation, UtilityRequest, BurialRecord } from "../types";
 
 export function MyTicketsPage() {
+  const [searchParams] = useSearchParams();
+  const catParam = searchParams.get('category') as any;
+
   const userStr = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
   let user: any = { name: 'Juan M. Dela Cruz', role: 'Citizen', email: 'juan.delacruz@citizen.gov.ph' };
   try {
@@ -33,8 +47,21 @@ export function MyTicketsPage() {
   const [loading, setLoading] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterCategory, setFilterCategory] = useState<'all' | 'facility' | 'utility' | 'cemetery'>('all');
+  const [filterCategory, setFilterCategory] = useState<'all' | 'facility' | 'utility' | 'cemetery'>(
+    catParam === 'facility' || catParam === 'utility' || catParam === 'cemetery' ? catParam : 'all'
+  );
   const [selectedSubmission, setSelectedSubmission] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (catParam) {
+      setFilterCategory(catParam === 'facility' || catParam === 'utility' || catParam === 'cemetery' ? catParam : 'all');
+    }
+  }, [catParam]);
+
+  // Payment Modal State
+  const [selectedPayItem, setSelectedPayItem] = useState<any | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'gcash' | 'maya' | 'card'>('gcash');
+  const [paying, setPaying] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -57,6 +84,51 @@ export function MyTicketsPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleCancelTicket = async (item: any) => {
+    if (!confirm(`Are you sure you want to cancel application ${item.ref_no}?`)) return;
+    try {
+      if (item.category === 'cemetery') {
+        await updateBurialStatus(item.originalId, 'Cancelled');
+      } else if (item.category === 'facility') {
+        await updateReservationStatus(item.originalId, 'Cancelled', 'Cancelled by citizen');
+      } else if (item.category === 'utility') {
+        await cancelUtilityRequest(item.originalId);
+      }
+      loadData();
+      alert(`Application ${item.ref_no} has been cancelled.`);
+    } catch (e) {
+      alert('Failed to cancel application');
+    }
+  };
+
+  const handleProcessPayment = async () => {
+    if (!selectedPayItem) return;
+    setPaying(true);
+    try {
+      if (selectedPayItem.category === 'cemetery') {
+        await updateBurialStatus(selectedPayItem.originalId, 'Paid', {
+          paid_at: new Date().toISOString(),
+          payment_method: paymentMethod
+        });
+      } else if (selectedPayItem.category === 'facility') {
+        await updateReservationStatus(
+          selectedPayItem.originalId,
+          'Paid',
+          `Payment confirmed via ${paymentMethod.toUpperCase()}`,
+          'System Billing',
+          { paid_at: new Date().toISOString(), payment_method: paymentMethod }
+        );
+      }
+      setSelectedPayItem(null);
+      loadData();
+      alert(`Payment successful! Receipt & official confirmation generated for ${selectedPayItem.ref_no}.`);
+    } catch (e) {
+      alert('Payment failed');
+    } finally {
+      setPaying(false);
+    }
+  };
 
   const userEmail = (user?.email || '').toLowerCase().trim();
   const userName = (user?.name || '').toLowerCase().trim();
@@ -82,55 +154,73 @@ export function MyTicketsPage() {
     matchesCitizen((b as any).applicant_email || '', b.contact_person || '', (b as any).citizen_id)
   );
 
+  const formatDateSafely = (dateStr: any) => {
+    if (!dateStr) return 'N/A';
+    try {
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? String(dateStr) : d.toLocaleDateString();
+    } catch {
+      return String(dateStr);
+    }
+  };
+
   const allSubmissions = [
     ...myReservations.map((r) => ({
       id: `res-${r.id}`,
       originalId: r.id,
-      ref_no: r.reference_no,
+      ref_no: r.reference_no || `RES-${r.id}`,
       category: 'facility',
       type: 'Facility Reservation',
-      title: r.facility_name,
-      date: r.event_date,
-      time: `${r.start_time} - ${r.end_time}`,
-      status: r.status,
-      badgeVariant: r.status === 'Approved' ? 'success' : r.status === 'Rejected' ? 'danger' : 'warning',
-      details: r.purpose_event_name || 'Event Booking',
-      applicant: r.applicant_name,
-      contact: r.contact_number,
-      created_at: r.created_at || 'Recently'
+      title: r.facility_name || 'Government Facility',
+      date: formatDateSafely(r.event_date),
+      time: `${r.start_time || ''} - ${r.end_time || ''}`,
+      status: r.status || 'Pending',
+      fee_amount: (r as any).fee_amount || (r.hourly_rate ? r.hourly_rate * 4 : 2000),
+      payment_method: (r as any).payment_method,
+      paid_at: (r as any).paid_at,
+      payment_due_date: (r as any).payment_due_date,
+      badgeVariant: r.status === 'Approved' || r.status === 'Paid' ? 'success' : r.status === 'Pending Payment' ? 'info' : r.status === 'Rejected' ? 'destructive' : r.status === 'Cancelled' ? 'default' : 'warning',
+      details: r.purpose || 'Event Booking',
+      applicant: r.applicant_name || '',
+      contact: r.applicant_phone || '',
+      created_at: formatDateSafely(r.created_at)
     })),
     ...myUtilities.map((u) => ({
       id: `util-${u.id}`,
       originalId: u.id,
-      ref_no: u.ticket_no || u.ticket_no || '',
+      ref_no: u.ticket_no || `UTL-${u.id}`,
       category: 'utility',
       type: 'Water & Drainage Request',
-      title: `${u.service_type || 'Utility'} (${(u as any).urgency_level || u.urgency || 'Urgent'})`,
-      date: new Date(u.created_at || Date.now()).toLocaleDateString(),
-      time: new Date(u.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      title: `${u.service_type || 'Utility Report'} (${u.urgency || 'Urgent'})`,
+      date: formatDateSafely(u.created_at),
+      time: u.created_at ? new Date(u.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Daytime',
       status: u.status || 'Pending',
-      badgeVariant: u.status === 'Resolved' ? 'success' : u.status === 'Dispatched' ? 'info' : 'warning',
-      details: (u as any).incident_description || u.description || u.location || 'See details',
+      badgeVariant: u.status === 'Resolved' ? 'success' : u.status === 'In Progress' ? 'info' : u.status === 'Cancelled' ? 'default' : 'warning',
+      details: u.description || u.location || 'See details',
       applicant: u.citizen_name || '',
-      contact: (u as any).contact_number || u.citizen_phone || '',
-      location: (u as any).specific_location || u.location || '',
-      created_at: u.created_at || 'Recently'
+      contact: u.citizen_phone || '',
+      location: u.location || '',
+      created_at: formatDateSafely(u.created_at)
     })),
     ...myBurials.map((b) => ({
       id: `bur-${b.id}`,
       originalId: b.id,
-      ref_no: b.reference_no || b.permit_no || '',
+      ref_no: b.reference_no || b.permit_no || `BUR-${b.id}`,
       category: 'cemetery',
       type: 'Burial Permit & Niche',
-      title: `Deceased: ${(b as any).deceased_full_name || b.deceased_name || 'Individual'}`,
-      date: b.burial_date || '',
-      time: b.burial_time || '',
-      status: b.status || 'Pending',
-      badgeVariant: b.status === 'Approved' ? 'success' : 'purple',
+      title: `Deceased: ${b.deceased_name || 'Individual'}`,
+      date: formatDateSafely(b.burial_date),
+      time: b.burial_time || '10:00 AM',
+      status: b.status || 'Pending Review',
+      fee_amount: b.fee_amount || (b.status === 'Pending Payment' || b.status === 'Approved' ? 18000 : 0),
+      payment_method: (b as any).payment_method,
+      paid_at: (b as any).paid_at,
+      payment_due_date: (b as any).payment_due_date,
+      badgeVariant: b.status === 'Approved' || b.status === 'Paid' ? 'success' : b.status === 'Completed' ? 'purple' : b.status === 'Pending Payment' ? 'info' : b.status === 'Rejected' ? 'destructive' : b.status === 'Cancelled' ? 'default' : 'warning',
       details: `Plot Code: ${b.plot_code || 'Assigned Niche'}`,
       applicant: b.contact_person || '',
-      contact: (b as any).contact_number || b.contact_phone || '',
-      created_at: b.created_at || 'Recently'
+      contact: b.contact_phone || '',
+      created_at: formatDateSafely(b.created_at)
     }))
   ];
 
@@ -252,15 +342,28 @@ export function MyTicketsPage() {
                       <td className="py-3.5 px-4">
                         <Badge variant={item.badgeVariant as any}>{item.status}</Badge>
                       </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          leftIcon={<Eye className="w-3.5 h-3.5 text-blue-600" />}
-                          onClick={() => setSelectedSubmission(item)}
-                        >
-                          View Voucher
-                        </Button>
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
+                            leftIcon={<Eye className="w-3.5 h-3.5 text-blue-600" />}
+                            onClick={() => setSelectedSubmission(item)}
+                          >
+                            To View
+                          </Button>
+                          {(item.status === 'Pending Review' || item.status === 'Pending Payment' || item.status === 'Pending') && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs text-rose-600 hover:bg-rose-50 border-rose-200"
+                              onClick={() => handleCancelTicket(item)}
+                            >
+                              Cancel
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -271,44 +374,116 @@ export function MyTicketsPage() {
         </CardContent>
       </Card>
 
-      {/* Modal: Official Voucher */}
+      {/* Modal: Official Order of Payment & Ticket Voucher */}
       <Modal
         isOpen={selectedSubmission !== null}
         onClose={() => setSelectedSubmission(null)}
-        title={`Official Voucher — ${selectedSubmission?.ref_no}`}
-        description="Detailed copy of your submitted application and real-time municipal status."
+        title={`Official Order of Payment & Ticket Voucher — ${selectedSubmission?.ref_no}`}
+        description="Official Municipal Ticket Copy. Present this at the LGU Treasury Desk for Face-to-Face Payment."
         maxWidth="lg"
       >
         {selectedSubmission && (
           <div className="space-y-4 text-xs">
+            {/* Header Voucher Banner */}
             <div className="p-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-slate-700">
               <div>
-                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest block">REPUBLIC OF THE PHILIPPINES</span>
+                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest block">REPUBLIC OF THE PHILIPPINES — MUNICIPAL TREASURY & E-SERVICES</span>
                 <h4 className="text-base font-extrabold font-display">{selectedSubmission.type}</h4>
                 <p className="text-xs font-mono text-slate-300 mt-0.5">Tracking No: <strong>{selectedSubmission.ref_no}</strong></p>
               </div>
-              <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-xl backdrop-blur-sm border border-white/10">
+              <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-xl backdrop-blur-sm border border-white/10 shrink-0">
                 <QrCode className="w-8 h-8 text-white shrink-0" />
                 <div className="text-[9px] font-mono leading-tight">
-                  <p className="font-bold text-emerald-400">VERIFIED LOG</p>
+                  <p className="font-bold text-emerald-400">VERIFIED LGU TICKET</p>
                   <p className="text-slate-300">{selectedSubmission.date}</p>
                 </div>
               </div>
             </div>
 
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-              <span className="font-bold text-slate-700">Current LGU Status:</span>
+            {/* Real-time Status Notice */}
+            <div className={`p-3.5 rounded-xl border flex items-center justify-between ${
+              selectedSubmission.status === 'Paid' || selectedSubmission.status === 'Approved' || selectedSubmission.status === 'Completed'
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                : selectedSubmission.status === 'Pending Payment'
+                ? 'bg-amber-50 border-amber-300 text-amber-950'
+                : selectedSubmission.status === 'Rejected'
+                ? 'bg-red-50 border-red-300 text-red-950'
+                : 'bg-blue-50 border-blue-300 text-blue-950'
+            }`}>
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider block">LGU Ticket & Fee Status</span>
+                <h4 className="font-bold text-sm">
+                  {selectedSubmission.status === 'Pending Payment'
+                    ? 'Approved — Waiting for Face-to-Face LGU Treasury Payment'
+                    : selectedSubmission.status === 'Paid'
+                    ? 'PAID & APPROVED — Official Receipt Issued'
+                    : selectedSubmission.status}
+                </h4>
+              </div>
               <Badge variant={selectedSubmission.badgeVariant as any} size="md">
                 {selectedSubmission.status}
               </Badge>
             </div>
 
-            <div className="p-3.5 bg-blue-50/60 rounded-xl border border-blue-200 space-y-1.5">
-              <p className="font-bold text-blue-950 text-xs uppercase tracking-wider">📋 Submitted Details</p>
+            {/* Face to Face Treasury Instruction for Unpaid Tickets */}
+            {(selectedSubmission.status === 'Pending Payment' || selectedSubmission.status === 'Approved' || selectedSubmission.fee_amount > 0) && (
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Assessed Fee Amount</span>
+                  <span className="font-mono font-extrabold text-base text-slate-900">₱{(selectedSubmission.fee_amount || 0).toLocaleString()}.00</span>
+                </div>
+                {selectedSubmission.status === 'Pending Payment' && (
+                  <p className="text-amber-800 font-medium text-[11px] pt-1">
+                    📍 <strong>Face-to-Face Payment Instruction:</strong> Please present this printable ticket or tracking number <strong>({selectedSubmission.ref_no})</strong> at the LGU Treasury Desk for cash settlement before payment due date {selectedSubmission.payment_due_date ? `(${selectedSubmission.payment_due_date})` : ''}.
+                  </p>
+                )}
+                {selectedSubmission.status === 'Paid' && (
+                  <p className="text-emerald-800 font-medium text-[11px] pt-1">
+                    ✓ <strong>Payment Complete:</strong> Treasury Cash Payment confirmed. Official Receipt generated on {selectedSubmission.paid_at || selectedSubmission.date}.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Submitted Application Data */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+              <p className="font-bold text-slate-950 text-xs uppercase tracking-wider">📋 Application Details</p>
               <p className="text-slate-800"><strong>Title / Service:</strong> {selectedSubmission.title}</p>
               <p className="text-slate-800"><strong>Details:</strong> {selectedSubmission.details}</p>
               <p className="text-slate-800"><strong>Schedule / Date:</strong> {selectedSubmission.date} ({selectedSubmission.time})</p>
               <p className="text-slate-800"><strong>Applicant:</strong> {selectedSubmission.applicant} ({selectedSubmission.contact || 'N/A'})</p>
+            </div>
+
+            {/* Modal Bottom Actions (Printable Receipt Button) */}
+            <div className="pt-3 flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-slate-100">
+              <Button size="sm" variant="outline" className="w-full sm:w-auto font-bold" onClick={() => setSelectedSubmission(null)}>
+                Close
+              </Button>
+              <div className="flex gap-2 w-full sm:w-auto justify-end">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="bg-blue-600 hover:bg-blue-700 font-bold text-xs"
+                  leftIcon={<Printer className="w-3.5 h-3.5" />}
+                  onClick={() => window.print()}
+                >
+                  Print Order of Payment / Receipt
+                </Button>
+                {(selectedSubmission.status === 'Pending Review' || selectedSubmission.status === 'Pending Payment' || selectedSubmission.status === 'Pending') && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-rose-600 border-rose-200 hover:bg-rose-50 font-bold text-xs"
+                    leftIcon={<Ban className="w-3.5 h-3.5" />}
+                    onClick={() => {
+                      handleCancelTicket(selectedSubmission);
+                      setSelectedSubmission(null);
+                    }}
+                  >
+                    Cancel Application
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}

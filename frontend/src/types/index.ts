@@ -92,7 +92,8 @@ export interface BurialRecord {
   valid_id_url?: string;
   // Section E: Declaration
   declaration_accepted?: boolean;
-  status: 'Pending Review' | 'Approved' | 'Completed';
+  fee_amount?: number;
+  status: 'Pending Review' | 'Pending Payment' | 'Paid' | 'Approved' | 'Completed' | 'Rejected' | 'Cancelled';
   created_at: string;
 }
 
@@ -108,7 +109,7 @@ export interface UtilityRequest {
   description: string;
   urgency: 'Urgent' | 'High' | 'Normal';
   ai_priority_score: number;
-  status: 'Pending' | 'Dispatched' | 'In Progress' | 'Resolved';
+  status: 'Pending' | 'In Progress' | 'Resolved' | 'Rejected';
   assigned_team?: string;
   resolution_notes?: string;
   created_at: string;

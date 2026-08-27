@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { 
   Lock, 
@@ -6,10 +6,9 @@ import {
   ArrowRight, 
   Eye, 
   EyeOff, 
-  ArrowLeft,
-  KeyRound
+  ArrowLeft
 } from 'lucide-react';
-import { loginCitizen } from '../lib/api';
+import { loginCitizen, getLockoutTimeRemaining, recordFailedAttempt, recordSuccessfulLogin } from '../lib/api';
 
 export function CitizenLoginPage() {
   const navigate = useNavigate();
@@ -18,37 +17,59 @@ export function CitizenLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
+
+  useEffect(() => {
+    const rem = getLockoutTimeRemaining('citizen');
+    if (rem > 0) setLockoutSeconds(rem);
+  }, []);
+
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setError('');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
+
+    const remLock = getLockoutTimeRemaining('citizen');
+    if (remLock > 0) {
+      setLockoutSeconds(remLock);
+      setError(`🔒 Account locked. Try again in ${remLock} seconds.`);
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const res = await loginCitizen(email, password);
       if (res.success) {
+        recordSuccessfulLogin('citizen');
         sessionStorage.setItem('govserve_user', JSON.stringify(res.user));
         localStorage.setItem('govserve_user', JSON.stringify(res.user));
         navigate('/dashboard');
       } else {
-        setError(res.message || 'Invalid email or password.');
+        const status = recordFailedAttempt('citizen');
+        if (status.locked) {
+          setLockoutSeconds(status.remSeconds);
+          setError(`🔒 Security Lockout: 3 invalid attempts reached. Account locked for 3 minutes (180s).`);
+        } else {
+          setError(`Invalid email or password. Attempt ${status.fails} of 3 before 3-minute lockout.`);
+        }
       }
     } catch (err) {
-      if (password.length >= 4) {
-        const uObj = {
-          id: Date.now(),
-          name: email.includes('juan') ? 'Juan M. Dela Cruz' : email.split('@')[0].toUpperCase(),
-          email: email,
-          phone: '+63 917 123 4567',
-          role: 'Citizen',
-          department: 'Resident'
-        };
-        sessionStorage.setItem('govserve_user', JSON.stringify(uObj));
-        localStorage.setItem('govserve_user', JSON.stringify(uObj));
-        navigate('/dashboard');
-      } else {
-        setError('Login failed. Please verify your credentials.');
-      }
+      setError('Login error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -187,18 +208,6 @@ export function CitizenLoginPage() {
                 )}
               </button>
             </form>
-
-            {/* Quick Demo Autofill */}
-            <div 
-              onClick={() => { setEmail('juan.delacruz@citizen.gov.ph'); setPassword('password123'); setError(''); }}
-              className="p-3 bg-blue-50/70 hover:bg-blue-50 rounded-xl border border-blue-200 cursor-pointer transition-all flex items-center justify-between text-xs"
-            >
-              <div className="flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-blue-600 shrink-0" />
-                <span className="text-[11px] font-semibold text-slate-700">Autofill Demo Citizen Account</span>
-              </div>
-              <span className="text-[11px] font-bold text-blue-600">Fill</span>
-            </div>
 
             {/* Footer link */}
             <div className="pt-2 text-center text-xs text-slate-600 border-t border-slate-100">

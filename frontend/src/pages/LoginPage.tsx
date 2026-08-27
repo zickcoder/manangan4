@@ -11,7 +11,7 @@ import {
   CheckCircle2,
   ArrowLeft
 } from 'lucide-react';
-import { loginStaff, loginCitizen, registerCitizen } from '../lib/api';
+import { loginStaff, loginCitizen, registerCitizen, getLockoutTimeRemaining, recordFailedAttempt, recordSuccessfulLogin } from '../lib/api';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -26,14 +26,38 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
+
+  useEffect(() => {
+    const rem = getLockoutTimeRemaining(authMode);
+    if (rem > 0) setLockoutSeconds(rem);
+    else setLockoutSeconds(0);
+  }, [authMode]);
+
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setError('');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
 
   const handleTabChange = (mode: 'citizen_login' | 'citizen_register' | 'staff_login') => {
     setAuthMode(mode);
     setError('');
     setSuccessMsg('');
+    const rem = getLockoutTimeRemaining(mode);
+    setLockoutSeconds(rem > 0 ? rem : 0);
     if (mode === 'staff_login') {
       setEmail('admin@govserve.gov.ph');
-      setPassword('admin');
+      setPassword('admin123');
     } else if (mode === 'citizen_login') {
       setEmail('juan.delacruz@citizen.gov.ph');
       setPassword('password123');
@@ -47,9 +71,17 @@ export function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
     setSuccessMsg('');
+
+    const remLock = getLockoutTimeRemaining(authMode);
+    if (remLock > 0) {
+      setLockoutSeconds(remLock);
+      setError(`🔒 Account temporarily locked due to 3 failed attempts. Please try again in ${remLock} seconds.`);
+      return;
+    }
+
+    setLoading(true);
 
     try {
       if (authMode === 'citizen_register') {
@@ -61,6 +93,7 @@ export function LoginPage() {
 
         const res = await registerCitizen({ name, email, phone, password });
         if (res.success) {
+          recordSuccessfulLogin(authMode);
           setSuccessMsg('Account registered successfully! Logging you in...');
           sessionStorage.setItem('govserve_user', JSON.stringify(res.user));
           localStorage.setItem('govserve_user', JSON.stringify(res.user));
@@ -71,37 +104,39 @@ export function LoginPage() {
       } else if (authMode === 'citizen_login') {
         const res = await loginCitizen(email, password);
         if (res.success) {
+          recordSuccessfulLogin(authMode);
           sessionStorage.setItem('govserve_user', JSON.stringify(res.user));
           localStorage.setItem('govserve_user', JSON.stringify(res.user));
           navigate('/dashboard');
         } else {
-          setError(res.message || 'Invalid citizen credentials.');
+          const status = recordFailedAttempt(authMode);
+          if (status.locked) {
+            setLockoutSeconds(status.remSeconds);
+            setError(`🔒 Security Lockout: 3 invalid attempts reached. Account locked for 3 minutes (180s).`);
+          } else {
+            setError(`Invalid email or password. Attempt ${status.fails} of 3 before 3-minute lockout.`);
+          }
         }
       } else {
         // Staff Login
         const res = await loginStaff(email, password);
         if (res.success) {
+          recordSuccessfulLogin(authMode);
           sessionStorage.setItem('govserve_user', JSON.stringify(res.user));
           localStorage.setItem('govserve_user', JSON.stringify(res.user));
           navigate('/dashboard');
         } else {
-          setError('Invalid staff credentials. Use admin@govserve.gov.ph / admin');
+          const status = recordFailedAttempt(authMode);
+          if (status.locked) {
+            setLockoutSeconds(status.remSeconds);
+            setError(`🔒 Security Lockout: 3 invalid attempts reached. Account locked for 3 minutes (180s).`);
+          } else {
+            setError(`Invalid email or password. Attempt ${status.fails} of 3 before 3-minute lockout.`);
+          }
         }
       }
     } catch (err) {
-      if (authMode === 'staff_login' && (password === 'admin' || password === 'admin123')) {
-        const uObj = { 
-          name: 'Atty. Elena Ramos', 
-          role: 'Super Admin', 
-          department: 'Municipal Executive Office',
-          email: email 
-        };
-        sessionStorage.setItem('govserve_user', JSON.stringify(uObj));
-        localStorage.setItem('govserve_user', JSON.stringify(uObj));
-        navigate('/dashboard');
-      } else {
-        setError('An unexpected error occurred. Please verify your credentials.');
-      }
+      setError('An unexpected authentication error occurred.');
     } finally {
       setLoading(false);
     }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { 
   Lock, 
@@ -7,47 +7,70 @@ import {
   Eye, 
   EyeOff, 
   ArrowLeft,
-  ShieldCheck,
-  KeyRound
+  ShieldCheck
 } from 'lucide-react';
-import { loginStaff } from '../lib/api';
+import { loginStaff, getLockoutTimeRemaining, recordFailedAttempt, recordSuccessfulLogin } from '../lib/api';
 
 export function StaffLoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('admin@govserve.gov.ph');
-  const [password, setPassword] = useState('admin');
+  const [password, setPassword] = useState('admin123');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
+
+  useEffect(() => {
+    const rem = getLockoutTimeRemaining('staff');
+    if (rem > 0) setLockoutSeconds(rem);
+  }, []);
+
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setError('');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
+
+    const remLock = getLockoutTimeRemaining('staff');
+    if (remLock > 0) {
+      setLockoutSeconds(remLock);
+      setError(`🔒 Account locked. Try again in ${remLock} seconds.`);
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const res = await loginStaff(email, password);
       if (res.success) {
+        recordSuccessfulLogin('staff');
         sessionStorage.setItem('govserve_user', JSON.stringify(res.user));
         localStorage.setItem('govserve_user', JSON.stringify(res.user));
         navigate('/dashboard');
       } else {
-        setError(res.message || 'Invalid email or password.');
+        const status = recordFailedAttempt('staff');
+        if (status.locked) {
+          setLockoutSeconds(status.remSeconds);
+          setError(`🔒 Security Lockout: 3 invalid attempts reached. Account locked for 3 minutes (180s).`);
+        } else {
+          setError(`Invalid email or password. Attempt ${status.fails} of 3 before 3-minute lockout.`);
+        }
       }
     } catch (err) {
-      if (password === 'admin' || password === 'admin123') {
-        const sObj = { 
-          name: 'Atty. Elena Ramos', 
-          role: 'Super Admin', 
-          department: 'Municipal Executive Office',
-          email: email 
-        };
-        sessionStorage.setItem('govserve_user', JSON.stringify(sObj));
-        localStorage.setItem('govserve_user', JSON.stringify(sObj));
-        navigate('/dashboard');
-      } else {
-        setError('Invalid credentials. Please verify your email and password.');
-      }
+      setError('Login error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -190,18 +213,6 @@ export function StaffLoginPage() {
                 )}
               </button>
             </form>
-
-            {/* Quick Demo Autofill */}
-            <div 
-              onClick={() => { setEmail('admin@govserve.gov.ph'); setPassword('admin'); setError(''); }}
-              className="p-3 bg-purple-50/70 hover:bg-purple-50 rounded-xl border border-purple-200 cursor-pointer transition-all flex items-center justify-between text-xs"
-            >
-              <div className="flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-purple-600 shrink-0" />
-                <span className="text-[11px] font-semibold text-slate-700">Autofill Demo Staff Account</span>
-              </div>
-              <span className="text-[11px] font-bold text-purple-700">Fill</span>
-            </div>
 
             {/* Footer link */}
             <div className="pt-2 text-center text-xs text-slate-600 border-t border-slate-100">

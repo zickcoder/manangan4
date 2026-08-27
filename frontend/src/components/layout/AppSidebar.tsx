@@ -63,7 +63,7 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
         {
           label: 'OVERVIEW',
           items: [
-            { name: 'Operations Telemetry', path: '/dashboard', icon: LayoutDashboard },
+            { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
           ]
         },
         {
@@ -79,12 +79,6 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
           items: [
             { name: 'Water & Drainage Desk', path: '/utilities', icon: Droplet },
             { name: 'Asset Inventory', path: '/assets', icon: Wrench },
-          ]
-        },
-        {
-          label: 'INTELLIGENCE & REPORTS',
-          items: [
-            { name: 'Reports & Analytics', path: '/reports', icon: BarChart3 },
           ]
         }
       ];

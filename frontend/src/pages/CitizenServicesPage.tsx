@@ -880,6 +880,7 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
                         label="Date of Birth *"
                         type="date"
                         required
+                        max={new Date().toISOString().split('T')[0]}
                         value={burialForm.date_of_birth}
                         onChange={(e) => setBurialForm({ ...burialForm, date_of_birth: e.target.value })}
                       />
@@ -887,6 +888,7 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
                         label="Date of Death *"
                         type="date"
                         required
+                        max={new Date().toISOString().split('T')[0]}
                         value={burialForm.date_of_death}
                         onChange={(e) => setBurialForm({ ...burialForm, date_of_death: e.target.value })}
                       />
@@ -919,6 +921,7 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
                         label="Scheduled Interment / Burial Date *"
                         type="date"
                         required
+                        min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
                         value={burialForm.burial_date}
                         onChange={(e) => setBurialForm({ ...burialForm, burial_date: e.target.value })}
                       />

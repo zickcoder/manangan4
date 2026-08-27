@@ -141,14 +141,38 @@ export function ParksModule() {
         ))}
       </div>
 
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-white p-3.5 rounded-2xl border border-slate-200 shadow-soft">
+        <div className="relative w-full sm:w-80">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search park bookings by ref, applicant..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
+          {['all', 'Pending', 'Pending Payment', 'Approved', 'Paid', 'Rejected'].map((status) => (
+            <button
+              key={status}
+              onClick={() => setStatusFilter(status)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                statusFilter === status
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              {status === 'all' ? 'All Park Bookings' : status === 'Pending Payment' ? 'Waiting for Payment' : status}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Reservations Table */}
       <Card className="border-[#cbd5e1]">
-        <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <div>
-            <CardTitle>Park Schedules & Event Permits</CardTitle>
-            <CardDescription>Scheduled community activities on municipal recreation grounds</CardDescription>
-          </div>
-        </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -175,7 +199,9 @@ export function ParksModule() {
                     <td className="py-3.5 px-4 text-slate-700">{new Date(r.event_date).toLocaleDateString()}</td>
                     <td className="py-3.5 px-4 text-slate-700">{r.start_time} - {r.end_time}</td>
                     <td className="py-3.5 px-4">
-                      <Badge variant={r.status === 'Approved' ? 'success' : 'warning'}>{r.status}</Badge>
+                      <Badge variant={r.status === 'Approved' || r.status === 'Paid' ? 'success' : r.status === 'Pending Payment' ? 'info' : r.status === 'Rejected' ? 'destructive' : 'warning'}>
+                        {r.status === 'Pending Payment' ? 'Waiting for Payment' : r.status}
+                      </Badge>
                     </td>
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
                       <Button
@@ -204,21 +230,55 @@ export function ParksModule() {
         isOpen={isReviewModalOpen}
         onClose={() => setIsReviewModalOpen(false)}
         title={`Review Park Schedule: ${selectedRes?.reference_no}`}
-        description="Verify park availability and issue approval."
+        description="Verify park availability, set payment due date, and process approval."
+        maxWidth="lg"
       >
         {selectedRes && (
           <div className="space-y-4 text-xs">
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+            <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 space-y-1">
               <p><span className="font-bold text-slate-700">Park Ground:</span> {selectedRes.facility_name}</p>
               <p><span className="font-bold text-slate-700">Organizer:</span> {selectedRes.applicant_name} ({selectedRes.applicant_phone})</p>
               <p><span className="font-bold text-slate-700">Event:</span> {selectedRes.purpose}</p>
               <p><span className="font-bold text-slate-700">Schedule:</span> {new Date(selectedRes.event_date).toLocaleDateString()} ({selectedRes.start_time} - {selectedRes.end_time})</p>
             </div>
 
+            {/* SET PAYMENT DUE DATE & FEE */}
+            {(selectedRes.status === 'Pending' || selectedRes.status === 'Pending Review') && (
+              <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 space-y-2">
+                <p className="font-bold text-amber-900 text-[11px]">🗓️ Set Payment Due Date & Fee:</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Input
+                    label="Payment Due Date *"
+                    type="date"
+                    required
+                    min={new Date().toISOString().split('T')[0]}
+                    defaultValue={new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]}
+                  />
+                  <div>
+                    <label className="block text-xs font-semibold text-[#334155] mb-1">Park Standard Permit & Maintenance Fee</label>
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
+                      value={`₱${((selectedRes as any).fee_amount || 1500).toLocaleString()}.00`}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-100 p-2 text-xs font-mono font-bold text-slate-700 cursor-not-allowed"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {selectedRes.status === 'Pending Payment' && (
+              <div className="p-3.5 bg-blue-50 rounded-xl border border-blue-200 text-blue-900 space-y-1">
+                <p className="font-bold text-xs">⏳ Awaiting Treasury Cash Settlement:</p>
+                <p className="text-[11px]">Notice issued to citizen. Assessed Fee: <strong>₱{((selectedRes as any).fee_amount || 1500).toLocaleString()}.00</strong>. When resident settles at LGU Treasury Desk, click "Approve Payment (Cash Received)" below.</p>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-semibold text-[#334155] mb-1">Park Administrator Remarks:</label>
               <textarea
-                rows={3}
+                rows={2}
                 value={reviewRemarks}
                 onChange={(e) => setReviewRemarks(e.target.value)}
                 className="w-full rounded-xl border border-slate-300 p-2 text-xs"
@@ -226,13 +286,32 @@ export function ParksModule() {
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              <Button size="sm" variant="danger" onClick={() => handleUpdateStatus('Rejected')}>
-                Reject Schedule
-              </Button>
               <div className="flex gap-2">
-                <Button size="sm" variant="success" onClick={() => handleUpdateStatus('Approved')}>
-                  Approve Park Event
+                {(selectedRes.status === 'Pending' || selectedRes.status === 'Pending Review') && (
+                  <Button size="sm" variant="danger" className="font-bold text-xs" onClick={() => handleUpdateStatus('Rejected')}>
+                    ✕ Reject Schedule
+                  </Button>
+                )}
+                {(selectedRes.status === 'Pending' || selectedRes.status === 'Pending Review' || selectedRes.status === 'Pending Payment') && (
+                  <Button size="sm" variant="outline" className="font-bold text-xs text-slate-600" onClick={() => handleUpdateStatus('Cancelled')}>
+                    Cancel Booking
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="font-bold text-xs" onClick={() => setIsReviewModalOpen(false)}>
+                  Close
                 </Button>
+                {(selectedRes.status === 'Pending' || selectedRes.status === 'Pending Review') && (
+                  <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Pending Payment')}>
+                    Grant Reservation & Issue Payment Notice
+                  </Button>
+                )}
+                {selectedRes.status === 'Pending Payment' && (
+                  <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Paid')}>
+                    ✓ Approve Payment (Cash Received)
+                  </Button>
+                )}
               </div>
             </div>
           </div>

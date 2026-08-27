@@ -23,7 +23,8 @@ import {
   updatePlotStatus, 
   fetchBurials, 
   createBurial, 
-  createBatchPlots 
+  createBatchPlots,
+  updateBurialStatus 
 } from '../lib/api';
 import { CemeteryPlot, BurialRecord } from '../types';
 
@@ -36,6 +37,7 @@ export function CemeteryModule() {
   const [searchQuery, setSearchQuery] = useState('');
   const [plotSearch, setPlotSearch] = useState('');
   const [plotFilter, setPlotFilter] = useState<'All' | 'Available' | 'Reserved' | 'Occupied'>('All');
+  const [burialStatusFilter, setBurialStatusFilter] = useState<string>('All');
 
   // Modals
   const [isNewBurialOpen, setIsNewBurialOpen] = useState(false);
@@ -43,6 +45,10 @@ export function CemeteryModule() {
   const [selectedBurial, setSelectedBurial] = useState<BurialRecord | null>(null);
   const [isPermitModalOpen, setIsPermitModalOpen] = useState(false);
   
+  // Review Application Modal
+  const [selectedReviewBurial, setSelectedReviewBurial] = useState<BurialRecord | null>(null);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+
   // Quick Plot Status Manager Modal
   const [selectedPlotToManage, setSelectedPlotToManage] = useState<CemeteryPlot | null>(null);
   const [isManagePlotOpen, setIsManagePlotOpen] = useState(false);
@@ -58,11 +64,13 @@ export function CemeteryModule() {
     contact_phone: '',
   });
 
+  const [selectedSection, setSelectedSection] = useState<string>('all');
+
   const [batchForm, setBatchForm] = useState({
-    cemetery_name: 'Barangay 178 Municipal Cemetery',
-    section: 'Columbarium Expansion Beta',
-    plot_type: 'Columbarium Niche',
-    prefix: 'COL-EXP',
+    cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
+    section: 'Section A — North Burial Wall',
+    plot_type: 'Burial Niche',
+    prefix: 'BW-EXP',
     count: '24',
     start_index: '1',
     price: '18000',
@@ -112,9 +120,52 @@ export function CemeteryModule() {
   };
 
   const handleOpenPlotManager = (plot: CemeteryPlot) => {
+    if (plot.status !== 'Available') {
+      alert(`Plot ${plot.plot_code} is currently ${plot.status} and locked from selection.`);
+      return;
+    }
     setSelectedPlotToManage(plot);
     setNewPlotStatus(plot.status);
     setIsManagePlotOpen(true);
+  };
+
+  const [reviewDueDate, setReviewDueDate] = useState<string>(new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]);
+
+  const handleGrantPermit = async (burial: BurialRecord) => {
+    try {
+      await updateBurialStatus(burial.id, 'Pending Payment', { 
+        fee_amount: 18000,
+        payment_due_date: reviewDueDate 
+      });
+      setIsReviewModalOpen(false);
+      loadData();
+      alert(`Application ${burial.reference_no} granted! Status updated to Pending Payment (Fee: ₱18,000, Payment Due: ${reviewDueDate}). Plot ${burial.plot_code || ''} is Reserved.`);
+    } catch (e) {
+      alert('Failed to grant permit');
+    }
+  };
+
+  const handleConfirmPayment = async (burial: BurialRecord) => {
+    try {
+      await updateBurialStatus(burial.id, 'Approved');
+      setIsReviewModalOpen(false);
+      loadData();
+      alert(`Payment confirmed for ${burial.reference_no}! Official Burial Permit ${burial.permit_no || ''} generated.`);
+    } catch (e) {
+      alert('Failed to confirm payment');
+    }
+  };
+
+  const handleRejectBurial = async (burial: BurialRecord) => {
+    if (!confirm(`Reject application ${burial.reference_no}? This will set plot ${burial.plot_code || ''} back to Available.`)) return;
+    try {
+      await updateBurialStatus(burial.id, 'Rejected');
+      setIsReviewModalOpen(false);
+      loadData();
+      alert(`Application ${burial.reference_no} rejected.`);
+    } catch (e) {
+      alert('Failed to reject application');
+    }
   };
 
   const handleSavePlotStatus = async () => {
@@ -128,11 +179,23 @@ export function CemeteryModule() {
     }
   };
 
-  const filteredBurials = burials.filter(b =>
-    b.deceased_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    b.reference_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (b.permit_no && b.permit_no.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredBurials = burials.filter(b => {
+    if (b.status === 'Cancelled') return false;
+    if (burialStatusFilter !== 'All') {
+      if (burialStatusFilter === 'Pending Payment' || burialStatusFilter === 'Waiting for Payment') {
+        if (b.status !== 'Pending Payment' && b.status !== 'Waiting for Payment') return false;
+      } else if (b.status !== burialStatusFilter) {
+        return false;
+      }
+    }
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      b.deceased_name.toLowerCase().includes(q) ||
+      b.reference_no.toLowerCase().includes(q) ||
+      (b.permit_no && b.permit_no.toLowerCase().includes(q))
+    );
+  });
 
   const totalPlots = plots.length;
   const occupiedCount = plots.filter(p => p.status === 'Occupied').length;
@@ -156,25 +219,7 @@ export function CemeteryModule() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="w-full sm:w-auto text-xs font-semibold"
-            leftIcon={<PlusCircle className="w-4 h-4 text-purple-600 shrink-0" />}
-            onClick={() => setIsBatchPlotsOpen(true)}
-          >
-            Add Slots / Expansion
-          </Button>
-
-          <Button
-            size="sm"
-            variant="primary"
-            className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 font-bold text-xs"
-            leftIcon={<Plus className="w-4 h-4 shrink-0" />}
-            onClick={() => setIsNewBurialOpen(true)}
-          >
-            Issue Burial Permit
-          </Button>
+          <Badge variant="purple" size="md">Municipal Cemetery Administration Desk</Badge>
         </div>
       </div>
 
@@ -250,7 +295,7 @@ export function CemeteryModule() {
               activeSubTab === 'plots' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 bg-white border border-slate-200'
             }`}
           >
-            Plot & Columbarium Map ({plots.length})
+            Plot & Burial Wall Map ({plots.length})
           </button>
           <button
             onClick={() => setActiveSubTab('burials')}
@@ -270,10 +315,7 @@ export function CemeteryModule() {
             onChange={(e) => setSelectedCemetery(e.target.value)}
             className="w-full sm:w-auto rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
           >
-            <option value="all">Barangay 178 Municipal Cemetery</option>
-            {cemeteries.map((c, idx) => (
-              <option key={idx} value={c}>{c}</option>
-            ))}
+            <option value="all">Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)</option>
           </select>
         </div>
       </div>
@@ -285,7 +327,7 @@ export function CemeteryModule() {
         <Card className="border-slate-200 p-3 sm:p-5 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <CardTitle className="text-base sm:text-lg">Columbarium Wall Niches & Lawn Lots</CardTitle>
+              <CardTitle className="text-base sm:text-lg">Municipal Burial Wall Niches</CardTitle>
               <CardDescription className="text-xs">Tap any vault/lot to view details or update status.</CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2.5 text-[11px] font-medium text-slate-600">
@@ -408,9 +450,9 @@ export function CemeteryModule() {
          ========================================================================= */}
       {activeSubTab === 'burials' && (
         <Card className="border-slate-200">
-          {/* Search Header for Burials */}
-          <div className="p-4 border-b border-slate-100">
-            <div className="relative">
+          {/* Search & Status Filter Header for Burials */}
+          <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 items-center justify-between">
+            <div className="relative w-full md:w-80">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input
                 type="text"
@@ -420,6 +462,22 @@ export function CemeteryModule() {
                 className="w-full pl-9 pr-4 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/30 bg-white font-medium"
               />
             </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
+              {['All', 'Pending Review', 'Pending Payment', 'Approved', 'Completed', 'Rejected'].map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setBurialStatusFilter(status)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                    burialStatusFilter === status
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  {status === 'Pending Payment' ? 'Waiting for Payment' : status}
+                </button>
+              ))}
+            </div>
           </div>
 
           <CardContent className="p-0">
@@ -428,22 +486,25 @@ export function CemeteryModule() {
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200 font-bold">
                   <tr>
-                    <th className="py-3 px-4">Permit No</th>
+                    <th className="py-3 px-4">Permit / Ref</th>
                     <th className="py-3 px-4">Deceased Name</th>
                     <th className="py-3 px-4">Date of Death</th>
                     <th className="py-3 px-4">Interment Date</th>
                     <th className="py-3 px-4">Allocated Plot</th>
                     <th className="py-3 px-4">Next of Kin</th>
+                    <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {filteredBurials.map((b) => (
                     <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4 font-mono font-bold text-purple-700">{b.permit_no || 'BP-PENDING'}</td>
+                      <td className="py-3.5 px-4">
+                        <span className="font-mono font-bold text-purple-700 block">{b.permit_no || 'BP-PENDING'}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">Ref: {b.reference_no}</span>
+                      </td>
                       <td className="py-3.5 px-4">
                         <p className="font-bold text-slate-900">{b.deceased_name}</p>
-                        <p className="text-[10px] text-slate-400 font-mono">Ref: {b.reference_no}</p>
                       </td>
                       <td className="py-3.5 px-4 text-slate-600">{new Date(b.date_of_death).toLocaleDateString()}</td>
                       <td className="py-3.5 px-4 font-bold text-slate-800">{new Date(b.burial_date).toLocaleDateString()}</td>
@@ -456,19 +517,40 @@ export function CemeteryModule() {
                         <p className="font-semibold">{b.contact_person}</p>
                         <p className="text-[10px] text-slate-500">{b.contact_phone}</p>
                       </td>
+                      <td className="py-3.5 px-4">
+                        <Badge variant={b.status === 'Approved' ? 'success' : b.status === 'Completed' ? 'purple' : b.status === 'Pending Payment' ? 'info' : b.status === 'Rejected' ? 'destructive' : 'warning'}>
+                          {b.status}
+                        </Badge>
+                      </td>
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="text-xs"
-                          leftIcon={<FileText className="w-3.5 h-3.5" />}
-                          onClick={() => {
-                            setSelectedBurial(b);
-                            setIsPermitModalOpen(true);
-                          }}
-                        >
-                          View Permit
-                        </Button>
+                        {b.status === 'Pending Review' || b.status === 'Pending Payment' ? (
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            className="text-xs bg-purple-600 hover:bg-purple-700 font-bold"
+                            onClick={() => {
+                              setSelectedReviewBurial(b);
+                              setIsReviewModalOpen(true);
+                            }}
+                          >
+                            Review Application
+                          </Button>
+                        ) : b.status === 'Approved' || b.status === 'Completed' ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="text-xs font-bold"
+                            leftIcon={<FileText className="w-3.5 h-3.5" />}
+                            onClick={() => {
+                              setSelectedBurial(b);
+                              setIsPermitModalOpen(true);
+                            }}
+                          >
+                            View Permit
+                          </Button>
+                        ) : (
+                          <span className="text-xs font-semibold text-slate-400">Application Closed</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -598,52 +680,62 @@ export function CemeteryModule() {
       >
         <form onSubmit={handleCreateBatchPlots} className="space-y-3 text-xs max-h-[80vh] overflow-y-auto pr-1">
           <div>
-            <label className="block text-xs font-semibold text-[#334155] mb-1">Cemetery Facility Name *</label>
+            <label className="block text-xs font-semibold text-[#334155] mb-1">Cemetery Facility Name (Official)</label>
             <input
               type="text"
-              required
-              value={batchForm.cemetery_name}
-              onChange={(e) => setBatchForm({ ...batchForm, cemetery_name: e.target.value })}
-              className="w-full rounded-xl border border-slate-300 p-2 text-xs font-semibold text-slate-800"
+              disabled
+              readOnly
+              value="Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)"
+              className="w-full rounded-xl border border-slate-200 bg-slate-100 p-2 text-xs font-semibold text-slate-700 cursor-not-allowed"
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Input
-              label="Section / Wing Name *"
-              required
-              value={batchForm.section}
-              onChange={(e) => setBatchForm({ ...batchForm, section: e.target.value })}
-            />
             <div>
-              <label className="block text-xs font-semibold text-[#334155] mb-1">Plot Type</label>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Burial Section / Wing *</label>
               <select
-                value={batchForm.plot_type}
-                onChange={(e) => setBatchForm({ ...batchForm, plot_type: e.target.value as any })}
-                className="w-full rounded-xl border border-slate-300 p-2 text-xs"
+                value={batchForm.section}
+                onChange={(e) => setBatchForm({ ...batchForm, section: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 p-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
               >
-                <option value="Columbarium Niche">Columbarium Niche</option>
-                <option value="Lawn Lot">Lawn Lot</option>
-                <option value="Mausoleum">Mausoleum</option>
-                <option value="Ossuary">Ossuary</option>
+                <option value="Section A — North Burial Wall">Section A — North Burial Wall</option>
+                <option value="Section B — South Burial Wall">Section B — South Burial Wall</option>
               </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Plot Type (Fixed)</label>
+              <input
+                type="text"
+                disabled
+                readOnly
+                value="Burial Niche"
+                className="w-full rounded-xl border border-slate-200 bg-slate-100 p-2 text-xs font-semibold text-slate-700 cursor-not-allowed"
+              />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Input
-              label="Code Prefix *"
-              required
-              value={batchForm.prefix}
-              onChange={(e) => setBatchForm({ ...batchForm, prefix: e.target.value })}
-            />
-            <Input
-              label="Number of Slots *"
-              type="number"
-              required
-              value={batchForm.count}
-              onChange={(e) => setBatchForm({ ...batchForm, count: e.target.value })}
-            />
+            <div>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Code Prefix (Auto)</label>
+              <input
+                type="text"
+                disabled
+                readOnly
+                value={batchForm.prefix}
+                className="w-full rounded-xl border border-slate-200 bg-slate-100 p-2 text-xs font-mono font-bold text-slate-700 cursor-not-allowed"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Number of Slots (Fixed Map Grid)</label>
+              <input
+                type="text"
+                disabled
+                readOnly
+                value="24 Slots"
+                className="w-full rounded-xl border border-slate-200 bg-slate-100 p-2 text-xs font-mono font-bold text-slate-700 cursor-not-allowed"
+              />
+            </div>
             <Input
               label="Rate per Slot (₱) *"
               type="number"
@@ -773,6 +865,155 @@ export function CemeteryModule() {
               <Button size="sm" variant="primary" className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 font-bold" leftIcon={<Printer className="w-4 h-4" />} onClick={() => window.print()}>
                 Print Permit
               </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal: Admin Application Review & Approval Desk */}
+      <Modal
+        isOpen={isReviewModalOpen}
+        onClose={() => setIsReviewModalOpen(false)}
+        title={`Review Burial Application — ${selectedReviewBurial?.reference_no}`}
+        description="Verify citizen submitted deceased information and decide permit grant."
+        maxWidth="lg"
+      >
+        {selectedReviewBurial && (
+          <div className="space-y-4 text-xs max-h-[80vh] overflow-y-auto pr-1">
+            <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-purple-600 uppercase">Application Reference</span>
+                <p className="font-mono font-bold text-sm text-purple-900">{selectedReviewBurial.reference_no}</p>
+              </div>
+              <Badge variant={selectedReviewBurial.status === 'Pending Payment' ? 'info' : 'warning'} size="md">
+                {selectedReviewBurial.status}
+              </Badge>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+              <h4 className="font-bold text-slate-900 border-b border-slate-200 pb-1 uppercase tracking-wider text-[11px]">🕊️ Deceased Records</h4>
+              <div className="grid grid-cols-2 gap-2 text-slate-800">
+                <p><strong>Deceased Name:</strong> {selectedReviewBurial.deceased_name}</p>
+                <p><strong>Cause of Death:</strong> {selectedReviewBurial.cause_of_death || 'Cardio-pulmonary arrest'}</p>
+                <p><strong>Date of Death:</strong> {new Date(selectedReviewBurial.date_of_death).toLocaleDateString()}</p>
+                <p><strong>Interment Date:</strong> <span className="text-purple-700 font-bold">{new Date(selectedReviewBurial.burial_date).toLocaleDateString()}</span></p>
+                <p className="col-span-2"><strong>Address:</strong> {selectedReviewBurial.deceased_address || 'Barangay 178, Zone 4'}</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+              <h4 className="font-bold text-slate-900 border-b border-slate-200 pb-1 uppercase tracking-wider text-[11px]">📍 Plot & Applicant Information</h4>
+              <div className="grid grid-cols-2 gap-2 text-slate-800">
+                <p><strong>Target Plot:</strong> <span className="font-mono font-bold text-purple-700 bg-white px-2 py-0.5 rounded border border-purple-200">{selectedReviewBurial.plot_code || 'Assigned'}</span></p>
+                <p><strong>Section:</strong> {selectedReviewBurial.section || 'Section A'}</p>
+                <p><strong>Next of Kin:</strong> {selectedReviewBurial.contact_person} ({selectedReviewBurial.applicant_relationship || 'Kin'})</p>
+                <p><strong>Phone Contact:</strong> {selectedReviewBurial.contact_phone}</p>
+              </div>
+            </div>
+
+            {/* ATTACHED MANDATORY DOCUMENTS */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+              <h4 className="font-bold text-slate-900 border-b border-slate-200 pb-1 uppercase tracking-wider text-[11px]">📄 Attached Mandatory Citizen Documents</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-slate-800 block text-[11px]">Attach PSA Death Cert *</span>
+                    <span className="text-[10px] text-emerald-600 font-bold">✓ Verified Document Logged</span>
+                  </div>
+                  <a
+                    href="https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=500&auto=format&fit=crop&q=80"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2.5 py-1 bg-purple-50 text-purple-700 rounded-lg text-[10px] font-bold border border-purple-200 hover:bg-purple-100"
+                  >
+                    View File
+                  </a>
+                </div>
+
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-slate-800 block text-[11px]">Attach Valid Gov ID *</span>
+                    <span className="text-[10px] text-emerald-600 font-bold">✓ Verified Document Logged</span>
+                  </div>
+                  <a
+                    href="https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=500&auto=format&fit=crop&q=80"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2.5 py-1 bg-purple-50 text-purple-700 rounded-lg text-[10px] font-bold border border-purple-200 hover:bg-purple-100"
+                  >
+                    View File
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {selectedReviewBurial.status === 'Pending Review' && (
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-2">
+                <p className="font-bold text-amber-900 text-[11px]">🗓️ Set Payment Due Date & Fee:</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Input
+                    label="Payment Due Date *"
+                    type="date"
+                    required
+                    min={new Date().toISOString().split('T')[0]}
+                    value={reviewDueDate}
+                    onChange={(e) => setReviewDueDate(e.target.value)}
+                  />
+                  <div>
+                    <label className="block text-xs font-semibold text-[#334155] mb-1">Burial Niche Standard Fee</label>
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
+                      value="₱18,000.00"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-100 p-2 text-xs font-mono font-bold text-slate-700 cursor-not-allowed"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {selectedReviewBurial.status === 'Pending Payment' && (
+              <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 text-amber-950 space-y-1">
+                <p className="font-bold text-xs">⏳ Awaiting Treasury Cash Settlement:</p>
+                <p className="text-[11px]">Notice issued to citizen. Payment due date: <strong>{selectedReviewBurial.payment_due_date || reviewDueDate}</strong>. Plot <strong>{selectedReviewBurial.plot_code}</strong> is currently Reserved. When resident pays at the Treasury Desk, click "Approve Payment (Cash Received)" below.</p>
+              </div>
+            )}
+
+            <div className="pt-3 flex flex-wrap sm:flex-nowrap items-center justify-end gap-2 border-t border-slate-100">
+              <Button size="sm" variant="outline" onClick={() => setIsReviewModalOpen(false)}>
+                Close
+              </Button>
+              {selectedReviewBurial.status === 'Pending Review' && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="font-bold text-xs"
+                    onClick={() => handleRejectBurial(selectedReviewBurial)}
+                  >
+                    Reject Application
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    className="bg-purple-600 hover:bg-purple-700 font-bold text-xs"
+                    onClick={() => handleGrantPermit(selectedReviewBurial)}
+                  >
+                    Grant Application & Issue Payment Notice
+                  </Button>
+                </>
+              )}
+              {selectedReviewBurial.status === 'Pending Payment' && (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="bg-emerald-600 hover:bg-emerald-700 font-bold text-xs"
+                  onClick={() => handleConfirmPayment(selectedReviewBurial)}
+                >
+                  ✓ Approve Payment (Cash Received)
+                </Button>
+              )}
             </div>
           </div>
         )}

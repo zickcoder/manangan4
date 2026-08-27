@@ -134,14 +134,14 @@ export function UtilitiesModule() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-          {['all', 'Pending', 'Dispatched', 'In Progress', 'Resolved'].map((st) => (
+          {['all', 'Pending', 'In Progress', 'Resolved', 'Rejected'].map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
                 statusFilter === st
                   ? 'bg-cyan-600 text-white shadow-sm'
-                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
               }`}
             >
               {st === 'all' ? 'All Incidents' : st}
@@ -201,24 +201,30 @@ export function UtilitiesModule() {
                     </td>
                     <td className="py-3.5 px-4 text-slate-800 font-semibold">{u.assigned_team || 'Unassigned'}</td>
                     <td className="py-3.5 px-4">
-                      <Badge variant={u.status === 'Resolved' ? 'success' : u.status === 'Dispatched' ? 'info' : 'warning'}>
+                      <Badge variant={u.status === 'Resolved' ? 'success' : u.status === 'In Progress' ? 'info' : 'warning'}>
                         {u.status}
                       </Badge>
                     </td>
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        leftIcon={<Eye className="w-3.5 h-3.5" />}
-                        onClick={() => {
-                          setSelectedReq(u);
-                          setDispatchTeam(u.assigned_team || 'Quick Response Water Crew Alpha');
-                          setResolutionNotes(u.resolution_notes || '');
-                          setIsDispatchModalOpen(true);
-                        }}
-                      >
-                        Manage Ticket
-                      </Button>
+                      {u.status === 'Resolved' || u.status === 'Rejected' || u.status === 'Cancelled' ? (
+                        <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                          {u.status === 'Resolved' ? '✓ Resolved (Locked)' : 'Ticket Locked'}
+                        </span>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          leftIcon={<Eye className="w-3.5 h-3.5" />}
+                          onClick={() => {
+                            setSelectedReq(u);
+                            setDispatchTeam(u.assigned_team || 'Quick Response Water Crew Alpha');
+                            setResolutionNotes(u.resolution_notes || '');
+                            setIsDispatchModalOpen(true);
+                          }}
+                        >
+                          Manage Ticket
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -241,7 +247,7 @@ export function UtilitiesModule() {
             {/* Status & Priority Header */}
             <div className="flex items-center justify-between p-3 bg-slate-900 text-white rounded-xl">
               <div className="flex items-center gap-2">
-                <Badge variant={selectedReq.status === 'Resolved' ? 'success' : selectedReq.status === 'Dispatched' ? 'info' : 'warning'}>
+                <Badge variant={selectedReq.status === 'Resolved' ? 'success' : selectedReq.status === 'In Progress' || selectedReq.status === 'Dispatched' ? 'info' : 'warning'}>
                   {selectedReq.status}
                 </Badge>
                 <span className="font-mono font-bold text-cyan-400">{selectedReq.ticket_no}</span>
@@ -322,18 +328,29 @@ export function UtilitiesModule() {
 
             {/* Action Buttons */}
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              <Button size="sm" variant="outline" onClick={() => handleUpdateStatus('Dispatched')}>
-                <Truck className="w-3.5 h-3.5 mr-1" />
-                Dispatch Response Crew
-              </Button>
+              <div>
+                {(selectedReq.status === 'Pending' || selectedReq.status === 'Pending Review') && (
+                  <Button size="sm" variant="destructive" className="font-bold text-xs" onClick={() => handleUpdateStatus('Rejected')}>
+                    ✕ Reject Ticket
+                  </Button>
+                )}
+              </div>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => setIsDispatchModalOpen(false)}>
-                  Cancel
+                <Button size="sm" variant="outline" className="font-bold text-xs" onClick={() => setIsDispatchModalOpen(false)}>
+                  Close
                 </Button>
-                <Button size="sm" variant="success" onClick={() => handleUpdateStatus('Resolved')}>
-                  <Check className="w-3.5 h-3.5 mr-1" />
-                  Mark Resolved & Repaired
-                </Button>
+                {(selectedReq.status === 'Pending' || selectedReq.status === 'Pending Review') && (
+                  <Button size="sm" variant="primary" className="bg-cyan-600 hover:bg-cyan-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('In Progress')}>
+                    <Truck className="w-3.5 h-3.5 mr-1" />
+                    Dispatch Crew (In Progress)
+                  </Button>
+                )}
+                {selectedReq.status === 'In Progress' && (
+                  <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Resolved')}>
+                    <Check className="w-3.5 h-3.5 mr-1" />
+                    Mark Resolved & Repaired
+                  </Button>
+                )}
               </div>
             </div>
           </div>

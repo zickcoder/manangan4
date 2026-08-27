@@ -72,14 +72,18 @@ export function FacilitiesModule() {
   const handleUpdateStatus = async (status: string) => {
     if (!selectedRes) return;
     try {
+      const fee = (selectedRes as any).fee_amount || (selectedRes.hourly_rate ? selectedRes.hourly_rate * 4 : 2000);
+      const dueDate = new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0];
       await updateReservationStatus(
         selectedRes.id,
         status,
-        reviewRemarks || `Reservation ${status} by Facilities Bureau`,
-        'Engr. Marcus Cruz'
+        reviewRemarks || `Reservation set to ${status} by Facilities Bureau`,
+        'Engr. Marcus Cruz',
+        { fee_amount: fee, payment_due_date: dueDate }
       );
       setIsReviewModalOpen(false);
       loadData();
+      alert(`Reservation #${selectedRes.reference_no} updated to ${status}!`);
     } catch (e) {
       alert('Failed to update reservation');
     }
@@ -178,7 +182,7 @@ export function FacilitiesModule() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-          {['all', 'Pending', 'Approved', 'Rejected'].map((status) => (
+          {['all', 'Pending', 'Pending Payment', 'Approved', 'Paid', 'Rejected'].map((status) => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -188,7 +192,7 @@ export function FacilitiesModule() {
                   : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
               }`}
             >
-              {status === 'all' ? 'All Bookings' : status}
+              {status === 'all' ? 'All Bookings' : status === 'Pending Payment' ? 'Waiting for Payment' : status}
             </button>
           ))}
         </div>
@@ -225,8 +229,8 @@ export function FacilitiesModule() {
                     </td>
                     <td className="py-3.5 px-4 text-slate-700">{r.attendees} Pax</td>
                     <td className="py-3.5 px-4">
-                      <Badge variant={r.status === 'Approved' ? 'success' : r.status === 'Rejected' ? 'destructive' : 'warning'}>
-                        {r.status}
+                      <Badge variant={r.status === 'Approved' || r.status === 'Paid' ? 'success' : r.status === 'Pending Payment' ? 'info' : r.status === 'Rejected' ? 'destructive' : 'warning'}>
+                        {r.status === 'Pending Payment' ? 'Waiting for Payment' : r.status}
                       </Badge>
                     </td>
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
@@ -256,15 +260,15 @@ export function FacilitiesModule() {
         isOpen={isReviewModalOpen}
         onClose={() => setIsReviewModalOpen(false)}
         title={`Review Reservation — ${selectedRes?.reference_no}`}
-        description="Full citizen-submitted booking details. Approve or reject with remarks."
+        description="Full citizen-submitted booking details. Set due date and process payment status."
         maxWidth="lg"
       >
         {selectedRes && (
           <div className="space-y-4 text-xs">
             {/* Status Banner */}
             <div className="flex items-center justify-between">
-              <Badge variant={selectedRes.status === 'Approved' ? 'success' : selectedRes.status === 'Rejected' ? 'destructive' : 'warning'} size="md">
-                {selectedRes.status}
+              <Badge variant={selectedRes.status === 'Approved' || selectedRes.status === 'Paid' ? 'success' : selectedRes.status === 'Pending Payment' ? 'info' : selectedRes.status === 'Rejected' ? 'destructive' : 'warning'} size="md">
+                {selectedRes.status === 'Pending Payment' ? 'Waiting for Payment' : selectedRes.status}
               </Badge>
               <span className="text-[10px] font-mono text-slate-400">{selectedRes.reference_no}</span>
             </div>
@@ -286,30 +290,44 @@ export function FacilitiesModule() {
               <p><span className="font-bold text-slate-700">Contact:</span> {selectedRes.applicant_phone || '—'}</p>
             </div>
 
-            {/* Purpose & Equipment */}
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
-              <p className="font-bold text-slate-900 text-xs uppercase tracking-wider">📋 Event Details</p>
-              <p><span className="font-bold text-slate-700">Purpose:</span> {selectedRes.purpose}</p>
-              {(selectedRes as any).special_equipment?.length > 0 && (
-                <div>
-                  <span className="font-bold text-slate-700 block mb-1">Requested Equipment:</span>
-                  <div className="flex flex-wrap gap-1">
-                    {((selectedRes as any).special_equipment || []).map((eq: string, i: number) => (
-                      <span key={i} className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-semibold rounded-full border border-blue-200">{eq}</span>
-                    ))}
+            {/* SET PAYMENT DUE DATE & FEE */}
+            {(selectedRes.status === 'Pending' || selectedRes.status === 'Pending Review') && (
+              <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 space-y-2">
+                <p className="font-bold text-amber-900 text-[11px]">🗓️ Set Payment Due Date & Fee:</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Input
+                    label="Payment Due Date *"
+                    type="date"
+                    required
+                    min={new Date().toISOString().split('T')[0]}
+                    defaultValue={new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]}
+                  />
+                  <div>
+                    <label className="block text-xs font-semibold text-[#334155] mb-1">Facility Standard Hourly / Rental Fee</label>
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
+                      value={`₱${((selectedRes as any).fee_amount || 2000).toLocaleString()}.00`}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-100 p-2 text-xs font-mono font-bold text-slate-700 cursor-not-allowed"
+                    />
                   </div>
                 </div>
-              )}
-              {(selectedRes as any).remarks && (
-                <p><span className="font-bold text-slate-700">Additional Remarks:</span> {(selectedRes as any).remarks}</p>
-              )}
-            </div>
+              </div>
+            )}
+
+            {selectedRes.status === 'Pending Payment' && (
+              <div className="p-3.5 bg-blue-50 rounded-xl border border-blue-200 text-blue-900 space-y-1">
+                <p className="font-bold text-xs">⏳ Awaiting Treasury Cash Settlement:</p>
+                <p className="text-[11px]">Notice issued to citizen. Assessed Fee: <strong>₱{((selectedRes as any).fee_amount || 2000).toLocaleString()}.00</strong>. When resident settles at LGU Treasury Desk, click "Approve Payment (Cash Received)" below.</p>
+              </div>
+            )}
 
             {/* Admin Review Remarks */}
             <div>
               <label className="block text-xs font-bold text-[#334155] mb-1.5">Admin Approval / Rejection Remarks:</label>
               <textarea
-                rows={3}
+                rows={2}
                 value={reviewRemarks}
                 onChange={(e) => setReviewRemarks(e.target.value)}
                 placeholder="Add official remarks, conditions, or reason for rejection..."
@@ -318,16 +336,32 @@ export function FacilitiesModule() {
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              <Button size="sm" variant="danger" onClick={() => handleUpdateStatus('Rejected')}>
-                ✕ Reject Booking
-              </Button>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => setIsReviewModalOpen(false)}>
-                  Cancel
+                {(selectedRes.status === 'Pending' || selectedRes.status === 'Pending Review') && (
+                  <Button size="sm" variant="danger" className="font-bold text-xs" onClick={() => handleUpdateStatus('Rejected')}>
+                    ✕ Reject Booking
+                  </Button>
+                )}
+                {(selectedRes.status === 'Pending' || selectedRes.status === 'Pending Review' || selectedRes.status === 'Pending Payment') && (
+                  <Button size="sm" variant="outline" className="font-bold text-xs text-slate-600" onClick={() => handleUpdateStatus('Cancelled')}>
+                    Cancel Booking
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="font-bold text-xs" onClick={() => setIsReviewModalOpen(false)}>
+                  Close
                 </Button>
-                <Button size="sm" variant="success" onClick={() => handleUpdateStatus('Approved')}>
-                  ✓ Approve Reservation
-                </Button>
+                {(selectedRes.status === 'Pending' || selectedRes.status === 'Pending Review') && (
+                  <Button size="sm" variant="success" className="bg-blue-600 hover:bg-blue-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Pending Payment')}>
+                    Grant Reservation & Issue Payment Notice
+                  </Button>
+                )}
+                {selectedRes.status === 'Pending Payment' && (
+                  <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Paid')}>
+                    ✓ Approve Payment (Cash Received)
+                  </Button>
+                )}
               </div>
             </div>
           </div>
