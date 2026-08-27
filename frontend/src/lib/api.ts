@@ -138,6 +138,24 @@ function generateInitialPlots() {
   return plots;
 }
 
+export function format12HourDateTime(dateStr?: string) {
+  if (!dateStr) return 'N/A';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch {
+    return String(dateStr);
+  }
+}
+
 const DEFAULT_BURIALS = [
   {
     id: 1,
@@ -152,8 +170,10 @@ const DEFAULT_BURIALS = [
     contact_person: 'Juan M. Dela Cruz',
     applicant_email: 'juan.delacruz@citizen.gov.ph',
     contact_phone: '+63 917 123 4567',
-    status: 'Approved',
-    permit_no: 'BP-2026-0089'
+    status: 'Paid',
+    permit_no: 'BP-2026-0089',
+    fee_amount: 18000,
+    created_at: '2026-08-16T14:30:00.000Z'
   },
   {
     id: 2,
@@ -167,8 +187,10 @@ const DEFAULT_BURIALS = [
     cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
     contact_person: 'Ricardo Bautista (Husband)',
     contact_phone: '+63 919 333 7712',
-    status: 'Completed',
-    permit_no: 'BP-2026-0090'
+    status: 'Paid',
+    permit_no: 'BP-2026-0090',
+    fee_amount: 18000,
+    created_at: '2026-08-19T09:15:00.000Z'
   },
   {
     id: 3,
@@ -182,8 +204,10 @@ const DEFAULT_BURIALS = [
     cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
     contact_person: 'Consuelo Ramos (Wife)',
     contact_phone: '+63 922 444 1109',
-    status: 'Approved',
-    permit_no: 'BP-2026-0091'
+    status: 'Pending Payment',
+    fee_amount: 18000,
+    payment_due_date: '2026-08-30',
+    created_at: '2026-08-22T16:45:00.000Z'
   },
   {
     id: 4,
@@ -197,8 +221,10 @@ const DEFAULT_BURIALS = [
     cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
     contact_person: 'Elena Santos (Daughter)',
     contact_phone: '+63 917 888 2211',
-    status: 'Completed',
-    permit_no: 'BP-2026-0092'
+    status: 'Paid',
+    permit_no: 'BP-2026-0092',
+    fee_amount: 18000,
+    created_at: '2026-08-23T11:20:00.000Z'
   },
   {
     id: 5,
@@ -212,8 +238,8 @@ const DEFAULT_BURIALS = [
     cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
     contact_person: 'Mateo Mendoza (Son)',
     contact_phone: '+63 920 111 3344',
-    status: 'Approved',
-    permit_no: 'BP-2026-0093'
+    status: 'Pending Review',
+    created_at: '2026-08-24T08:10:00.000Z'
   }
 ];
 
@@ -718,15 +744,10 @@ function processAutoOccupancy() {
   const plots = getStore('plots', generateInitialPlots());
   const todayStr = new Date().toISOString().split('T')[0];
   let changedPlots = false;
-  let changedBurials = false;
 
   burials.forEach((b: any) => {
-    // If burial is approved or paid/completed, and burial_date is today or in the past:
-    if ((b.status === 'Approved' || b.status === 'Paid' || b.status === 'Completed') && b.burial_date && b.burial_date <= todayStr) {
-      if (b.status !== 'Completed') {
-        b.status = 'Completed';
-        changedBurials = true;
-      }
+    // If burial is Paid, and burial_date is today or in the past:
+    if (b.status === 'Paid' && b.burial_date && b.burial_date <= todayStr) {
       // Update matching plot to Occupied
       const plot = plots.find((p: any) => p.id === Number(b.plot_id) || p.plot_code === b.plot_code);
       if (plot && plot.status !== 'Occupied') {
@@ -742,7 +763,6 @@ function processAutoOccupancy() {
   });
 
   if (changedPlots) setStore('plots', plots);
-  if (changedBurials) setStore('burials', burials);
 }
 
 export async function fetchBurials() {
@@ -758,15 +778,13 @@ export async function fetchBurials() {
   return getStore('burials', DEFAULT_BURIALS);
 }
 
-export async function updateBurialStatus(id: number, status: string, extraData?: { fee_amount?: number; permit_no?: string; remarks?: string }) {
+export async function updateBurialStatus(id: number, status: string, extraData?: { fee_amount?: number; permit_no?: string; remarks?: string; payment_due_date?: string; paid_at?: string; payment_method?: string }) {
   const burials = getStore('burials', DEFAULT_BURIALS);
-  const index = burials.findIndex((b: any) => b.id === id);
+  const index = burials.findIndex((b: any) => b.id === id || String(b.id) === String(id));
   if (index !== -1) {
     const burial = burials[index];
     burial.status = status;
-    if (extraData?.fee_amount !== undefined) burial.fee_amount = extraData.fee_amount;
-    if (extraData?.permit_no) burial.permit_no = extraData.permit_no;
-    if (extraData?.remarks) burial.remarks = extraData.remarks;
+    if (extraData) Object.assign(burial, extraData);
 
     // Handle plot state changes based on burial status:
     if (status === 'Cancelled' || status === 'Rejected') {
@@ -779,7 +797,7 @@ export async function updateBurialStatus(id: number, status: string, extraData?:
           setStore('plots', plots);
         }
       }
-    } else if (status === 'Pending Payment' || status === 'Approved' || status === 'Paid') {
+    } else if (status === 'Pending Payment' || status === 'Paid') {
       if (burial.plot_id || burial.plot_code) {
         const plots = getStore('plots', generateInitialPlots());
         const plot = plots.find((p: any) => p.id === Number(burial.plot_id) || p.plot_code === burial.plot_code);

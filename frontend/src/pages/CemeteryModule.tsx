@@ -24,7 +24,8 @@ import {
   fetchBurials, 
   createBurial, 
   createBatchPlots,
-  updateBurialStatus 
+  updateBurialStatus,
+  format12HourDateTime 
 } from '../lib/api';
 import { CemeteryPlot, BurialRecord } from '../types';
 
@@ -147,10 +148,12 @@ export function CemeteryModule() {
 
   const handleConfirmPayment = async (burial: BurialRecord) => {
     try {
-      await updateBurialStatus(burial.id, 'Approved');
+      await updateBurialStatus(burial.id, 'Paid', {
+        paid_at: new Date().toISOString()
+      });
       setIsReviewModalOpen(false);
       loadData();
-      alert(`Payment confirmed for ${burial.reference_no}! Official Burial Permit ${burial.permit_no || ''} generated.`);
+      alert(`Payment confirmed for ${burial.reference_no}! Official Burial Permit ${burial.permit_no || ''} issued with PAID status.`);
     } catch (e) {
       alert('Failed to confirm payment');
     }
@@ -378,55 +381,47 @@ export function CemeteryModule() {
           {/* Filtered Plots Grid */}
           {(() => {
             const filtered = plots.filter(p => {
-              const matchesStatus = plotFilter === 'All' || p.status === plotFilter;
-              const q = plotSearch.toLowerCase();
-              const matchesSearch = !q ||
+              if (plotFilter !== 'All' && p.status !== plotFilter) return false;
+              if (!plotSearch.trim()) return true;
+              const q = plotSearch.toLowerCase().trim();
+              return (
                 p.plot_code.toLowerCase().includes(q) ||
-                p.lot_no.toLowerCase().includes(q) ||
+                (p.deceased_name && p.deceased_name.toLowerCase().includes(q)) ||
                 p.section.toLowerCase().includes(q) ||
-                p.block_no.toLowerCase().includes(q) ||
-                (p.deceased_name && p.deceased_name.toLowerCase().includes(q));
-              return matchesStatus && matchesSearch;
+                p.lot_no.toLowerCase().includes(q)
+              );
             });
 
             return (
               <>
-                <p className="text-[11px] text-slate-400 font-medium">
-                  Showing {filtered.length} of {plots.length} slots
-                  {plotFilter !== 'All' && <span className="text-purple-600 font-bold"> · {plotFilter}</span>}
-                  {plotSearch && <span className="text-purple-600 font-bold"> · "{plotSearch}"</span>}
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-2.5 max-h-[560px] overflow-y-auto pr-1">
+                <div className="text-xs text-slate-500 font-semibold flex items-center justify-between pt-1">
+                  <span>Showing {filtered.length} of {plots.length} burial slots</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-8 gap-2 max-h-[520px] overflow-y-auto pr-1">
                   {filtered.length === 0 ? (
-                    <div className="col-span-full text-center py-12 text-slate-400">
-                      <Search className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                      <p className="text-sm font-semibold">No slots match your search</p>
-                      <p className="text-xs mt-1">Try a different filter or search term</p>
+                    <div className="col-span-full py-12 text-center text-xs text-slate-400 font-medium">
+                      No burial slots match your search.
                     </div>
                   ) : (
                     filtered.map((plot) => (
                       <div
                         key={plot.id}
                         onClick={() => handleOpenPlotManager(plot)}
-                        className={`p-2.5 sm:p-3 rounded-xl border transition-all cursor-pointer select-none active:scale-95 ${
+                        className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
                           plot.status === 'Available'
-                            ? 'bg-emerald-50/80 border-emerald-300 hover:border-emerald-500 hover:shadow-soft'
+                            ? 'bg-emerald-50/60 border-emerald-200 hover:border-emerald-400 hover:shadow-sm'
                             : plot.status === 'Reserved'
-                            ? 'bg-amber-50/80 border-amber-300 hover:border-amber-500 hover:shadow-soft'
-                            : 'bg-slate-100 border-slate-300 hover:border-slate-400 opacity-90'
+                            ? 'bg-amber-50/60 border-amber-200 hover:border-amber-400 hover:shadow-sm'
+                            : 'bg-slate-100 border-slate-300 opacity-90'
                         }`}
-                        title={`Tap to manage: ${plot.plot_code}`}
                       >
-                        <div className="flex justify-between items-center">
-                          <span className="font-mono text-[11px] font-extrabold text-slate-900 truncate">{plot.plot_code}</span>
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${
-                            plot.status === 'Available' ? 'bg-emerald-500' : plot.status === 'Reserved' ? 'bg-amber-400' : 'bg-slate-600'
-                          }`}></span>
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-[11px] font-bold text-slate-800">{plot.plot_code}</span>
+                          <span className="text-[10px] text-slate-500 font-medium">{plot.block_no}</span>
                         </div>
-                        <p className="text-[10px] font-bold text-slate-700 mt-1 truncate">{plot.lot_no}</p>
                         {plot.deceased_name ? (
-                          <p className="text-[10px] font-extrabold text-purple-900 truncate mt-0.5" title={plot.deceased_name}>
-                            🕊️ {plot.deceased_name}
+                          <p className="text-[10px] font-bold text-purple-900 truncate mt-1">
+                            ✝ {plot.deceased_name}
                           </p>
                         ) : null}
                         <div className="flex justify-between items-center mt-1.5 pt-1 border-t border-slate-200/60 text-[9px]">
@@ -446,7 +441,7 @@ export function CemeteryModule() {
       )}
 
       {/* =========================================================================
-          SUB-TAB 2: DECEASED REGISTRY & PERMITS (Responsive Table + Mobile Cards)
+          SUB-TAB 2: DECEASED REGISTRY & PERMITS (Simplified Status Flow)
          ========================================================================= */}
       {activeSubTab === 'burials' && (
         <Card className="border-slate-200">
@@ -464,7 +459,7 @@ export function CemeteryModule() {
             </div>
 
             <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
-              {['All', 'Pending Review', 'Pending Payment', 'Approved', 'Completed', 'Rejected'].map((status) => (
+              {['All', 'Pending Review', 'Pending Payment', 'Paid', 'Rejected'].map((status) => (
                 <button
                   key={status}
                   onClick={() => setBurialStatusFilter(status)}
@@ -481,14 +476,14 @@ export function CemeteryModule() {
           </div>
 
           <CardContent className="p-0">
-            {/* Desktop Table View (md and up) */}
+            {/* Desktop Table View */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200 font-bold">
                   <tr>
                     <th className="py-3 px-4">Permit / Ref</th>
                     <th className="py-3 px-4">Deceased Name</th>
-                    <th className="py-3 px-4">Date of Death</th>
+                    <th className="py-3 px-4">Date & Time Filed</th>
                     <th className="py-3 px-4">Interment Date</th>
                     <th className="py-3 px-4">Allocated Plot</th>
                     <th className="py-3 px-4">Next of Kin</th>
@@ -506,7 +501,9 @@ export function CemeteryModule() {
                       <td className="py-3.5 px-4">
                         <p className="font-bold text-slate-900">{b.deceased_name}</p>
                       </td>
-                      <td className="py-3.5 px-4 text-slate-600">{new Date(b.date_of_death).toLocaleDateString()}</td>
+                      <td className="py-3.5 px-4 text-slate-600 font-mono text-[11px]">
+                        {format12HourDateTime(b.created_at)}
+                      </td>
                       <td className="py-3.5 px-4 font-bold text-slate-800">{new Date(b.burial_date).toLocaleDateString()}</td>
                       <td className="py-3.5 px-4">
                         <span className="font-mono text-xs font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
@@ -518,8 +515,8 @@ export function CemeteryModule() {
                         <p className="text-[10px] text-slate-500">{b.contact_phone}</p>
                       </td>
                       <td className="py-3.5 px-4">
-                        <Badge variant={b.status === 'Approved' ? 'success' : b.status === 'Completed' ? 'purple' : b.status === 'Pending Payment' ? 'info' : b.status === 'Rejected' ? 'destructive' : 'warning'}>
-                          {b.status}
+                        <Badge variant={b.status === 'Paid' ? 'success' : b.status === 'Pending Payment' ? 'info' : b.status === 'Rejected' ? 'destructive' : 'warning'}>
+                          {b.status === 'Pending Payment' ? 'Waiting for Payment' : b.status}
                         </Badge>
                       </td>
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
@@ -535,7 +532,7 @@ export function CemeteryModule() {
                           >
                             Review Application
                           </Button>
-                        ) : b.status === 'Approved' || b.status === 'Completed' ? (
+                        ) : b.status === 'Paid' ? (
                           <Button
                             size="sm"
                             variant="secondary"
@@ -558,7 +555,7 @@ export function CemeteryModule() {
               </table>
             </div>
 
-            {/* Mobile Card List View (< md) */}
+            {/* Mobile Card List View */}
             <div className="block md:hidden divide-y divide-slate-100">
               {filteredBurials.length === 0 ? (
                 <div className="text-center py-10 text-slate-400 text-xs font-medium">
@@ -578,6 +575,9 @@ export function CemeteryModule() {
                       <h4 className="font-bold text-sm text-slate-900">{b.deceased_name}</h4>
                       <p className="text-xs text-purple-900 font-semibold mt-0.5">
                         📍 {b.plot_code || 'Assigned Plot'}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        📅 Filed: {format12HourDateTime(b.created_at)}
                       </p>
                     </div>
 

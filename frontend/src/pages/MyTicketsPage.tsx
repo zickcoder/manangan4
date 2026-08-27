@@ -27,7 +27,8 @@ import {
   fetchBurials, 
   updateBurialStatus,
   updateReservationStatus,
-  cancelUtilityRequest
+  cancelUtilityRequest,
+  format12HourDateTime
 } from "../lib/api";
 import { FacilityReservation, UtilityRequest, BurialRecord } from "../types";
 
@@ -183,7 +184,7 @@ export function MyTicketsPage() {
       details: r.purpose || 'Event Booking',
       applicant: r.applicant_name || '',
       contact: r.applicant_phone || '',
-      created_at: formatDateSafely(r.created_at)
+      created_at: format12HourDateTime(r.created_at || new Date().toISOString())
     })),
     ...myUtilities.map((u) => ({
       id: `util-${u.id}`,
@@ -200,7 +201,7 @@ export function MyTicketsPage() {
       applicant: u.citizen_name || '',
       contact: u.citizen_phone || '',
       location: u.location || '',
-      created_at: formatDateSafely(u.created_at)
+      created_at: format12HourDateTime(u.created_at || new Date().toISOString())
     })),
     ...myBurials.map((b) => ({
       id: `bur-${b.id}`,
@@ -211,16 +212,17 @@ export function MyTicketsPage() {
       title: `Deceased: ${b.deceased_name || 'Individual'}`,
       date: formatDateSafely(b.burial_date),
       time: b.burial_time || '10:00 AM',
-      status: b.status || 'Pending Review',
-      fee_amount: b.fee_amount || (b.status === 'Pending Payment' || b.status === 'Approved' ? 18000 : 0),
+      status: b.status === 'Pending Payment' ? 'Waiting for Payment' : b.status || 'Pending Review',
+      rawStatus: b.status,
+      fee_amount: b.fee_amount || (b.status === 'Pending Payment' || b.status === 'Paid' ? 18000 : 0),
       payment_method: (b as any).payment_method,
       paid_at: (b as any).paid_at,
       payment_due_date: (b as any).payment_due_date,
-      badgeVariant: b.status === 'Approved' || b.status === 'Paid' ? 'success' : b.status === 'Completed' ? 'purple' : b.status === 'Pending Payment' ? 'info' : b.status === 'Rejected' ? 'destructive' : b.status === 'Cancelled' ? 'default' : 'warning',
+      badgeVariant: b.status === 'Paid' ? 'success' : b.status === 'Pending Payment' ? 'info' : b.status === 'Rejected' ? 'destructive' : b.status === 'Cancelled' ? 'default' : 'warning',
       details: `Plot Code: ${b.plot_code || 'Assigned Niche'}`,
       applicant: b.contact_person || '',
       contact: b.contact_phone || '',
-      created_at: formatDateSafely(b.created_at)
+      created_at: format12HourDateTime(b.created_at || new Date().toISOString())
     }))
   ];
 
@@ -449,6 +451,7 @@ export function MyTicketsPage() {
             <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
               <p className="font-bold text-slate-950 text-xs uppercase tracking-wider">📋 Application Details</p>
               <p className="text-slate-800"><strong>Title / Service:</strong> {selectedSubmission.title}</p>
+              <p className="text-slate-800"><strong>Date & Time Logged:</strong> <span className="font-mono font-bold text-blue-700">{selectedSubmission.created_at}</span></p>
               <p className="text-slate-800"><strong>Details:</strong> {selectedSubmission.details}</p>
               <p className="text-slate-800"><strong>Schedule / Date:</strong> {selectedSubmission.date} ({selectedSubmission.time})</p>
               <p className="text-slate-800"><strong>Applicant:</strong> {selectedSubmission.applicant} ({selectedSubmission.contact || 'N/A'})</p>
