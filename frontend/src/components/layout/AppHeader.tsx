@@ -11,6 +11,7 @@ import {
   CheckCheck
 } from 'lucide-react';
 import { Badge } from '../ui/Badge';
+import { AdminIcon } from '../ui/AdminIcon';
 import { 
   getNotificationsForUser, 
   markNotificationAsRead, 
@@ -30,7 +31,7 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
   const userStr = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
-  let user: any = { name: 'Atty. Elena Ramos', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
+  let user: any = { name: 'Admin', role: 'Admin', email: 'ronmanangan10@gmail.com' };
   try {
     if (userStr) user = JSON.parse(userStr);
   } catch {}
@@ -187,12 +188,18 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
 
         {/* User Mini Avatar */}
         <div className="flex items-center gap-2 pl-2 border-l border-[#e2e8f0]">
-          <div className="w-8 h-8 rounded-xl bg-[#2563eb] text-white flex items-center justify-center font-bold text-xs shadow-sm">
-            {getInitials(user?.name)}
+          <div className="w-8 h-8 rounded-xl bg-[#2563eb] text-white flex items-center justify-center font-bold text-xs shadow-sm overflow-hidden p-1">
+            {isCitizen ? (
+              getInitials(user?.name)
+            ) : (
+              <AdminIcon size={20} color="#ffffff" />
+            )}
           </div>
           <div className="hidden sm:block text-left">
-            <p className="text-xs font-bold text-[#0f172a] leading-tight">{user?.name || 'User'}</p>
-            <p className="text-[10px] text-[#64748b]">{isCitizen ? 'Registered Citizen' : user?.role || 'Staff'}</p>
+            <p className="text-xs font-bold text-[#0f172a] leading-tight">
+              {isCitizen ? (user?.name || 'User') : 'Admin'}
+            </p>
+            <p className="text-[10px] text-[#64748b]">{isCitizen ? 'Registered Citizen' : 'Admin'}</p>
           </div>
         </div>
       </div>

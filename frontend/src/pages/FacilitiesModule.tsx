@@ -25,6 +25,8 @@ import {
 } from '../lib/api';
 import { Facility, FacilityReservation } from '../types';
 
+import { StatusAnimationModal } from '../components/ui/StatusAnimationModal';
+
 export function FacilitiesModule() {
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [reservations, setReservations] = useState<FacilityReservation[]>([]);
@@ -34,6 +36,19 @@ export function FacilitiesModule() {
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [reviewRemarks, setReviewRemarks] = useState('');
+
+  // Status Animation Modal
+  const [animModal, setAnimModal] = useState<{
+    isOpen: boolean;
+    type: 'loading' | 'success' | 'paid' | 'rejected';
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: ''
+  });
 
   // AI Conflict check state
   const [aiChecking, setAiChecking] = useState(false);
@@ -67,13 +82,31 @@ export function FacilitiesModule() {
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(loadData, 2500);
+    const handleUpdate = () => loadData();
+    window.addEventListener('govserve_data_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('govserve_data_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, [statusFilter]);
 
   const handleUpdateStatus = async (status: string) => {
     if (!selectedRes) return;
     try {
+      // Show loading animation modal
+      setAnimModal({
+        isOpen: true,
+        type: 'loading',
+        title: 'Processing Request...',
+        message: 'Updating facility reservation status.'
+      });
+
       const fee = (selectedRes as any).fee_amount || (selectedRes.hourly_rate ? selectedRes.hourly_rate * 4 : 2000);
       const dueDate = new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0];
+
       await updateReservationStatus(
         selectedRes.id,
         status,
@@ -81,11 +114,49 @@ export function FacilitiesModule() {
         'Engr. Marcus Cruz',
         { fee_amount: fee, payment_due_date: dueDate }
       );
+
       setIsReviewModalOpen(false);
       loadData();
-      alert(`Reservation #${selectedRes.reference_no} updated to ${status}!`);
+
+      // Show animated checkmark or x-mark
+      setTimeout(() => {
+        if (status === 'Paid') {
+          setAnimModal({
+            isOpen: true,
+            type: 'paid',
+            title: '✓ Payment Approved & Official Receipt Issued!',
+            message: `Reservation #${selectedRes.reference_no} is now fully PAID.`
+          });
+        } else if (status === 'Pending Payment') {
+          setAnimModal({
+            isOpen: true,
+            type: 'success',
+            title: '✓ Granted — Waiting for Payment',
+            message: `Billing notice issued for #${selectedRes.reference_no}.`
+          });
+        } else if (status === 'Rejected') {
+          setAnimModal({
+            isOpen: true,
+            type: 'rejected',
+            title: '✕ Reservation Rejected',
+            message: `Reservation #${selectedRes.reference_no} has been marked as Rejected.`
+          });
+        } else {
+          setAnimModal({
+            isOpen: true,
+            type: 'success',
+            title: `✓ Reservation Updated to ${status}`,
+            message: `Status set successfully.`
+          });
+        }
+      }, 500);
     } catch (e) {
-      alert('Failed to update reservation');
+      setAnimModal({
+        isOpen: true,
+        type: 'rejected',
+        title: 'Error Occurred',
+        message: 'Failed to update reservation status.'
+      });
     }
   };
 
@@ -111,19 +182,46 @@ export function FacilitiesModule() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      setAnimModal({
+        isOpen: true,
+        type: 'loading',
+        title: 'Booking Facility...',
+        message: 'Checking schedule availability and creating booking ticket.'
+      });
+
       await createReservation(newForm);
       setIsNewModalOpen(false);
       loadData();
+
+      setTimeout(() => {
+        setAnimModal({
+          isOpen: true,
+          type: 'success',
+          title: '✓ Facility Reserved Successfully!',
+          message: 'Booking submitted to Pending Review queue.'
+        });
+      }, 500);
     } catch (e) {
-      alert('Failed to create reservation');
+      setAnimModal({
+        isOpen: true,
+        type: 'rejected',
+        title: 'Booking Failed',
+        message: 'Could not create reservation. Please try again.'
+      });
     }
   };
 
-  const filtered = (reservations || []).filter(r =>
-    (r.reference_no || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
-    (r.applicant_name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
-    (r.purpose || '').toLowerCase().includes((searchQuery || '').toLowerCase())
-  );
+  const filtered = (reservations || []).filter(r => {
+    const matchesQuery = (r.reference_no || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
+      (r.applicant_name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
+      (r.purpose || '').toLowerCase().includes((searchQuery || '').toLowerCase());
+    
+    if (statusFilter === 'all') return matchesQuery;
+    if (statusFilter === 'Pending Review') {
+      return matchesQuery && (r.status === 'Pending' || r.status === 'Pending Review');
+    }
+    return matchesQuery && r.status === statusFilter;
+  });
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -140,15 +238,6 @@ export function FacilitiesModule() {
             Manage Civic Centers, Multipurpose Gymnasiums, Conference Halls, and evaluate bookings.
           </p>
         </div>
-
-        <Button
-          size="sm"
-          variant="primary"
-          leftIcon={<Plus className="w-4 h-4" />}
-          onClick={() => setIsNewModalOpen(true)}
-        >
-          Book Facility
-        </Button>
       </div>
 
       {/* Facilities Cards Overview */}
@@ -182,7 +271,7 @@ export function FacilitiesModule() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-          {['all', 'Pending', 'Pending Payment', 'Approved', 'Paid', 'Rejected'].map((status) => (
+          {['all', 'Pending Review', 'Pending Payment', 'Paid', 'Rejected'].map((status) => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -469,6 +558,15 @@ export function FacilitiesModule() {
           </div>
         </form>
       </Modal>
+
+      {/* Status Animation Toast / Modal */}
+      <StatusAnimationModal
+        isOpen={animModal.isOpen}
+        type={animModal.type}
+        title={animModal.title}
+        message={animModal.message}
+        onClose={() => setAnimModal({ ...animModal, isOpen: false })}
+      />
     </div>
   );
 }

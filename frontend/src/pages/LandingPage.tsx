@@ -128,7 +128,7 @@ export function LandingPage() {
 
               <Link to="/register" className="w-full sm:w-auto">
                 <Button size="lg" variant="outline" className="w-full font-bold" leftIcon={<UserPlus className="w-4 h-4" />}>
-                  Create an Account
+                  Register Citizen Account
                 </Button>
               </Link>
             </div>
@@ -190,7 +190,6 @@ export function LandingPage() {
           </div>
           <div className="flex items-center gap-4">
             <Link to="/login" className="hover:text-white">Citizen Login</Link>
-            <Link to="/register" className="hover:text-white">Register</Link>
             <Link to="/admin/login" className="hover:text-white">Admin Console</Link>
           </div>
         </div>

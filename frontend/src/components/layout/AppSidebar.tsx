@@ -16,6 +16,7 @@ import {
   FileText
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { AdminIcon } from '../ui/AdminIcon';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -27,7 +28,7 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
   const navigate = useNavigate();
 
   const userStr = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
-  let user: any = { name: 'Atty. Elena Ramos', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
+  let user: any = { name: 'Admin', role: 'Admin', email: 'ronmanangan10@gmail.com' };
   try {
     if (userStr) user = JSON.parse(userStr);
   } catch {}
@@ -103,7 +104,7 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 flex items-center justify-center shrink-0 relative bg-white/10 rounded-xl p-1">
               <img
-                src="/logo.png"
+                src="/logoforinsidebothdashboardofcetizenandadminside.png"
                 alt="Logo"
                 className="w-full h-full object-contain drop-shadow-sm"
                 onError={(e) => { e.currentTarget.style.display = 'none'; }}
@@ -172,13 +173,19 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
       <div className="p-3 border-t border-[#1e293b]/70 bg-slate-950/40">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5 overflow-hidden">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-sm">
-              {getInitials(user?.name)}
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-sm overflow-hidden p-1">
+              {isCitizen ? (
+                getInitials(user?.name)
+              ) : (
+                <AdminIcon size={20} color="#ffffff" />
+              )}
             </div>
             <div className="overflow-hidden">
-              <p className="text-xs font-semibold text-white truncate">{user?.name || 'User'}</p>
+              <p className="text-xs font-semibold text-white truncate">
+                {isCitizen ? (user?.name || 'User') : 'Admin'}
+              </p>
               <span className="text-[10px] text-blue-300 font-medium">
-                {isCitizen ? 'Registered Citizen' : user?.role || 'Staff'}
+                {isCitizen ? 'Registered Citizen' : 'Admin'}
               </span>
             </div>
           </div>

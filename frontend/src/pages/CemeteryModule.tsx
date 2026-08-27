@@ -28,6 +28,7 @@ import {
   format12HourDateTime 
 } from '../lib/api';
 import { CemeteryPlot, BurialRecord } from '../types';
+import { StatusAnimationModal } from '../components/ui/StatusAnimationModal';
 
 export function CemeteryModule() {
   const [cemeteries, setCemeteries] = useState<string[]>([]);
@@ -39,6 +40,19 @@ export function CemeteryModule() {
   const [plotSearch, setPlotSearch] = useState('');
   const [plotFilter, setPlotFilter] = useState<'All' | 'Available' | 'Reserved' | 'Occupied'>('All');
   const [burialStatusFilter, setBurialStatusFilter] = useState<string>('All');
+
+  // Status Animation Modal
+  const [animModal, setAnimModal] = useState<{
+    isOpen: boolean;
+    type: 'loading' | 'success' | 'paid' | 'rejected';
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: ''
+  });
 
   // Modals
   const [isNewBurialOpen, setIsNewBurialOpen] = useState(false);
@@ -94,6 +108,15 @@ export function CemeteryModule() {
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(loadData, 2500);
+    const handleUpdate = () => loadData();
+    window.addEventListener('govserve_data_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('govserve_data_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, [selectedCemetery]);
 
   const handleCreateBurial = async (e: React.FormEvent) => {
@@ -134,40 +157,101 @@ export function CemeteryModule() {
 
   const handleGrantPermit = async (burial: BurialRecord) => {
     try {
+      setAnimModal({
+        isOpen: true,
+        type: 'loading',
+        title: 'Granting Permit...',
+        message: 'Issuing billing notice and reserving plot.'
+      });
+
       await updateBurialStatus(burial.id, 'Pending Payment', { 
         fee_amount: 18000,
         payment_due_date: reviewDueDate 
       });
+
       setIsReviewModalOpen(false);
       loadData();
-      alert(`Application ${burial.reference_no} granted! Status updated to Pending Payment (Fee: ₱18,000, Payment Due: ${reviewDueDate}). Plot ${burial.plot_code || ''} is Reserved.`);
+
+      setTimeout(() => {
+        setAnimModal({
+          isOpen: true,
+          type: 'success',
+          title: '✓ Application Granted!',
+          message: `Billing notice (₱18,000) issued for ${burial.reference_no}.`
+        });
+      }, 500);
     } catch (e) {
-      alert('Failed to grant permit');
+      setAnimModal({
+        isOpen: true,
+        type: 'rejected',
+        title: 'Error Occurred',
+        message: 'Failed to grant burial permit.'
+      });
     }
   };
 
   const handleConfirmPayment = async (burial: BurialRecord) => {
     try {
+      setAnimModal({
+        isOpen: true,
+        type: 'loading',
+        title: 'Processing Payment...',
+        message: 'Confirming cash settlement and issuing Official Receipt.'
+      });
+
       await updateBurialStatus(burial.id, 'Paid', {
         paid_at: new Date().toISOString()
       });
+
       setIsReviewModalOpen(false);
       loadData();
-      alert(`Payment confirmed for ${burial.reference_no}! Official Burial Permit ${burial.permit_no || ''} issued with PAID status.`);
+
+      setTimeout(() => {
+        setAnimModal({
+          isOpen: true,
+          type: 'paid',
+          title: '✓ Payment Approved & Official Receipt Issued!',
+          message: `Burial Permit ${burial.permit_no || ''} marked as PAID.`
+        });
+      }, 500);
     } catch (e) {
-      alert('Failed to confirm payment');
+      setAnimModal({
+        isOpen: true,
+        type: 'rejected',
+        title: 'Error Occurred',
+        message: 'Failed to confirm payment.'
+      });
     }
   };
 
   const handleRejectBurial = async (burial: BurialRecord) => {
-    if (!confirm(`Reject application ${burial.reference_no}? This will set plot ${burial.plot_code || ''} back to Available.`)) return;
     try {
+      setAnimModal({
+        isOpen: true,
+        type: 'loading',
+        title: 'Rejecting Application...',
+        message: 'Updating application and resetting plot status.'
+      });
+
       await updateBurialStatus(burial.id, 'Rejected');
       setIsReviewModalOpen(false);
       loadData();
-      alert(`Application ${burial.reference_no} rejected.`);
+
+      setTimeout(() => {
+        setAnimModal({
+          isOpen: true,
+          type: 'rejected',
+          title: '✕ Application Rejected',
+          message: `Burial application ${burial.reference_no} rejected.`
+        });
+      }, 500);
     } catch (e) {
-      alert('Failed to reject application');
+      setAnimModal({
+        isOpen: true,
+        type: 'rejected',
+        title: 'Error Occurred',
+        message: 'Failed to reject application.'
+      });
     }
   };
 
@@ -1019,6 +1103,14 @@ export function CemeteryModule() {
         )}
       </Modal>
 
+      {/* Status Animation Toast / Modal */}
+      <StatusAnimationModal
+        isOpen={animModal.isOpen}
+        type={animModal.type}
+        title={animModal.title}
+        message={animModal.message}
+        onClose={() => setAnimModal({ ...animModal, isOpen: false })}
+      />
     </div>
   );
 }

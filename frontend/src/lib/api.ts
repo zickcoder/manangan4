@@ -414,6 +414,7 @@ function setStore<T>(key: string, val: T): void {
   try {
     if (typeof window !== 'undefined') {
       localStorage.setItem(`govserve_${key}`, JSON.stringify(val));
+      window.dispatchEvent(new Event('govserve_data_updated'));
     }
   } catch (e) {
     console.error('Storage error:', e);
@@ -1113,15 +1114,19 @@ export async function loginStaff(email: string, password: string) {
   } catch {}
 
   const cleanEmail = (email || '').toLowerCase().trim();
-  if (cleanEmail === 'admin@govserve.gov.ph' && (password === 'admin123' || password === 'admin')) {
+  const customAdminPass = localStorage.getItem('govserve_admin_password') || 'admin123';
+  const isAdminEmail = cleanEmail === 'ronmanangan10@gmail.com' || cleanEmail === 'admin@govserve.gov.ph';
+  const isValidPass = password === customAdminPass || password === 'admin123' || password === 'admin';
+
+  if (isAdminEmail && isValidPass) {
     return {
       success: true,
       token: 'jwt-local-demo-token-998822',
       user: {
         id: 1,
-        name: 'Atty. Elena Ramos',
-        email: 'admin@govserve.gov.ph',
-        role: 'Super Admin',
+        name: 'Admin',
+        email: 'ronmanangan10@gmail.com',
+        role: 'Admin',
         department: 'Municipal Executive Office',
         avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'
       }
@@ -1129,6 +1134,38 @@ export async function loginStaff(email: string, password: string) {
   }
 
   return { success: false, message: 'Invalid email or password.' };
+}
+
+export async function updateUserPassword(email: string, newPassword: string) {
+  const cleanEmail = (email || '').toLowerCase().trim();
+
+  if (cleanEmail === 'ronmanangan10@gmail.com' || cleanEmail === 'admin@govserve.gov.ph') {
+    localStorage.setItem('govserve_admin_password', newPassword);
+    return { success: true, message: 'Admin password updated successfully!' };
+  }
+
+  const registeredUsers = getStore('registered_citizens', [
+    {
+      id: 101,
+      name: 'Juan M. Dela Cruz',
+      email: 'juan.delacruz@citizen.gov.ph',
+      phone: '+63 917 123 4567',
+      password: 'password123',
+      role: 'Citizen',
+      department: 'Resident User',
+      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      created_at: new Date().toISOString()
+    }
+  ]);
+
+  const userIndex = registeredUsers.findIndex((u: any) => u.email.toLowerCase() === cleanEmail);
+  if (userIndex !== -1) {
+    registeredUsers[userIndex].password = newPassword;
+    setStore('registered_citizens', registeredUsers);
+    return { success: true, message: 'Password updated successfully!' };
+  }
+
+  return { success: false, message: 'Account email not found in system.' };
 }
 
 export async function checkEmailExists(email: string): Promise<boolean> {

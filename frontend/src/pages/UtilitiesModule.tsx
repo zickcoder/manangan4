@@ -57,6 +57,15 @@ export function UtilitiesModule() {
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(loadData, 2500);
+    const handleUpdate = () => loadData();
+    window.addEventListener('govserve_data_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('govserve_data_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, [statusFilter]);
 
   const handleUpdateStatus = async (status: string) => {
@@ -108,16 +117,6 @@ export function UtilitiesModule() {
             Review citizen-submitted hazard reports, verify photo evidence, and dispatch emergency response crews.
           </p>
         </div>
-
-        <Button
-          size="sm"
-          variant="primary"
-          className="bg-cyan-600 hover:bg-cyan-700 font-bold shadow-cyan shadow-sm"
-          leftIcon={<Plus className="w-4 h-4" />}
-          onClick={() => setIsNewModalOpen(true)}
-        >
-          Log Incident Ticket
-        </Button>
       </div>
 
       {/* Filter and Search Bar */}
@@ -134,7 +133,7 @@ export function UtilitiesModule() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-          {['all', 'Pending', 'In Progress', 'Resolved', 'Rejected'].map((st) => (
+          {['all', 'Pending', 'Dispatched', 'Resolved', 'Rejected'].map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
@@ -201,8 +200,8 @@ export function UtilitiesModule() {
                     </td>
                     <td className="py-3.5 px-4 text-slate-800 font-semibold">{u.assigned_team || 'Unassigned'}</td>
                     <td className="py-3.5 px-4">
-                      <Badge variant={u.status === 'Resolved' ? 'success' : u.status === 'In Progress' ? 'info' : 'warning'}>
-                        {u.status}
+                      <Badge variant={u.status === 'Resolved' ? 'success' : u.status === 'In Progress' || u.status === 'Dispatched' ? 'info' : 'warning'}>
+                        {u.status === 'In Progress' ? 'Dispatched' : u.status}
                       </Badge>
                     </td>
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
@@ -248,7 +247,7 @@ export function UtilitiesModule() {
             <div className="flex items-center justify-between p-3 bg-slate-900 text-white rounded-xl">
               <div className="flex items-center gap-2">
                 <Badge variant={selectedReq.status === 'Resolved' ? 'success' : selectedReq.status === 'In Progress' || selectedReq.status === 'Dispatched' ? 'info' : 'warning'}>
-                  {selectedReq.status}
+                  {selectedReq.status === 'In Progress' ? 'Dispatched' : selectedReq.status}
                 </Badge>
                 <span className="font-mono font-bold text-cyan-400">{selectedReq.ticket_no}</span>
               </div>
@@ -340,12 +339,12 @@ export function UtilitiesModule() {
                   Close
                 </Button>
                 {(selectedReq.status === 'Pending' || selectedReq.status === 'Pending Review') && (
-                  <Button size="sm" variant="primary" className="bg-cyan-600 hover:bg-cyan-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('In Progress')}>
+                  <Button size="sm" variant="primary" className="bg-cyan-600 hover:bg-cyan-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Dispatched')}>
                     <Truck className="w-3.5 h-3.5 mr-1" />
-                    Dispatch Crew (In Progress)
+                    Dispatch Crew
                   </Button>
                 )}
-                {selectedReq.status === 'In Progress' && (
+                {(selectedReq.status === 'Dispatched' || selectedReq.status === 'In Progress') && (
                   <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Resolved')}>
                     <Check className="w-3.5 h-3.5 mr-1" />
                     Mark Resolved & Repaired

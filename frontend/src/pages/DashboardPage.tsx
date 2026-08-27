@@ -55,7 +55,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
 
   const userStr = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
-  let user: any = { name: 'Atty. Elena Ramos', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
+  let user: any = { name: 'Admin', role: 'Admin', email: 'ronmanangan10@gmail.com' };
   try {
     if (userStr) user = JSON.parse(userStr);
   } catch {}
@@ -388,7 +388,7 @@ export function DashboardPage() {
             <h2 className="text-xl sm:text-2xl font-extrabold text-[#0f172a] font-display">
               Executive Reporting & System Analytics
             </h2>
-            <Badge variant="purple" size="sm">Super Admin Console</Badge>
+            <Badge variant="purple" size="sm">Admin Console</Badge>
           </div>
           <p className="text-xs text-slate-500 mt-1">
             Comprehensive operational telemetry across facilities, cemetery plots, water/drainage, and asset fleet.
@@ -484,107 +484,97 @@ export function DashboardPage() {
       {/* Main Admin Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {/* Facility Reservations Table */}
-          <Card className="border-[#cbd5e1]">
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <div>
-                <CardTitle>Government Facility Reservation & Scheduling</CardTitle>
-                <CardDescription>Upcoming citizen & community event bookings</CardDescription>
-              </div>
-              <Link to="/facilities" className="text-xs font-bold text-blue-600 hover:text-blue-700 whitespace-nowrap">View All →</Link>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                    <tr>
-                      <th className="py-2.5 px-3">Ref</th>
-                      <th className="py-2.5 px-3">Facility</th>
-                      <th className="py-2.5 px-3">Applicant & Purpose</th>
-                      <th className="py-2.5 px-3">Schedule</th>
-                      <th className="py-2.5 px-3">Status</th>
-                      <th className="py-2.5 px-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {allReservations.slice(0, 5).map((r) => (
-                      <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-3 font-mono font-bold text-blue-600">{r.reference_no}</td>
-                        <td className="py-3 px-3 text-slate-800 max-w-[140px] truncate">{r.facility_name}</td>
-                        <td className="py-3 px-3 max-w-[180px]">
-                          <p className="font-bold text-slate-900 truncate">{r.applicant_name}</p>
-                          <p className="text-[10px] text-slate-500 truncate">{r.purpose}</p>
-                        </td>
-                        <td className="py-3 px-3 text-slate-700 whitespace-nowrap">
-                          {new Date(r.event_date).toLocaleDateString()}
-                          <span className="block text-[10px] text-slate-400">{r.start_time} - {r.end_time}</span>
-                        </td>
-                        <td className="py-3 px-3"><Badge variant={r.status === "Approved" ? "success" : "warning"}>{r.status}</Badge></td>
-                        <td className="py-3 px-3 text-right">
-                          {r.status === "Pending" && (
-                            <button
-                              onClick={() => handleApproveReservation(r.id)}
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-semibold cursor-pointer"
-                            >
-                              Approve
-                            </button>
-                          )}
-                        </td>
+          {/* Facility Reservations Box - Fully Clickable */}
+          <div onClick={() => navigate('/facilities')} className="cursor-pointer group">
+            <Card className="border-[#cbd5e1] hover:border-blue-400 hover:shadow-md transition-all">
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <div>
+                  <CardTitle className="group-hover:text-blue-600 transition-colors">
+                    Government Facility Reservation & Scheduling
+                  </CardTitle>
+                  <CardDescription>Click to access Facility & Park Bookings Desk</CardDescription>
+                </div>
+                <span className="text-xs font-bold text-blue-600 group-hover:translate-x-1 transition-transform flex items-center gap-1">
+                  Go to Module <ArrowRight className="w-3.5 h-3.5" />
+                </span>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5 px-3">Ref</th>
+                        <th className="py-2.5 px-3">Facility</th>
+                        <th className="py-2.5 px-3">Applicant & Purpose</th>
+                        <th className="py-2.5 px-3">Schedule</th>
+                        <th className="py-2.5 px-3">Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {allReservations.slice(0, 5).map((r) => (
+                        <tr key={r.id} className="hover:bg-blue-50/50 transition-colors">
+                          <td className="py-3 px-3 font-mono font-bold text-blue-600">{r.reference_no}</td>
+                          <td className="py-3 px-3 text-slate-800 max-w-[140px] truncate">{r.facility_name}</td>
+                          <td className="py-3 px-3 max-w-[180px]">
+                            <p className="font-bold text-slate-900 truncate">{r.applicant_name}</p>
+                            <p className="text-[10px] text-slate-500 truncate">{r.purpose}</p>
+                          </td>
+                          <td className="py-3 px-3 text-slate-700 whitespace-nowrap">
+                            {new Date(r.event_date).toLocaleDateString()}
+                            <span className="block text-[10px] text-slate-400">{r.start_time} - {r.end_time}</span>
+                          </td>
+                          <td className="py-3 px-3"><Badge variant={r.status === "Approved" || r.status === "Paid" ? "success" : "warning"}>{r.status}</Badge></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-          {/* Water & Drainage Tickets Table */}
-          <Card className="border-[#cbd5e1]">
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <div>
-                <CardTitle>Water & Drainage Incident Triage</CardTitle>
-                <CardDescription>Active water & drainage tickets with AI triage</CardDescription>
-              </div>
-              <Link to="/utilities" className="text-xs font-bold text-cyan-600 hover:text-cyan-700 whitespace-nowrap">Manage Tickets →</Link>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                    <tr>
-                      <th className="py-2.5 px-3">Ticket</th>
-                      <th className="py-2.5 px-3">Service Type</th>
-                      <th className="py-2.5 px-3">Location</th>
-                      <th className="py-2.5 px-3">AI Score</th>
-                      <th className="py-2.5 px-3">Status</th>
-                      <th className="py-2.5 px-3 text-right">Dispatch</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {allUtilities.slice(0, 5).map((u) => (
-                      <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-3 font-mono font-bold text-cyan-700">{u.ticket_no}</td>
-                        <td className="py-3 px-3 font-bold text-slate-800">{u.service_type}</td>
-                        <td className="py-3 px-3 text-slate-600 max-w-[180px] truncate">{u.location}</td>
-                        <td className="py-3 px-3"><span className="font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">{u.ai_priority_score} pts</span></td>
-                        <td className="py-3 px-3"><Badge variant={u.status === "Resolved" ? "success" : u.status === "In Progress" ? "info" : "warning"}>{u.status}</Badge></td>
-                        <td className="py-3 px-3 text-right">
-                          {u.status === "Pending" && (
-                            <button
-                              onClick={() => handleDispatchCrew(u.id)}
-                              className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-[11px] font-semibold cursor-pointer"
-                            >
-                              Dispatch Crew
-                            </button>
-                          )}
-                        </td>
+          {/* Water & Drainage Tickets Box - Fully Clickable */}
+          <div onClick={() => navigate('/utilities')} className="cursor-pointer group">
+            <Card className="border-[#cbd5e1] hover:border-cyan-400 hover:shadow-md transition-all">
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <div>
+                  <CardTitle className="group-hover:text-cyan-600 transition-colors">
+                    Water Supply & Drainage Incident Dispatch Desk
+                  </CardTitle>
+                  <CardDescription>Click to access Water & Drainage Incident Dispatch Desk</CardDescription>
+                </div>
+                <span className="text-xs font-bold text-cyan-600 group-hover:translate-x-1 transition-transform flex items-center gap-1">
+                  Go to Module <ArrowRight className="w-3.5 h-3.5" />
+                </span>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5 px-3">Ticket</th>
+                        <th className="py-2.5 px-3">Service Type</th>
+                        <th className="py-2.5 px-3">Location</th>
+                        <th className="py-2.5 px-3">AI Score</th>
+                        <th className="py-2.5 px-3">Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {allUtilities.slice(0, 5).map((u) => (
+                        <tr key={u.id} className="hover:bg-cyan-50/50 transition-colors">
+                          <td className="py-3 px-3 font-mono font-bold text-cyan-700">{u.ticket_no}</td>
+                          <td className="py-3 px-3 font-bold text-slate-800">{u.service_type}</td>
+                          <td className="py-3 px-3 text-slate-600 max-w-[180px] truncate">{u.location}</td>
+                          <td className="py-3 px-3"><span className="font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">{u.ai_priority_score} pts</span></td>
+                          <td className="py-3 px-3"><Badge variant={u.status === "Resolved" ? "success" : u.status === "In Progress" ? "info" : "warning"}>{u.status}</Badge></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {/* Right Column: Operations Audit Trail */}

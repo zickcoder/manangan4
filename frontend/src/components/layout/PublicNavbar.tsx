@@ -11,7 +11,7 @@ export function PublicNavbar() {
         <Link to="/" className="flex items-center gap-3 group">
           <div className="h-10 w-10 flex items-center justify-center shrink-0 relative">
             <img
-              src="/logo.png"
+              src="/logoforinsidebothdashboardofcetizenandadminside.png"
               alt="Logo"
               className="w-full h-full object-contain drop-shadow-sm"
               onError={(e) => { e.currentTarget.style.display = 'none'; }}
@@ -32,17 +32,11 @@ export function PublicNavbar() {
           <a href="#services" className="hover:text-blue-600 transition-colors">Municipal Services</a>
         </nav>
 
-        {/* Actions (Login & Register) */}
+        {/* Actions (Login) */}
         <div className="flex items-center gap-2.5">
           <Link to="/login">
             <Button size="sm" variant="primary" leftIcon={<LogIn className="w-3.5 h-3.5" />}>
               Citizen Sign In
-            </Button>
-          </Link>
-
-          <Link to="/register">
-            <Button size="sm" variant="outline" className="hidden sm:inline-flex" leftIcon={<UserPlus className="w-3.5 h-3.5" />}>
-              Register
             </Button>
           </Link>
 

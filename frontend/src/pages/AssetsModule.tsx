@@ -9,7 +9,8 @@ import {
   Sparkles, 
   Truck, 
   ShieldCheck, 
-  Eye 
+  Eye,
+  Trash2
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -54,6 +55,12 @@ export function AssetsModule() {
   useEffect(() => {
     loadData();
   }, [categoryFilter]);
+
+  const handleDeleteAsset = (id: number) => {
+    if (confirm('Are you sure you want to delete this asset from the inventory?')) {
+      setAssets(prev => prev.filter(a => a.id !== id));
+    }
+  };
 
   const handleUpdate = async () => {
     if (!selectedAsset) return;
@@ -179,7 +186,15 @@ export function AssetsModule() {
               </div>
             )}
 
-            <div className="pt-2 flex justify-end">
+            <div className="pt-2 flex items-center justify-end gap-2">
+              <Button
+                size="sm"
+                variant="destructive"
+                leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                onClick={() => handleDeleteAsset(asset.id)}
+              >
+                Delete Unit
+              </Button>
               <Button
                 size="sm"
                 variant="secondary"

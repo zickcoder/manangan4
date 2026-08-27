@@ -25,6 +25,8 @@ import {
 } from '../lib/api';
 import { Facility, FacilityReservation } from '../types';
 
+import { StatusAnimationModal } from '../components/ui/StatusAnimationModal';
+
 export function ParksModule() {
   const [parks, setParks] = useState<Facility[]>([]);
   const [reservations, setReservations] = useState<FacilityReservation[]>([]);
@@ -34,6 +36,19 @@ export function ParksModule() {
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [reviewRemarks, setReviewRemarks] = useState('');
+
+  // Status Animation Modal
+  const [animModal, setAnimModal] = useState<{
+    isOpen: boolean;
+    type: 'loading' | 'success' | 'paid' | 'rejected';
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: ''
+  });
 
   const [newForm, setNewForm] = useState({
     facility_id: 4,
@@ -63,40 +78,125 @@ export function ParksModule() {
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(loadData, 2500);
+    const handleUpdate = () => loadData();
+    window.addEventListener('govserve_data_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('govserve_data_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, [statusFilter]);
 
   const handleUpdateStatus = async (status: string) => {
     if (!selectedRes) return;
     try {
+      setAnimModal({
+        isOpen: true,
+        type: 'loading',
+        title: 'Processing Request...',
+        message: 'Updating park scheduling status.'
+      });
+
+      const fee = (selectedRes as any).fee_amount || (selectedRes.hourly_rate ? selectedRes.hourly_rate * 4 : 1500);
+      const dueDate = new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0];
+
       await updateReservationStatus(
         selectedRes.id,
         status,
         reviewRemarks || `Park schedule ${status}`,
-        'Engr. Marcus Cruz'
+        'Engr. Marcus Cruz',
+        { fee_amount: fee, payment_due_date: dueDate }
       );
+
       setIsReviewModalOpen(false);
       loadData();
+
+      setTimeout(() => {
+        if (status === 'Paid') {
+          setAnimModal({
+            isOpen: true,
+            type: 'paid',
+            title: '✓ Payment Approved & Official Receipt Issued!',
+            message: `Park schedule #${selectedRes.reference_no} is now fully PAID.`
+          });
+        } else if (status === 'Pending Payment') {
+          setAnimModal({
+            isOpen: true,
+            type: 'success',
+            title: '✓ Granted — Waiting for Payment',
+            message: `Billing notice issued for #${selectedRes.reference_no}.`
+          });
+        } else if (status === 'Rejected') {
+          setAnimModal({
+            isOpen: true,
+            type: 'rejected',
+            title: '✕ Schedule Rejected',
+            message: `Park booking #${selectedRes.reference_no} has been marked as Rejected.`
+          });
+        } else {
+          setAnimModal({
+            isOpen: true,
+            type: 'success',
+            title: `✓ Status Updated to ${status}`,
+            message: `Park booking updated successfully.`
+          });
+        }
+      }, 500);
     } catch (e) {
-      alert('Failed to update status');
+      setAnimModal({
+        isOpen: true,
+        type: 'rejected',
+        title: 'Error Occurred',
+        message: 'Failed to update park schedule status.'
+      });
     }
   };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      setAnimModal({
+        isOpen: true,
+        type: 'loading',
+        title: 'Scheduling Park Event...',
+        message: 'Reserving park ground and generating ticket.'
+      });
+
       await createReservation(newForm);
       setIsNewModalOpen(false);
       loadData();
+
+      setTimeout(() => {
+        setAnimModal({
+          isOpen: true,
+          type: 'success',
+          title: '✓ Park Schedule Submitted!',
+          message: 'Booking submitted to Pending Review queue.'
+        });
+      }, 500);
     } catch (e) {
-      alert('Failed to book park');
+      setAnimModal({
+        isOpen: true,
+        type: 'rejected',
+        title: 'Booking Failed',
+        message: 'Failed to schedule park event.'
+      });
     }
   };
 
-  const filtered = reservations.filter(r =>
-    r.reference_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.applicant_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.purpose.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filtered = reservations.filter(r => {
+    const matchesQuery = r.reference_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.applicant_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      r.purpose.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    if (statusFilter === 'all') return matchesQuery;
+    if (statusFilter === 'Pending Review') {
+      return matchesQuery && (r.status === 'Pending' || r.status === 'Pending Review');
+    }
+    return matchesQuery && r.status === statusFilter;
+  });
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -113,15 +213,6 @@ export function ParksModule() {
             Community plazas, outdoor amphitheaters, children playgrounds, and open green recreation areas.
           </p>
         </div>
-
-        <Button
-          size="sm"
-          variant="success"
-          leftIcon={<Plus className="w-4 h-4" />}
-          onClick={() => setIsNewModalOpen(true)}
-        >
-          Schedule Park Event
-        </Button>
       </div>
 
       {/* Parks Overview Cards */}
@@ -155,7 +246,7 @@ export function ParksModule() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-          {['all', 'Pending', 'Pending Payment', 'Approved', 'Paid', 'Rejected'].map((status) => (
+          {['all', 'Pending Review', 'Pending Payment', 'Paid', 'Rejected'].map((status) => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -402,6 +493,15 @@ export function ParksModule() {
           </div>
         </form>
       </Modal>
+
+      {/* Status Animation Toast / Modal */}
+      <StatusAnimationModal
+        isOpen={animModal.isOpen}
+        type={animModal.type}
+        title={animModal.title}
+        message={animModal.message}
+        onClose={() => setAnimModal({ ...animModal, isOpen: false })}
+      />
     </div>
   );
 }

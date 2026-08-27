@@ -84,6 +84,15 @@ export function MyTicketsPage() {
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(loadData, 2500);
+    const handleUpdate = () => loadData();
+    window.addEventListener('govserve_data_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('govserve_data_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, []);
 
   const handleCancelTicket = async (item: any) => {
@@ -226,19 +235,38 @@ export function MyTicketsPage() {
     }))
   ];
 
-  const filteredSubmissions = allSubmissions.filter((item) => {
-    if (filterCategory !== 'all' && item.category !== filterCategory) return false;
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase().trim();
-    return (
-      (item.ref_no || '').toLowerCase().includes(q) ||
-      (item.title || '').toLowerCase().includes(q) ||
-      (item.details || '').toLowerCase().includes(q) ||
-      (item.status || '').toLowerCase().includes(q) ||
-      (item.type || '').toLowerCase().includes(q) ||
-      (item.applicant || '').toLowerCase().includes(q)
-    );
-  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(7);
+
+  const getStatusRank = (status: string) => {
+    const s = (status || '').toLowerCase();
+    if (s.includes('pending review') || s === 'pending') return 1;
+    if (s.includes('pending payment') || s.includes('waiting for payment')) return 2;
+    if (s.includes('paid') || s.includes('approved') || s.includes('dispatched') || s.includes('resolved') || s.includes('completed')) return 3;
+    if (s.includes('reject') || s.includes('cancel')) return 4;
+    return 5;
+  };
+
+  const filteredSubmissions = allSubmissions
+    .filter((item) => {
+      if (filterCategory !== 'all' && item.category !== filterCategory) return false;
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase().trim();
+      return (
+        (item.ref_no || '').toLowerCase().includes(q) ||
+        (item.title || '').toLowerCase().includes(q) ||
+        (item.details || '').toLowerCase().includes(q) ||
+        (item.status || '').toLowerCase().includes(q) ||
+        (item.type || '').toLowerCase().includes(q) ||
+        (item.applicant || '').toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => getStatusRank(a.status) - getStatusRank(b.status));
+
+  const totalPages = Math.ceil(filteredSubmissions.length / (pageSize === 9999 ? filteredSubmissions.length || 1 : pageSize)) || 1;
+  const paginatedSubmissions = pageSize === 9999 
+    ? filteredSubmissions 
+    : filteredSubmissions.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
@@ -273,7 +301,10 @@ export function MyTicketsPage() {
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
                 placeholder="Search ticket code or title..."
                 className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white text-slate-900"
               />
@@ -289,7 +320,10 @@ export function MyTicketsPage() {
               ].map((f) => (
                 <button
                   key={f.id}
-                  onClick={() => setFilterCategory(f.id as any)}
+                  onClick={() => {
+                    setFilterCategory(f.id as any);
+                    setCurrentPage(1);
+                  }}
                   className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     filterCategory === f.id
                       ? 'bg-blue-600 text-white shadow-sm'
@@ -317,14 +351,14 @@ export function MyTicketsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredSubmissions.length === 0 ? (
+                {paginatedSubmissions.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-12 text-center text-slate-400 text-xs">
                       No applications or tickets found matching your query.
                     </td>
                   </tr>
                 ) : (
-                  filteredSubmissions.map((item) => (
+                  paginatedSubmissions.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3.5 px-4">
                         <span className="font-mono font-bold text-blue-600 block">{item.ref_no}</span>
@@ -355,7 +389,7 @@ export function MyTicketsPage() {
                           >
                             To View
                           </Button>
-                          {(item.status === 'Pending Review' || item.status === 'Pending Payment' || item.status === 'Pending') && (
+                          {(item.status === 'Pending Review' || item.status === 'Pending Payment' || item.status === 'Pending' || item.status === 'Waiting for Payment') && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -372,6 +406,55 @@ export function MyTicketsPage() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Pagination & Dropdown Menu Footer */}
+          <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-600 font-semibold">Show per page:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value={7}>7 items per page</option>
+                <option value={10}>10 items per page</option>
+                <option value={15}>15 items per page</option>
+                <option value={9999}>Show all items</option>
+              </select>
+              <span className="text-slate-500 font-medium">
+                (Showing {paginatedSubmissions.length} of {filteredSubmissions.length} items)
+              </span>
+            </div>
+
+            {pageSize !== 9999 && totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="text-xs font-bold"
+                >
+                  ← Prev
+                </Button>
+                <span className="font-bold text-slate-700 px-2">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className="text-xs font-bold"
+                >
+                  Next →
+                </Button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

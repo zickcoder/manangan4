@@ -116,6 +116,8 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
   const [aiConflict, setAiConflict] = useState<any>(null);
   const [aiChecking, setAiChecking] = useState(false);
   const [reservationSuccess, setReservationSuccess] = useState<any>(null);
+  const [reserveError, setReserveError] = useState('');
+  const [reserveSubmitting, setReserveSubmitting] = useState(false);
 
   // 2. Water & Drainage Incident Desk
   const HOUSEHOLD_OPTIONS = [
@@ -179,7 +181,7 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
     death_cert_attached: false,
     valid_id_attached: false,
     // Section E
-    declaration_accepted: true,
+    declaration_accepted: false,
   });
   const [burialSuccess, setBurialSuccess] = useState<any>(null);
   const [burialSubmitting, setBurialSubmitting] = useState(false);
@@ -244,50 +246,40 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
     }).catch(console.error);
   }, [selectedFacilityId, reserveForm.event_date, reserveForm.start_time, reserveForm.end_time]);
 
-  const toggleEquipment = (item: string) => {
-    setReserveForm(prev => {
-      const exists = prev.special_equipment.includes(item);
-      return {
-        ...prev,
-        special_equipment: exists
-          ? prev.special_equipment.filter(e => e !== item)
-          : [...prev.special_equipment, item]
-      };
-    });
-  };
-
-  const handleReserveSubmit = async (e: React.FormEvent) => {
+  const handleFacilityReserve = async (e: React.FormEvent) => {
     e.preventDefault();
+    setReserveError('');
 
-    // Check 1: Exceeded Pax
+    if (!reserveForm.event_date || !reserveForm.start_time || !reserveForm.end_time) {
+      setReserveError('Please select event date, start time, and end time.');
+      return;
+    }
     if (isPaxExceeded) {
-      alert(`🚫 Cannot Submit: Expected attendees (${currentAttendees} Pax) exceeds maximum capacity of ${selectedFacilityObj.name} (${selectedFacilityObj.capacity} Pax). Please reduce attendee count or select a larger venue.`);
+      setReserveError(`Number of attendees (${currentAttendees}) exceeds maximum venue capacity (${selectedFacilityObj?.capacity}).`);
       return;
     }
 
-    // Check 2: Schedule Conflict
-    if (aiConflict?.hasConflict) {
-      alert(`${aiConflict.aiAnalysis}\n\nPlease select another date/time or click a suggested slot.`);
-      return;
-    }
-
-    const finalPurpose = reserveForm.purpose === 'Other Government / Civic Activity' && reserveForm.custom_purpose
-      ? reserveForm.custom_purpose
-      : reserveForm.purpose;
-
+    setReserveSubmitting(true);
     try {
-      const res = await createReservation({
+      const payload = {
         ...reserveForm,
-        purpose: finalPurpose,
         facility_id: selectedFacilityId,
         facility_name: selectedFacilityObj.name,
-        attendees: currentAttendees
-      });
+        facility_category: selectedFacilityObj.category,
+        facility_location: selectedFacilityObj.location,
+        hourly_rate: selectedFacilityObj.hourly_rate,
+        attendees: currentAttendees,
+      };
+      const res = await createReservation(payload);
       if (res.success) {
-        setReservationSuccess(res.data);
+        setReservationSuccess(res.data || res);
+      } else {
+        setReserveError(res.message || 'Failed to submit reservation.');
       }
     } catch (e) {
-      alert('Failed to submit reservation');
+      setReserveError('Error submitting reservation request.');
+    } finally {
+      setReserveSubmitting(false);
     }
   };
 
@@ -313,8 +305,12 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
       setBurialError('Please choose an available plot on the visual map.');
       return;
     }
+    if (!burialForm.death_cert_attached || !burialForm.valid_id_attached) {
+      setBurialError('SECTION D: REQUIREMENTS (Upload) is necessary for this ticket');
+      return;
+    }
     if (!burialForm.declaration_accepted) {
-      setBurialError('Please check the declaration box.');
+      setBurialError('you need to read this contents');
       return;
     }
 
@@ -472,7 +468,7 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
                     <CardDescription>Select event purpose, special equipment, and verify schedule</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <form onSubmit={handleReserveSubmit} className="space-y-4">
+                    <form onSubmit={handleFacilityReserve} className="space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <Input
                           label="Applicant Name *"

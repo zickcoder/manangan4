@@ -13,20 +13,23 @@ import {
 } from 'lucide-react';
 import { loginStaff, loginCitizen, registerCitizen, getLockoutTimeRemaining, recordFailedAttempt, recordSuccessfulLogin } from '../lib/api';
 
+import { ForgotPasswordModal } from '../components/auth/ForgotPasswordModal';
+
 export function LoginPage() {
   const navigate = useNavigate();
   const [authMode, setAuthMode] = useState<'citizen_login' | 'citizen_register' | 'staff_login'>('citizen_login');
 
   // Form states
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('juan.delacruz@citizen.gov.ph');
-  const [phone, setPhone] = useState('+63 917 123 4567');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
+  const [isForgotOpen, setIsForgotOpen] = useState(false);
 
   useEffect(() => {
     const rem = getLockoutTimeRemaining(authMode);
@@ -53,20 +56,12 @@ export function LoginPage() {
     setAuthMode(mode);
     setError('');
     setSuccessMsg('');
+    setEmail('');
+    setPassword('');
+    setName('');
+    setPhone('');
     const rem = getLockoutTimeRemaining(mode);
     setLockoutSeconds(rem > 0 ? rem : 0);
-    if (mode === 'staff_login') {
-      setEmail('admin@govserve.gov.ph');
-      setPassword('admin123');
-    } else if (mode === 'citizen_login') {
-      setEmail('juan.delacruz@citizen.gov.ph');
-      setPassword('password123');
-    } else if (mode === 'citizen_register') {
-      setName('');
-      setEmail('');
-      setPhone('');
-      setPassword('');
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -310,7 +305,11 @@ export function LoginPage() {
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-semibold text-slate-700">Password</label>
                   {authMode !== 'citizen_register' && (
-                    <button type="button" className="text-[11px] font-semibold text-blue-600 hover:underline">
+                    <button 
+                      type="button" 
+                      onClick={() => setIsForgotOpen(true)}
+                      className="text-[11px] font-semibold text-blue-600 hover:underline cursor-pointer"
+                    >
                       Forgot password?
                     </button>
                   )}
@@ -372,6 +371,13 @@ export function LoginPage() {
           </div>
         </div>
       </div>
+
+      {/* Forgot Password Modal */}
+      <ForgotPasswordModal 
+        isOpen={isForgotOpen}
+        onClose={() => setIsForgotOpen(false)}
+        defaultEmail={email}
+      />
 
     </div>
   );
