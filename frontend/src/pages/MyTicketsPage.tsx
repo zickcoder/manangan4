@@ -476,12 +476,8 @@ export function MyTicketsPage() {
                 <h4 className="text-base font-extrabold font-display">{selectedSubmission.type}</h4>
                 <p className="text-xs font-mono text-slate-300 mt-0.5">Tracking No: <strong>{selectedSubmission.ref_no}</strong></p>
               </div>
-              <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-xl backdrop-blur-sm border border-white/10 shrink-0">
-                <QrCode className="w-8 h-8 text-white shrink-0" />
-                <div className="text-[9px] font-mono leading-tight">
-                  <p className="font-bold text-emerald-400">VERIFIED LGU TICKET</p>
-                  <p className="text-slate-300">{selectedSubmission.date}</p>
-                </div>
+              <div className="flex items-center gap-2 bg-white/10 px-3.5 py-2.5 rounded-xl backdrop-blur-sm border border-white/10 shrink-0">
+                <p className="font-bold text-emerald-400 text-[10px] font-mono tracking-wider">VERIFIED LGU TICKET</p>
               </div>
             </div>
 

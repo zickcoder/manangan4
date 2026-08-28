@@ -153,9 +153,9 @@ export function PublicPortal() {
     deceased_name: '',
     date_of_birth: '1960-01-01',
     date_of_death: new Date().toISOString().split('T')[0],
-    cause_of_death: 'Cardio-pulmonary arrest',
+    cause_of_death: '',
     deceased_address: 'Barangay 178, Mindanao Avenue, Zone 4',
-    attending_physician: 'Dr. Remedios Santos, MD / Municipal Health Center',
+    attending_physician: '',
     // Section B: Burial Details
     burial_date: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
     burial_time: '10:00 AM',

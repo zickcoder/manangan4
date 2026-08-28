@@ -163,9 +163,9 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
     deceased_name: '',
     date_of_birth: '1960-01-01',
     date_of_death: new Date().toISOString().split('T')[0],
-    cause_of_death: 'Cardio-pulmonary arrest',
+    cause_of_death: '',
     deceased_address: 'Barangay 178, Mindanao Avenue, Zone 4',
-    attending_physician: 'Dr. Remedios Santos, MD / Municipal Health Center',
+    attending_physician: '',
     // Section B
     burial_date: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
     burial_time: '10:00 AM',
@@ -866,6 +866,7 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
                       <Input
                         label="Cause of Death *"
                         required
+                        placeholder="e.g. Cardiopulmonary Arrest"
                         value={burialForm.cause_of_death}
                         onChange={(e) => setBurialForm({ ...burialForm, cause_of_death: e.target.value })}
                       />
@@ -899,6 +900,7 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
                       />
                       <Input
                         label="Attending Physician / Hospital"
+                        placeholder="e.g. Dr. Juan Santos / Caloocan City Medical Center"
                         value={burialForm.attending_physician}
                         onChange={(e) => setBurialForm({ ...burialForm, attending_physician: e.target.value })}
                       />
