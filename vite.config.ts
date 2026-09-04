@@ -10,6 +10,7 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './frontend/src'),
     },
+    dedupe: ['react', 'react-dom', 'react-is'],
   },
   build: {
     outDir: '../dist',
