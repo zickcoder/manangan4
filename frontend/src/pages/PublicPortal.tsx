@@ -291,6 +291,24 @@ export function PublicPortal() {
 
   const handleReserveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (
+      !reserveForm.applicant_name?.trim() ||
+      !reserveForm.applicant_email?.trim() ||
+      !reserveForm.applicant_phone?.trim() ||
+      !reserveForm.purpose?.trim() ||
+      !reserveForm.event_date?.trim() ||
+      !reserveForm.start_time?.trim() ||
+      !reserveForm.end_time?.trim()
+    ) {
+      alert('Please fill out all required fields: Applicant Name, Email, Phone, Purpose, Date, and Time slots.');
+      return;
+    }
+
+    if (!currentAttendees || currentAttendees <= 0) {
+      alert('Please enter a valid number of attendees.');
+      return;
+    }
+
     const finalPurpose = reserveForm.purpose === 'Other Government / Civic Activity' && reserveForm.custom_purpose
       ? reserveForm.custom_purpose
       : reserveForm.purpose;
@@ -298,7 +316,10 @@ export function PublicPortal() {
     try {
       const res = await createReservation({
         ...reserveForm,
-        purpose: finalPurpose,
+        applicant_name: reserveForm.applicant_name.trim(),
+        applicant_email: reserveForm.applicant_email.trim(),
+        applicant_phone: reserveForm.applicant_phone.trim(),
+        purpose: finalPurpose.trim(),
         facility_id: selectedFacilityId,
         attendees: currentAttendees
       });
@@ -306,15 +327,37 @@ export function PublicPortal() {
         setReservationSuccess(res.data);
       }
     } catch (e) {
-      alert('Failed to submit reservation');
+      alert('Failed to submit reservation. Please try again.');
     }
   };
 
   const handleUtilitySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (
+      !utilityForm.citizen_name?.trim() ||
+      !utilityForm.citizen_phone?.trim() ||
+      !utilityForm.location?.trim() ||
+      !utilityForm.description?.trim() ||
+      !utilityForm.incident_type?.trim()
+    ) {
+      alert('Please complete all required fields: Citizen Name, Phone, Location, Incident Type, and Description.');
+      return;
+    }
+
+    if (!utilityForm.photo_url) {
+      alert('⚠️ Photo attachment is required. Please upload an image of the incident.');
+      return;
+    }
+
     setUtilitySubmitting(true);
     try {
-      const res = await createUtilityRequest(utilityForm);
+      const res = await createUtilityRequest({
+        ...utilityForm,
+        citizen_name: utilityForm.citizen_name.trim(),
+        citizen_phone: utilityForm.citizen_phone.trim(),
+        location: utilityForm.location.trim(),
+        description: utilityForm.description.trim()
+      });
       if (res.success) {
         setUtilitySuccess(res.data);
       }
@@ -328,12 +371,41 @@ export function PublicPortal() {
   const handleBurialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBurialError('');
-    if (!selectedPlot || !burialForm.plot_id) {
-      setBurialError('Please select an available burial plot from the visual map before submitting.');
+
+    if (
+      !burialForm.deceased_name?.trim() ||
+      !burialForm.cause_of_death?.trim() ||
+      !burialForm.deceased_address?.trim() ||
+      !burialForm.attending_physician?.trim() ||
+      !burialForm.date_of_birth ||
+      !burialForm.date_of_death
+    ) {
+      setBurialError('SECTION A: Please complete all deceased details (Full Name, Cause of Death, Address, Attending Physician, Dates).');
       return;
     }
+
+    if (!selectedPlot || !burialForm.plot_id || !burialForm.burial_date || !burialForm.burial_time) {
+      setBurialError('SECTION B: Please select an available burial plot / niche, burial date, and time.');
+      return;
+    }
+
+    if (
+      !burialForm.contact_person?.trim() ||
+      !burialForm.contact_phone?.trim() ||
+      !burialForm.applicant_email?.trim() ||
+      !burialForm.applicant_address?.trim()
+    ) {
+      setBurialError('SECTION C: Please fill out all applicant / next of kin contact information.');
+      return;
+    }
+
+    if (!burialForm.death_cert_attached || !burialForm.valid_id_attached) {
+      setBurialError('SECTION D: REQUIREMENTS — Please upload both the PSA Death Certificate and Valid Government ID.');
+      return;
+    }
+
     if (!burialForm.declaration_accepted) {
-      setBurialError('Please accept the certification declaration before submitting.');
+      setBurialError('SECTION E: Please accept the sworn certification declaration before submitting.');
       return;
     }
 
@@ -341,6 +413,14 @@ export function PublicPortal() {
     try {
       const payload = {
         ...burialForm,
+        deceased_name: burialForm.deceased_name.trim(),
+        cause_of_death: burialForm.cause_of_death.trim(),
+        deceased_address: burialForm.deceased_address.trim(),
+        attending_physician: burialForm.attending_physician.trim(),
+        contact_person: burialForm.contact_person.trim(),
+        contact_phone: burialForm.contact_phone.trim(),
+        applicant_email: burialForm.applicant_email.trim(),
+        applicant_address: burialForm.applicant_address.trim(),
         plot_id: selectedPlot.id,
         plot_code: selectedPlot.plot_code,
         section: selectedPlot.section,

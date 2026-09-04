@@ -38,7 +38,7 @@ export interface FacilityReservation {
   start_time: string;
   end_time: string;
   attendees: number;
-  status: 'Pending' | 'Approved' | 'Rejected' | 'Completed';
+  status: 'Pending' | 'Pending Review' | 'Approved' | 'Pending Payment' | 'Waiting for Payment' | 'Paid' | 'Rejected' | 'Completed' | 'Cancelled';
   remarks?: string;
   created_at: string;
 }
@@ -93,7 +93,7 @@ export interface BurialRecord {
   // Section E: Declaration
   declaration_accepted?: boolean;
   fee_amount?: number;
-  status: 'Pending Review' | 'Pending Payment' | 'Paid' | 'Approved' | 'Completed' | 'Rejected' | 'Cancelled';
+  status: 'Pending' | 'Pending Review' | 'Pending Payment' | 'Waiting for Payment' | 'Paid' | 'Approved' | 'Completed' | 'Rejected' | 'Cancelled';
   created_at: string;
 }
 
@@ -109,7 +109,7 @@ export interface UtilityRequest {
   description: string;
   urgency: 'Urgent' | 'High' | 'Normal';
   ai_priority_score: number;
-  status: 'Pending' | 'In Progress' | 'Resolved' | 'Rejected';
+  status: 'Pending' | 'Pending Review' | 'In Progress' | 'Dispatched' | 'Resolved' | 'Rejected' | 'Cancelled';
   assigned_team?: string;
   resolution_notes?: string;
   created_at: string;

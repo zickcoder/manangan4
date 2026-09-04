@@ -156,11 +156,13 @@ export async function initDatabase() {
       );
     `);
 
-    // Ensure column migrations on cemetery_plots
+    // Ensure column migrations on cemetery_plots and users
     await pool.query(`
       ALTER TABLE cemetery_plots ADD COLUMN IF NOT EXISTS cemetery_name VARCHAR(150) DEFAULT 'Barangay 178 Municipal Cemetery';
       ALTER TABLE cemetery_plots ADD COLUMN IF NOT EXISTS row_no INT;
       ALTER TABLE cemetery_plots ADD COLUMN IF NOT EXISTS col_no INT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'Active';
     `);
 
     console.log('✅ Schema verified with Columbarium Wall Grid & Multi-Cemetery support.');

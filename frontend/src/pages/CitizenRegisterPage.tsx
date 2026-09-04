@@ -10,7 +10,10 @@ import {
   Eye,
   EyeOff,
   Send,
-  Loader2
+  Loader2,
+  Check,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { registerCitizen, checkEmailExists } from '../lib/api';
@@ -31,6 +34,34 @@ export function CitizenRegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Password Security Checks
+  const hasMinLength = password.length >= 12;
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSymbol = /[^A-Za-z0-9]/.test(password);
+
+  const criteriaList = [
+    { label: 'At least 12 to 16 characters', valid: hasMinLength },
+    { label: 'At least one uppercase letter (A-Z)', valid: hasUpper },
+    { label: 'At least one lowercase letter (a-z)', valid: hasLower },
+    { label: 'At least one number (0-9)', valid: hasNumber },
+    { label: 'At least one special symbol (!, @, #, etc.)', valid: hasSymbol },
+  ];
+
+  const passedCount = criteriaList.filter(c => c.valid).length;
+
+  const getStrengthInfo = () => {
+    if (!password) return { label: '', percent: 0, color: 'bg-slate-200', textColor: 'text-slate-400' };
+    if (passedCount <= 1) return { label: 'Very Weak', percent: 20, color: 'bg-red-500', textColor: 'text-red-600' };
+    if (passedCount === 2) return { label: 'Weak', percent: 40, color: 'bg-orange-500', textColor: 'text-orange-600' };
+    if (passedCount === 3) return { label: 'Moderate', percent: 60, color: 'bg-amber-500', textColor: 'text-amber-600' };
+    if (passedCount === 4) return { label: 'Strong', percent: 80, color: 'bg-blue-500', textColor: 'text-blue-600' };
+    return { label: 'Very Strong & Secure 🛡️', percent: 100, color: 'bg-emerald-500', textColor: 'text-emerald-600' };
+  };
+
+  const strength = getStrengthInfo();
 
   // OTP Verification State
   const [isOtpStep, setIsOtpStep] = useState(false);
@@ -61,9 +92,9 @@ export function CitizenRegisterPage() {
     setMiddleInitial(val);
   };
 
-  // Strictly allow ONLY NUMBERS for Mobile Phone
+  // Strictly allow ONLY NUMBERS for Mobile Phone (maximum 11 digits)
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.replace(/[^0-9]/g, '');
+    const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
     setPhone(val);
   };
 
@@ -81,16 +112,40 @@ export function CitizenRegisterPage() {
       setError('Please enter your Last Name.');
       return;
     }
-    if (!phone.trim() || phone.length < 7) {
-      setError('Please enter a valid Mobile Phone Number.');
+    if (!phone.trim()) {
+      setError('Please enter your Mobile Phone Number.');
+      return;
+    }
+    if (!phone.startsWith('09')) {
+      setError('Mobile Phone Number must start with "09" (e.g. 09171234567).');
+      return;
+    }
+    if (phone.length !== 11) {
+      setError(`Mobile Phone Number must be exactly 11 digits (current: ${phone.length} digits). Example: 09171234567`);
       return;
     }
     if (!email.trim() || !email.includes('@')) {
       setError('Please enter a valid email address.');
       return;
     }
-    if (!password || password.length < 6) {
-      setError('Password must be at least 6 characters long.');
+    if (!hasMinLength) {
+      setError('Password must be at least 12 characters long.');
+      return;
+    }
+    if (!hasUpper) {
+      setError('Password must contain at least one uppercase letter (A-Z).');
+      return;
+    }
+    if (!hasLower) {
+      setError('Password must contain at least one lowercase letter (a-z).');
+      return;
+    }
+    if (!hasNumber) {
+      setError('Password must contain at least one number (0-9).');
+      return;
+    }
+    if (!hasSymbol) {
+      setError('Password must contain at least one special symbol (!, @, #, etc.).');
       return;
     }
 
@@ -349,18 +404,53 @@ export function CitizenRegisterPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Phone Number *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">Mobile Phone Number *</label>
+                    <span className={`text-[10px] font-mono font-bold ${
+                      phone.length === 11 && phone.startsWith('09') 
+                        ? 'text-emerald-600' 
+                        : (phone.length >= 2 && !phone.startsWith('09'))
+                        ? 'text-red-500'
+                        : 'text-slate-400'
+                    }`}>
+                      {phone.length}/11 digits
+                    </span>
+                  </div>
                   <div className="relative">
-                    <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <Phone className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
+                      (phone.length >= 2 && !phone.startsWith('09')) ? 'text-red-400' : 'text-slate-400'
+                    }`} />
                     <input
-                      type="text"
+                      type="tel"
                       required
+                      maxLength={11}
                       value={phone}
                       onChange={handlePhoneChange}
                       placeholder="09171234567"
-                      className="w-full pl-10 pr-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white text-slate-900 font-mono font-medium"
+                      className={`w-full pl-10 pr-3 py-2.5 text-xs rounded-xl focus:outline-none focus:ring-2 font-mono font-medium transition-all ${
+                        (phone.length >= 2 && !phone.startsWith('09'))
+                          ? 'bg-red-50/50 border border-red-300 focus:ring-red-500/20 focus:border-red-500 text-red-900'
+                          : (phone.length === 11 && phone.startsWith('09'))
+                          ? 'bg-emerald-50/40 border border-emerald-300 focus:ring-emerald-500/20 focus:border-emerald-600 text-slate-900'
+                          : 'bg-slate-50 border border-slate-200 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white text-slate-900'
+                      }`}
                     />
                   </div>
+                  {phone.length > 0 && !phone.startsWith('09') && (
+                    <p className="text-[10px] text-red-600 font-semibold mt-1 flex items-center gap-1">
+                      ⚠️ Mobile number must start with "09" (e.g. 09171234567).
+                    </p>
+                  )}
+                  {phone.startsWith('09') && phone.length < 11 && (
+                    <p className="text-[10px] text-amber-600 font-medium mt-1">
+                      Starts with "09". Remaining: {11 - phone.length} more {11 - phone.length === 1 ? 'digit' : 'digits'}.
+                    </p>
+                  )}
+                  {phone.startsWith('09') && phone.length === 11 && (
+                    <p className="text-[10px] text-emerald-600 font-medium mt-1 flex items-center gap-1">
+                      ✓ Valid 11-digit mobile number (starts with 09)
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -379,7 +469,14 @@ export function CitizenRegisterPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Password *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">Password *</label>
+                    {password && (
+                      <span className={`text-[11px] font-bold transition-all duration-300 ${strength.textColor}`}>
+                        {strength.label}
+                      </span>
+                    )}
+                  </div>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
@@ -387,7 +484,7 @@ export function CitizenRegisterPage() {
                       required
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
+                      placeholder="••••••••••••"
                       className="w-full pl-10 pr-10 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white text-slate-900 font-medium"
                     />
                     <button
@@ -398,6 +495,48 @@ export function CitizenRegisterPage() {
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+
+                  {/* Animated Strength Progress Bar */}
+                  {password && (
+                    <div className="mt-2 space-y-1.5 animate-fade-in">
+                      <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-500 ease-out ${strength.color}`}
+                          style={{ width: `${strength.percent}%` }}
+                        />
+                      </div>
+
+                      {/* Password Security Rules Checklist */}
+                      <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 text-[11px] space-y-1">
+                        <p className="font-bold text-slate-600 text-[10px] uppercase tracking-wider mb-1">
+                          Security Requirements:
+                        </p>
+                        <div className="grid grid-cols-1 gap-1">
+                          {criteriaList.map((crit, idx) => (
+                            <div
+                              key={idx}
+                              className={`flex items-center gap-1.5 transition-colors duration-200 ${
+                                crit.valid
+                                  ? 'text-emerald-600 font-semibold'
+                                  : 'text-slate-400'
+                              }`}
+                            >
+                              <div
+                                className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] transition-all duration-300 ${
+                                  crit.valid
+                                    ? 'bg-emerald-500 text-white scale-110'
+                                    : 'bg-slate-200 text-slate-400'
+                                }`}
+                              >
+                                {crit.valid ? <Check className="w-2.5 h-2.5 stroke-[3]" /> : '•'}
+                              </div>
+                              <span>{crit.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <button

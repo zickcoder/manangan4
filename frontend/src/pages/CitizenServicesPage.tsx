@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { 
   Building, 
   Trees, 
@@ -51,6 +51,8 @@ interface CitizenServicesProps {
 export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesProps) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [resubmittingTicket, setResubmittingTicket] = useState<any>(null);
 
   // Read defaultTab every render so it stays in sync with sidebar clicks
   const tabParam = searchParams.get('tab') as any;
@@ -128,14 +130,6 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
     '50+ Households (Community-wide / Major Zone)'
   ];
 
-  const SAMPLE_INCIDENT_PHOTOS = [
-    { label: 'Flash Flooding', url: 'https://images.unsplash.com/photo-1547683905-f686c993aae5?w=500&auto=format&fit=crop&q=80' },
-    { label: 'Burst Water Main', url: 'https://images.unsplash.com/photo-1584467735815-f778f274e296?w=500&auto=format&fit=crop&q=80' },
-    { label: 'Clogged Storm Canal', url: 'https://images.unsplash.com/photo-1518241353330-0f7941c2d9b5?w=500&auto=format&fit=crop&q=80' },
-    { label: 'Canal Wall Damage', url: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=500&auto=format&fit=crop&q=80' },
-    { label: 'Sewer Overflow', url: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=500&auto=format&fit=crop&q=80' }
-  ];
-
   const [utilityForm, setUtilityForm] = useState({
     citizen_name: currentUser?.name || 'Juan M. Dela Cruz',
     citizen_phone: currentUser?.phone || '+63 917 123 4567',
@@ -149,6 +143,22 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
   });
   const [utilitySuccess, setUtilitySuccess] = useState<any>(null);
   const [utilitySubmitting, setUtilitySubmitting] = useState(false);
+  const [utilityError, setUtilityError] = useState('');
+
+  const handleUtilityPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUtilityError('');
+    const reader = new FileReader();
+    reader.onload = () => {
+      setUtilityForm(prev => ({
+        ...prev,
+        photo_url: reader.result as string,
+        photo_name: file.name
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
 
   // 3. Cemetery Plot Search & Burial
   const [cemeteries, setCemeteries] = useState<string[]>(['Barangay 178 Municipal Cemetery']);
@@ -177,14 +187,97 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
     contact_phone: currentUser?.phone || '+63 917 123 4567',
     applicant_email: currentUser?.email || 'juan.delacruz@citizen.gov.ph',
     applicant_address: 'Barangay 178, Purok 3',
-    // Section D
+    // Section D (Real Upload)
     death_cert_attached: false,
+    death_cert_name: '',
+    death_cert_url: '',
     valid_id_attached: false,
+    valid_id_name: '',
+    valid_id_url: '',
     // Section E
     declaration_accepted: false,
   });
   const [burialSuccess, setBurialSuccess] = useState<any>(null);
   const [burialSubmitting, setBurialSubmitting] = useState(false);
+
+  // Restore ticket details when citizen clicks "Resubmit" from MyTicketsPage
+  useEffect(() => {
+    try {
+      const stateItem = (location.state as any)?.resubmitItem;
+      const storedItemStr = sessionStorage.getItem('govserve_resubmit_ticket');
+      const item = stateItem || (storedItemStr ? JSON.parse(storedItemStr) : null);
+      if (item) {
+        setResubmittingTicket(item);
+        if (item.category === 'facility') {
+          let sTime = '08:00 AM';
+          let eTime = '12:00 PM';
+          if (item.time && item.time.includes('-')) {
+            const parts = item.time.split('-').map((s: string) => s.trim());
+            if (parts[0]) sTime = parts[0];
+            if (parts[1]) eTime = parts[1];
+          }
+          setReserveForm(prev => ({
+            ...prev,
+            applicant_name: item.applicant || prev.applicant_name,
+            applicant_phone: item.contact || prev.applicant_phone,
+            purpose: item.details || prev.purpose,
+            event_date: item.date && !item.date.includes('N/A') ? item.date : prev.event_date,
+            start_time: sTime,
+            end_time: eTime,
+            special_equipment: Array.isArray(item.special_equipment)
+              ? item.special_equipment
+              : (item.special_equipment ? String(item.special_equipment).split(',').map((s: string) => s.trim()) : prev.special_equipment)
+          }));
+        } else if (item.category === 'utility') {
+          setUtilityForm(prev => ({
+            ...prev,
+            citizen_name: item.applicant || prev.citizen_name,
+            citizen_phone: item.contact || prev.citizen_phone,
+            description: item.details || prev.description,
+            location: item.location || prev.location
+          }));
+        } else if (item.category === 'cemetery') {
+          setBurialForm(prev => ({
+            ...prev,
+            contact_person: item.applicant || prev.contact_person,
+            contact_phone: item.contact || prev.contact_phone
+          }));
+        }
+      }
+    } catch {}
+  }, [location.state]);
+
+  const handleDeathCertUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBurialError('');
+    const reader = new FileReader();
+    reader.onload = () => {
+      setBurialForm(prev => ({
+        ...prev,
+        death_cert_attached: true,
+        death_cert_name: file.name,
+        death_cert_url: reader.result as string
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleValidIdUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBurialError('');
+    const reader = new FileReader();
+    reader.onload = () => {
+      setBurialForm(prev => ({
+        ...prev,
+        valid_id_attached: true,
+        valid_id_name: file.name,
+        valid_id_url: reader.result as string
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
 
   // 4. Public Assets (Read-Only)
   const [publicAssets, setPublicAssets] = useState<Asset[]>([]);
@@ -223,7 +316,20 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
   const currentAttendees = parseInt(reserveForm.attendees, 10) || 0;
   const isPaxExceeded = selectedFacilityObj ? currentAttendees > selectedFacilityObj.capacity : false;
 
-  // Real-time automatic double booking check
+  // Toggle Special Equipment Requirement Checklist
+  const toggleEquipment = (item: string) => {
+    setReserveForm(prev => {
+      const exists = prev.special_equipment.includes(item);
+      return {
+        ...prev,
+        special_equipment: exists
+          ? prev.special_equipment.filter(e => e !== item)
+          : [...prev.special_equipment, item]
+      };
+    });
+  };
+
+  // Real-time automatic double booking check (detects if conflicting slot is the citizen's own schedule)
   useEffect(() => {
     if (!selectedFacilityObj || !reserveForm.event_date) return;
 
@@ -232,28 +338,53 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
       selectedFacilityObj.name,
       reserveForm.event_date,
       reserveForm.start_time,
-      reserveForm.end_time
+      reserveForm.end_time,
+      reserveForm.applicant_email || currentUser?.email,
+      reserveForm.applicant_name || currentUser?.name,
+      resubmittingTicket?.originalId
     ).then((res) => {
       if (res.hasConflict) {
         setAiConflict({
           hasConflict: true,
+          isOwnSchedule: false,
           aiAnalysis: res.message,
           alternativeSlots: res.suggestedSlots
+        });
+      } else if ((res as any).isOwnSchedule) {
+        setAiConflict({
+          hasConflict: false,
+          isOwnSchedule: true,
+          aiAnalysis: res.message,
+          alternativeSlots: []
         });
       } else {
         setAiConflict(null);
       }
     }).catch(console.error);
-  }, [selectedFacilityId, reserveForm.event_date, reserveForm.start_time, reserveForm.end_time]);
+  }, [selectedFacilityId, reserveForm.event_date, reserveForm.start_time, reserveForm.end_time, reserveForm.applicant_email, reserveForm.applicant_name, resubmittingTicket]);
 
   const handleFacilityReserve = async (e: React.FormEvent) => {
     e.preventDefault();
     setReserveError('');
 
-    if (!reserveForm.event_date || !reserveForm.start_time || !reserveForm.end_time) {
-      setReserveError('Please select event date, start time, and end time.');
+    if (
+      !reserveForm.applicant_name?.trim() ||
+      !reserveForm.applicant_email?.trim() ||
+      !reserveForm.applicant_phone?.trim() ||
+      !reserveForm.purpose?.trim() ||
+      !reserveForm.event_date?.trim() ||
+      !reserveForm.start_time?.trim() ||
+      !reserveForm.end_time?.trim()
+    ) {
+      setReserveError('Please fill out all required fields: Applicant Name, Email, Contact Number, Event Purpose, Date, and Time Slots.');
       return;
     }
+
+    if (!currentAttendees || currentAttendees <= 0) {
+      setReserveError('Please specify a valid number of expected attendees.');
+      return;
+    }
+
     if (isPaxExceeded) {
       setReserveError(`Number of attendees (${currentAttendees}) exceeds maximum venue capacity (${selectedFacilityObj?.capacity}).`);
       return;
@@ -263,16 +394,23 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
     try {
       const payload = {
         ...reserveForm,
+        applicant_name: reserveForm.applicant_name.trim(),
+        applicant_email: reserveForm.applicant_email.trim(),
+        applicant_phone: reserveForm.applicant_phone.trim(),
+        purpose: reserveForm.purpose.trim(),
         facility_id: selectedFacilityId,
         facility_name: selectedFacilityObj.name,
         facility_category: selectedFacilityObj.category,
         facility_location: selectedFacilityObj.location,
         hourly_rate: selectedFacilityObj.hourly_rate,
         attendees: currentAttendees,
+        ...(resubmittingTicket ? { resubmitId: resubmittingTicket.originalId, reference_no: resubmittingTicket.ref_no } : {})
       };
       const res = await createReservation(payload);
       if (res.success) {
         setReservationSuccess(res.data || res);
+        setResubmittingTicket(null);
+        sessionStorage.removeItem('govserve_resubmit_ticket');
       } else {
         setReserveError(res.message || 'Failed to submit reservation.');
       }
@@ -285,14 +423,39 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
 
   const handleUtilitySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setUtilityError('');
+
+    if (
+      !utilityForm.citizen_name?.trim() ||
+      !utilityForm.citizen_phone?.trim() ||
+      !utilityForm.location?.trim() ||
+      !utilityForm.description?.trim() ||
+      !utilityForm.incident_type?.trim()
+    ) {
+      setUtilityError('Please fill out all required incident fields: Citizen Name, Phone, Location, Incident Type, and Detailed Description.');
+      return;
+    }
+
+    // Require image before submitting
+    if (!utilityForm.photo_url) {
+      setUtilityError('⚠️ Photo attachment is required. Please upload an image of the hazard before submitting.');
+      return;
+    }
+
     setUtilitySubmitting(true);
     try {
-      const res = await createUtilityRequest(utilityForm);
+      const res = await createUtilityRequest({
+        ...utilityForm,
+        citizen_name: utilityForm.citizen_name.trim(),
+        citizen_phone: utilityForm.citizen_phone.trim(),
+        location: utilityForm.location.trim(),
+        description: utilityForm.description.trim()
+      });
       if (res.success) {
         setUtilitySuccess(res.data);
       }
     } catch (e) {
-      alert('Failed to submit utility request');
+      setUtilityError('Failed to submit utility request. Please try again.');
     } finally {
       setUtilitySubmitting(false);
     }
@@ -301,16 +464,46 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
   const handleBurialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBurialError('');
-    if (!selectedPlot || !burialForm.plot_id) {
-      setBurialError('Please choose an available plot on the visual map.');
+
+    // Section A validation
+    if (
+      !burialForm.deceased_name?.trim() ||
+      !burialForm.cause_of_death?.trim() ||
+      !burialForm.deceased_address?.trim() ||
+      !burialForm.attending_physician?.trim() ||
+      !burialForm.date_of_birth ||
+      !burialForm.date_of_death
+    ) {
+      setBurialError('SECTION A: Please complete all deceased details (Full Name, Cause of Death, Last Address, Attending Physician, Dates).');
       return;
     }
+
+    // Section B validation
+    if (!selectedPlot || !burialForm.plot_id || !burialForm.burial_date || !burialForm.burial_time) {
+      setBurialError('SECTION B: Please select an available burial plot / columbarium niche, burial date, and time.');
+      return;
+    }
+
+    // Section C validation
+    if (
+      !burialForm.contact_person?.trim() ||
+      !burialForm.contact_phone?.trim() ||
+      !burialForm.applicant_email?.trim() ||
+      !burialForm.applicant_address?.trim()
+    ) {
+      setBurialError('SECTION C: Please fill out all applicant / next of kin contact information.');
+      return;
+    }
+
+    // Section D validation
     if (!burialForm.death_cert_attached || !burialForm.valid_id_attached) {
-      setBurialError('SECTION D: REQUIREMENTS (Upload) is necessary for this ticket');
+      setBurialError('SECTION D: REQUIREMENTS — Please upload both the PSA Death Certificate and Valid Government ID.');
       return;
     }
+
+    // Section E validation
     if (!burialForm.declaration_accepted) {
-      setBurialError('you need to read this contents');
+      setBurialError('SECTION E: Please certify the sworn legal declaration to proceed.');
       return;
     }
 
@@ -318,6 +511,14 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
     try {
       const payload = {
         ...burialForm,
+        deceased_name: burialForm.deceased_name.trim(),
+        cause_of_death: burialForm.cause_of_death.trim(),
+        deceased_address: burialForm.deceased_address.trim(),
+        attending_physician: burialForm.attending_physician.trim(),
+        contact_person: burialForm.contact_person.trim(),
+        contact_phone: burialForm.contact_phone.trim(),
+        applicant_email: burialForm.applicant_email.trim(),
+        applicant_address: burialForm.applicant_address.trim(),
         plot_id: selectedPlot.id,
         plot_code: selectedPlot.plot_code,
         section: selectedPlot.section,
@@ -369,17 +570,20 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
       {/* 4-Tab Navigation Selector */}
       <div className="bg-white rounded-2xl shadow-soft border border-[#cbd5e1] p-1.5 flex flex-wrap sm:flex-nowrap gap-1">
         {[
-          { id: 'reserve', label: 'Facility & Park Reservation', icon: Building },
-          { id: 'utility', label: 'Water & Drainage Desk', icon: Droplet },
-          { id: 'cemetery', label: 'Burial & Cemetery Permit', icon: Cross },
-          { id: 'assets', label: 'Public Asset Catalog', icon: Wrench },
+          { id: 'reserve', label: 'Facility & Park Reservation', icon: Building, path: '/facilities' },
+          { id: 'utility', label: 'Water & Drainage Desk', icon: Droplet, path: '/utilities' },
+          { id: 'cemetery', label: 'Burial & Cemetery Permit', icon: Cross, path: '/cemetery' },
+          { id: 'assets', label: 'Public Asset Catalog', icon: Wrench, path: '/assets' },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => {
+                setActiveTab(tab.id as any);
+                navigate(tab.path);
+              }}
               className={`flex-1 py-3 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                 isActive
                   ? 'bg-blue-600 text-white shadow-blue shadow-md'
@@ -468,6 +672,27 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
                     <CardDescription>Select event purpose, special equipment, and verify schedule</CardDescription>
                   </CardHeader>
                   <CardContent>
+                    {resubmittingTicket && (
+                      <div className="mb-4 p-3 bg-blue-50 border border-blue-300 rounded-2xl flex items-center justify-between text-blue-950 text-xs animate-fade-in">
+                        <div className="flex items-center gap-2.5">
+                          <span className="p-1.5 bg-blue-200 text-blue-900 rounded-xl font-bold">🔄</span>
+                          <div>
+                            <p className="font-bold">Resubmitting Application: <span className="font-mono text-blue-800">{resubmittingTicket.ref_no}</span></p>
+                            <p className="text-[11px] text-blue-700">You are updating your schedule. Your previous pending booking is recognized as your own and will not conflict.</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setResubmittingTicket(null);
+                            sessionStorage.removeItem('govserve_resubmit_ticket');
+                          }}
+                          className="text-blue-700 hover:text-blue-900 text-xs font-bold underline cursor-pointer shrink-0"
+                        >
+                          Cancel Resubmit
+                        </button>
+                      </div>
+                    )}
                     <form onSubmit={handleFacilityReserve} className="space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <Input
@@ -573,23 +798,37 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
 
                       {/* PREDEFINED SPECIAL EQUIPMENT */}
                       <div>
-                        <label className="block text-xs font-semibold text-[#334155] mb-2">Special Equipment Requirements:</label>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-xs font-semibold text-[#334155]">
+                            Special Equipment Requirements:
+                          </label>
+                          {reserveForm.special_equipment.length > 0 && (
+                            <span className="text-[11px] font-bold text-blue-600">
+                              {reserveForm.special_equipment.length} selected
+                            </span>
+                          )}
+                        </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {EQUIPMENT_OPTIONS.map((item, idx) => {
                             const isChecked = reserveForm.special_equipment.includes(item);
                             return (
-                              <div
+                              <button
                                 key={idx}
+                                type="button"
                                 onClick={() => toggleEquipment(item)}
-                                className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center gap-2.5 text-xs font-medium ${
+                                className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all flex items-center gap-2.5 text-xs font-medium ${
                                   isChecked
-                                    ? 'bg-blue-50 border-blue-500 text-blue-900 shadow-sm'
+                                    ? 'bg-blue-50 border-blue-500 text-blue-900 shadow-sm ring-1 ring-blue-500/30'
                                     : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                                 }`}
                               >
-                                {isChecked ? <CheckSquare className="w-4 h-4 text-blue-600 shrink-0" /> : <Square className="w-4 h-4 text-slate-400 shrink-0" />}
-                                <span>{item}</span>
-                              </div>
+                                {isChecked ? (
+                                  <CheckSquare className="w-4 h-4 text-blue-600 shrink-0" />
+                                ) : (
+                                  <Square className="w-4 h-4 text-slate-400 shrink-0" />
+                                )}
+                                <span className="flex-1 select-none">{item}</span>
+                              </button>
                             );
                           })}
                         </div>
@@ -597,14 +836,18 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
 
                       {/* AI Slot Check Box */}
                       {aiConflict && (
-                        <div className="p-4 bg-gradient-to-br from-indigo-950 to-slate-900 rounded-2xl text-white border border-indigo-500/30 space-y-2.5 animate-fade-in shadow-medium">
+                        <div className={`p-4 rounded-2xl text-white space-y-2.5 animate-fade-in shadow-medium border ${
+                          aiConflict.isOwnSchedule
+                            ? 'bg-gradient-to-br from-emerald-950 to-slate-900 border-emerald-500/40'
+                            : 'bg-gradient-to-br from-indigo-950 to-slate-900 border-indigo-500/30'
+                        }`}>
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
-                              <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
-                              <span>AI Slot Intelligence</span>
+                            <span className={`text-xs font-bold flex items-center gap-1.5 ${aiConflict.isOwnSchedule ? 'text-emerald-300' : 'text-indigo-300'}`}>
+                              <Sparkles className={`w-4 h-4 animate-pulse ${aiConflict.isOwnSchedule ? 'text-emerald-400' : 'text-indigo-400'}`} />
+                              <span>{aiConflict.isOwnSchedule ? 'Your Booking Recognized' : 'AI Slot Intelligence'}</span>
                             </span>
                             <Badge variant={aiConflict.hasConflict ? 'destructive' : 'success'}>
-                              {aiConflict.hasConflict ? '⚠️ Schedule Conflict Detected' : '✅ Optimal Slot Verified'}
+                              {aiConflict.hasConflict ? '⚠️ Schedule Conflict Detected' : aiConflict.isOwnSchedule ? '✓ Your Existing Schedule (Resubmit Ready)' : '✅ Optimal Slot Verified'}
                             </Badge>
                           </div>
                           <p className="text-xs text-slate-200 leading-relaxed">{aiConflict.aiAnalysis}</p>
@@ -651,6 +894,8 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
                             ? `🚫 Cannot Submit (Exceeded Max Capacity of ${selectedFacilityObj.capacity} Pax)` 
                             : aiConflict?.hasConflict 
                             ? '🚫 Cannot Submit (Slot Already Booked)' 
+                            : resubmittingTicket
+                            ? 'Confirm & Resubmit Reservation (AI Verified)'
                             : 'Submit Reservation (AI Assisted)'}
                         </Button>
                       </div>
@@ -746,50 +991,81 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
                     onChange={(e) => setUtilityForm({ ...utilityForm, location: e.target.value })}
                   />
 
-                  {/* Photo attachment with samples */}
+                  {/* Photo attachment — Real Upload Only & Mandatory */}
                   <div>
-                    <label className="block text-xs font-semibold text-[#334155] mb-1.5">
-                      Attach Photo of Hazard (Optional but Recommended)
-                    </label>
-                    <div className="p-3.5 border-2 border-dashed border-slate-300 hover:border-cyan-500 rounded-2xl bg-slate-50/70 text-center space-y-2">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-semibold text-[#334155]">
+                        Upload Picture of Hazard * <span className="text-red-500 font-bold">(Mandatory)</span>
+                      </label>
+                      {utilityForm.photo_name && (
+                        <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Attached
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div className={`p-4 border-2 border-dashed rounded-2xl transition-all text-center space-y-2.5 ${
+                      utilityForm.photo_url
+                        ? 'border-emerald-400 bg-emerald-50/40'
+                        : utilityError
+                        ? 'border-red-400 bg-red-50/40'
+                        : 'border-slate-300 hover:border-cyan-500 bg-slate-50/70'
+                    }`}>
                       {utilityForm.photo_url ? (
-                        <div className="relative inline-block rounded-xl overflow-hidden border border-slate-300 shadow-sm">
-                          <img
-                            src={utilityForm.photo_url}
-                            alt="Preview"
-                            className="h-36 w-auto object-cover rounded-xl"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setUtilityForm({ ...utilityForm, photo_url: '', photo_name: '' })}
-                            className="absolute top-2 right-2 bg-red-600 text-white p-1 rounded-full text-xs hover:bg-red-700"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
+                        <div className="space-y-2">
+                          <div className="relative inline-block rounded-xl overflow-hidden border border-slate-300 shadow-md">
+                            <img
+                              src={utilityForm.photo_url}
+                              alt="Attached Hazard Preview"
+                              className="max-h-48 w-auto object-cover rounded-xl mx-auto"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setUtilityForm({ ...utilityForm, photo_url: '', photo_name: '' })}
+                              className="absolute top-2 right-2 bg-red-600 text-white p-1.5 rounded-full text-xs hover:bg-red-700 shadow-lg cursor-pointer transition-transform hover:scale-110"
+                              title="Remove Photo"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <p className="text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5">
+                            <ImageIcon className="w-4 h-4 text-cyan-600" />
+                            <span className="truncate max-w-xs">{utilityForm.photo_name}</span>
+                          </p>
                         </div>
                       ) : (
-                        <>
-                          <p className="text-xs text-slate-600 font-medium">Select a sample photo or upload picture:</p>
-                          <div className="flex flex-wrap justify-center gap-1.5">
-                            {SAMPLE_INCIDENT_PHOTOS.map((pic, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => setUtilityForm({ ...utilityForm, photo_url: pic.url, photo_name: `${pic.label}.jpg` })}
-                                className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-cyan-500 text-[11px] text-slate-700 font-medium shadow-xs transition-all flex items-center gap-1"
-                              >
-                                <ImageIcon className="w-3 h-3 text-cyan-600" />
-                                <span>{pic.label}</span>
-                              </button>
-                            ))}
+                        <label className="cursor-pointer block py-4 px-2">
+                          <input
+                            type="file"
+                            accept="image/*, .jpg, .jpeg, .png, .webp, .gif, .bmp, .svg, .heic, .heif"
+                            onChange={handleUtilityPhotoUpload}
+                            className="hidden"
+                          />
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <div className="w-12 h-12 rounded-2xl bg-cyan-100 text-cyan-600 flex items-center justify-center shadow-xs">
+                              <Upload className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-slate-800">
+                                Click to Upload Picture
+                              </p>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                Supports JPG, PNG, WEBP, GIF, HEIC, and other image formats (Max 15MB)
+                              </p>
+                            </div>
+                            <span className="mt-1 px-3 py-1 bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all">
+                              Select Image File
+                            </span>
                           </div>
-                        </>
+                        </label>
                       )}
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#334155] mb-1.5">Description of Incident / Hazard *</label>
+                    <label className="block text-xs font-semibold text-[#334155] mb-1.5">
+                      Description of Incident / Hazard *
+                    </label>
                     <textarea
                       rows={2}
                       required
@@ -799,6 +1075,13 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
                       className="w-full rounded-xl border border-slate-300 p-2.5 text-xs sm:text-sm"
                     />
                   </div>
+
+                  {utilityError && (
+                    <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-semibold flex items-center gap-2 animate-fade-in">
+                      <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                      <span>{utilityError}</span>
+                    </div>
+                  )}
 
                   <div className="pt-2 flex justify-end">
                     <Button type="submit" size="lg" isLoading={utilitySubmitting} className="px-8 font-bold bg-cyan-600 hover:bg-cyan-700 text-white">
@@ -1012,35 +1295,138 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
                     />
                   </div>
 
-                  {/* SECTION D: REQUIREMENTS */}
+                  {/* SECTION D: REQUIREMENTS (Real File Uploads) */}
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                    <div className="flex items-center gap-2 text-slate-900 font-bold text-xs uppercase tracking-wider border-b border-slate-200 pb-2">
-                      <span className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center text-[10px] font-bold">D</span>
-                      <span>SECTION D: REQUIREMENTS (Upload)</span>
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                      <div className="flex items-center gap-2 text-slate-900 font-bold text-xs uppercase tracking-wider">
+                        <span className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center text-[10px] font-bold">D</span>
+                        <span>SECTION D: REQUIREMENTS (Document Upload)</span>
+                      </div>
+                      <span className="text-[10px] text-red-500 font-bold">* Both Required</span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setBurialForm({ ...burialForm, death_cert_attached: !burialForm.death_cert_attached })}
-                        className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all ${
-                          burialForm.death_cert_attached ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-slate-300 text-slate-700'
-                        }`}
-                      >
-                        {burialForm.death_cert_attached ? <FileCheck className="w-4 h-4 text-emerald-600" /> : <Upload className="w-4 h-4 text-slate-400" />}
-                        <span>{burialForm.death_cert_attached ? 'Death Certificate Attached ✅' : 'Attach PSA Death Cert *'}</span>
-                      </button>
+                      {/* PSA Death Certificate */}
+                      <div className={`p-3.5 rounded-2xl border transition-all ${
+                        burialForm.death_cert_attached
+                          ? 'bg-emerald-50/70 border-emerald-400'
+                          : 'bg-white border-slate-200 hover:border-purple-400'
+                      }`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <FileCheck className="w-4 h-4 text-purple-600" />
+                            <span>PSA Death Certificate *</span>
+                          </label>
+                          {burialForm.death_cert_attached && (
+                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-md">
+                              Attached ✅
+                            </span>
+                          )}
+                        </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setBurialForm({ ...burialForm, valid_id_attached: !burialForm.valid_id_attached })}
-                        className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all ${
-                          burialForm.valid_id_attached ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-slate-300 text-slate-700'
-                        }`}
-                      >
-                        {burialForm.valid_id_attached ? <FileCheck className="w-4 h-4 text-emerald-600" /> : <Upload className="w-4 h-4 text-slate-400" />}
-                        <span>{burialForm.valid_id_attached ? 'Valid Gov ID Attached ✅' : 'Attach Valid Gov ID *'}</span>
-                      </button>
+                        {burialForm.death_cert_attached ? (
+                          <div className="flex items-center justify-between gap-2 p-2 bg-white rounded-xl border border-emerald-300">
+                            {burialForm.death_cert_url.startsWith('data:image') ? (
+                              <img
+                                src={burialForm.death_cert_url}
+                                alt="Death Cert Preview"
+                                className="w-10 h-10 object-cover rounded-lg shrink-0 border"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs shrink-0">
+                                PDF
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-slate-900 truncate">
+                                {burialForm.death_cert_name || 'PSA_Death_Certificate.jpg'}
+                              </p>
+                              <span className="text-[10px] text-slate-500">Ready for verification</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setBurialForm(prev => ({ ...prev, death_cert_attached: false, death_cert_name: '', death_cert_url: '' }))}
+                              className="p-1 rounded-lg text-red-600 hover:bg-red-50 cursor-pointer"
+                              title="Remove File"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-slate-300 hover:border-purple-500 rounded-xl cursor-pointer bg-slate-50 transition-colors">
+                            <input
+                              type="file"
+                              accept="image/*, .pdf, .jpg, .jpeg, .png, .webp"
+                              onChange={handleDeathCertUpload}
+                              className="hidden"
+                            />
+                            <Upload className="w-5 h-5 text-purple-600 mb-1" />
+                            <span className="text-xs font-bold text-purple-700">Attach PSA Death Cert</span>
+                            <span className="text-[10px] text-slate-400 mt-0.5">JPG, PNG, WEBP or PDF</span>
+                          </label>
+                        )}
+                      </div>
+
+                      {/* Valid Government ID */}
+                      <div className={`p-3.5 rounded-2xl border transition-all ${
+                        burialForm.valid_id_attached
+                          ? 'bg-emerald-50/70 border-emerald-400'
+                          : 'bg-white border-slate-200 hover:border-purple-400'
+                      }`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <ShieldCheck className="w-4 h-4 text-purple-600" />
+                            <span>Valid Gov ID of Applicant *</span>
+                          </label>
+                          {burialForm.valid_id_attached && (
+                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-md">
+                              Attached ✅
+                            </span>
+                          )}
+                        </div>
+
+                        {burialForm.valid_id_attached ? (
+                          <div className="flex items-center justify-between gap-2 p-2 bg-white rounded-xl border border-emerald-300">
+                            {burialForm.valid_id_url.startsWith('data:image') ? (
+                              <img
+                                src={burialForm.valid_id_url}
+                                alt="Gov ID Preview"
+                                className="w-10 h-10 object-cover rounded-lg shrink-0 border"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs shrink-0">
+                                PDF
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-slate-900 truncate">
+                                {burialForm.valid_id_name || 'Valid_Gov_ID.jpg'}
+                              </p>
+                              <span className="text-[10px] text-slate-500">Ready for verification</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setBurialForm(prev => ({ ...prev, valid_id_attached: false, valid_id_name: '', valid_id_url: '' }))}
+                              className="p-1 rounded-lg text-red-600 hover:bg-red-50 cursor-pointer"
+                              title="Remove File"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-slate-300 hover:border-purple-500 rounded-xl cursor-pointer bg-slate-50 transition-colors">
+                            <input
+                              type="file"
+                              accept="image/*, .pdf, .jpg, .jpeg, .png, .webp"
+                              onChange={handleValidIdUpload}
+                              className="hidden"
+                            />
+                            <Upload className="w-5 h-5 text-purple-600 mb-1" />
+                            <span className="text-xs font-bold text-purple-700">Attach Valid Gov ID</span>
+                            <span className="text-[10px] text-slate-400 mt-0.5">UMID, Driver's License, Passport</span>
+                          </label>
+                        )}
+                      </div>
                     </div>
                   </div>
 

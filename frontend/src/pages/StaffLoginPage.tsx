@@ -112,8 +112,7 @@ export function StaffLoginPage() {
     setForgotSending(true);
 
     try {
-      const isAdmin = cleanEmail === 'ronmanangan10@gmail.com' || cleanEmail === 'admin@govserve.gov.ph';
-      const exists = isAdmin || (await checkEmailExists(cleanEmail));
+      const exists = await checkEmailExists(cleanEmail);
       if (!exists) {
         setForgotError('⚠️ This email address is not registered in our system.');
         setForgotSending(false);

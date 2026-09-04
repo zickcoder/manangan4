@@ -255,6 +255,68 @@ export function CemeteryModule() {
     }
   };
 
+  const handleApproveBurial = async (burial: BurialRecord) => {
+    try {
+      setAnimModal({
+        isOpen: true,
+        type: 'loading',
+        title: 'Approving Application...',
+        message: 'Burial application marked as approved.'
+      });
+
+      await updateBurialStatus(burial.id, 'Approved');
+      setIsReviewModalOpen(false);
+      loadData();
+
+      setTimeout(() => {
+        setAnimModal({
+          isOpen: true,
+          type: 'success',
+          title: '✓ Application Approved!',
+          message: `Burial application ${burial.reference_no} is now approved.`
+        });
+      }, 500);
+    } catch (e) {
+      setAnimModal({
+        isOpen: true,
+        type: 'rejected',
+        title: 'Error Occurred',
+        message: 'Failed to approve application.'
+      });
+    }
+  };
+
+  const handleReturnToPending = async (burial: BurialRecord) => {
+    try {
+      setAnimModal({
+        isOpen: true,
+        type: 'loading',
+        title: 'Updating Status...',
+        message: 'Returning application to Pending Review status.'
+      });
+
+      await updateBurialStatus(burial.id, 'Pending Review');
+      setIsReviewModalOpen(false);
+      loadData();
+
+      setTimeout(() => {
+        setAnimModal({
+          isOpen: true,
+          type: 'success',
+          title: '↩ Returned to Pending Review',
+          message: `Burial application ${burial.reference_no} returned to Pending Review.`
+        });
+      }, 500);
+    } catch (e) {
+      setAnimModal({
+        isOpen: true,
+        type: 'rejected',
+        title: 'Error Occurred',
+        message: 'Failed to return application to pending review.'
+      });
+    }
+  };
+
   const handleSavePlotStatus = async () => {
     if (!selectedPlotToManage) return;
     try {
@@ -271,6 +333,8 @@ export function CemeteryModule() {
     if (burialStatusFilter !== 'All') {
       if (burialStatusFilter === 'Pending Payment' || burialStatusFilter === 'Waiting for Payment') {
         if (b.status !== 'Pending Payment' && b.status !== 'Waiting for Payment') return false;
+      } else if (burialStatusFilter === 'Pending Review' || burialStatusFilter === 'Pending') {
+        if (b.status !== 'Pending Review' && b.status !== 'Pending') return false;
       } else if (b.status !== burialStatusFilter) {
         return false;
       }
@@ -543,7 +607,7 @@ export function CemeteryModule() {
             </div>
 
             <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
-              {['All', 'Pending Review', 'Pending Payment', 'Paid', 'Rejected'].map((status) => (
+              {['All', 'Pending Review', 'Approved', 'Pending Payment', 'Paid', 'Rejected'].map((status) => (
                 <button
                   key={status}
                   onClick={() => setBurialStatusFilter(status)}
@@ -599,12 +663,12 @@ export function CemeteryModule() {
                         <p className="text-[10px] text-slate-500">{b.contact_phone}</p>
                       </td>
                       <td className="py-3.5 px-4">
-                        <Badge variant={b.status === 'Paid' ? 'success' : b.status === 'Pending Payment' ? 'info' : b.status === 'Rejected' ? 'destructive' : 'warning'}>
+                        <Badge variant={b.status === 'Paid' || b.status === 'Approved' ? 'success' : (b.status === 'Pending Payment' || b.status === 'Waiting for Payment') ? 'info' : b.status === 'Rejected' ? 'danger' : 'warning'}>
                           {b.status === 'Pending Payment' ? 'Waiting for Payment' : b.status}
                         </Badge>
                       </td>
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        {b.status === 'Pending Review' || b.status === 'Pending Payment' ? (
+                        {b.status !== 'Paid' ? (
                           <Button
                             size="sm"
                             variant="primary"
@@ -616,7 +680,7 @@ export function CemeteryModule() {
                           >
                             Review Application
                           </Button>
-                        ) : b.status === 'Paid' ? (
+                        ) : (
                           <Button
                             size="sm"
                             variant="secondary"
@@ -629,8 +693,6 @@ export function CemeteryModule() {
                           >
                             View Permit
                           </Button>
-                        ) : (
-                          <span className="text-xs font-semibold text-slate-400">Application Closed</span>
                         )}
                       </td>
                     </tr>
@@ -681,18 +743,32 @@ export function CemeteryModule() {
                     </div>
 
                     <div className="pt-1">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="w-full text-xs font-bold justify-center"
-                        leftIcon={<FileText className="w-3.5 h-3.5" />}
-                        onClick={() => {
-                          setSelectedBurial(b);
-                          setIsPermitModalOpen(true);
-                        }}
-                      >
-                        View Official Permit
-                      </Button>
+                      {b.status !== 'Paid' ? (
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          className="w-full text-xs font-bold justify-center bg-purple-600 hover:bg-purple-700"
+                          onClick={() => {
+                            setSelectedReviewBurial(b);
+                            setIsReviewModalOpen(true);
+                          }}
+                        >
+                          Review Application
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="w-full text-xs font-bold justify-center"
+                          leftIcon={<FileText className="w-3.5 h-3.5" />}
+                          onClick={() => {
+                            setSelectedBurial(b);
+                            setIsPermitModalOpen(true);
+                          }}
+                        >
+                          View Official Permit
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))
@@ -942,11 +1018,11 @@ export function CemeteryModule() {
               Permission is hereby granted for the burial and interment of the aforementioned deceased in accordance with municipal sanitary regulations and health ordinances.
             </p>
 
-            <div className="pt-3 flex flex-col-reverse sm:flex-row justify-end gap-2">
-              <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => setIsPermitModalOpen(false)}>
+            <div className="pt-3 flex flex-col-reverse sm:flex-row justify-end gap-2 print:hidden">
+              <Button size="sm" variant="outline" className="w-full sm:w-auto print:hidden" onClick={() => setIsPermitModalOpen(false)}>
                 Close
               </Button>
-              <Button size="sm" variant="primary" className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 font-bold" leftIcon={<Printer className="w-4 h-4" />} onClick={() => window.print()}>
+              <Button size="sm" variant="primary" className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 font-bold print:hidden" leftIcon={<Printer className="w-4 h-4" />} onClick={() => window.print()}>
                 Print Permit
               </Button>
             </div>
@@ -1031,7 +1107,7 @@ export function CemeteryModule() {
               </div>
             </div>
 
-            {selectedReviewBurial.status === 'Pending Review' && (
+            {selectedReviewBurial.status === 'Approved' && (
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-2">
                 <p className="font-bold text-amber-900 text-[11px]">🗓️ Set Payment Due Date & Fee:</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1057,47 +1133,96 @@ export function CemeteryModule() {
               </div>
             )}
 
-            {selectedReviewBurial.status === 'Pending Payment' && (
+            {(selectedReviewBurial.status === 'Pending Payment' || selectedReviewBurial.status === 'Waiting for Payment') && (
               <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 text-amber-950 space-y-1">
                 <p className="font-bold text-xs">⏳ Awaiting Treasury Cash Settlement:</p>
                 <p className="text-[11px]">Notice issued to citizen. Payment due date: <strong>{selectedReviewBurial.payment_due_date || reviewDueDate}</strong>. Plot <strong>{selectedReviewBurial.plot_code}</strong> is currently Reserved. When resident pays at the Treasury Desk, click "Approve Payment (Cash Received)" below.</p>
               </div>
             )}
 
-            <div className="pt-3 flex flex-wrap sm:flex-nowrap items-center justify-end gap-2 border-t border-slate-100">
-              <Button size="sm" variant="outline" onClick={() => setIsReviewModalOpen(false)}>
-                Close
-              </Button>
-              {selectedReviewBurial.status === 'Pending Review' && (
-                <>
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+              <div className="flex gap-2">
+                {/* Pending Review: Reject + Approve */}
+                {(selectedReviewBurial.status === 'Pending' || selectedReviewBurial.status === 'Pending Review') && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      className="font-bold text-xs"
+                      onClick={() => handleRejectBurial(selectedReviewBurial)}
+                    >
+                      ✕ Reject Application
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="success"
+                      className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs"
+                      onClick={() => handleApproveBurial(selectedReviewBurial)}
+                    >
+                      ✓ Approve Application
+                    </Button>
+                  </>
+                )}
+                {/* Approved: Return to Pending Review */}
+                {selectedReviewBurial.status === 'Approved' && (
                   <Button
                     size="sm"
-                    variant="destructive"
-                    className="font-bold text-xs"
-                    onClick={() => handleRejectBurial(selectedReviewBurial)}
+                    variant="outline"
+                    className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+                    onClick={() => handleReturnToPending(selectedReviewBurial)}
                   >
-                    Reject Application
+                    ↩ Return to Pending Review
                   </Button>
+                )}
+                {/* Waiting for Payment: Return to Pending Review */}
+                {(selectedReviewBurial.status === 'Pending Payment' || selectedReviewBurial.status === 'Waiting for Payment') && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+                    onClick={() => handleReturnToPending(selectedReviewBurial)}
+                  >
+                    ↩ Return to Pending Review
+                  </Button>
+                )}
+                {/* Rejected: Return to Pending Review */}
+                {selectedReviewBurial.status === 'Rejected' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+                    onClick={() => handleReturnToPending(selectedReviewBurial)}
+                  >
+                    ↩ Return to Pending Review
+                  </Button>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="font-bold text-xs" onClick={() => setIsReviewModalOpen(false)}>
+                  Close
+                </Button>
+                {selectedReviewBurial.status === 'Approved' && (
                   <Button
                     size="sm"
                     variant="primary"
-                    className="bg-purple-600 hover:bg-purple-700 font-bold text-xs"
+                    className="bg-purple-600 hover:bg-purple-700 font-bold text-xs text-white"
                     onClick={() => handleGrantPermit(selectedReviewBurial)}
                   >
                     Grant Application & Issue Payment Notice
                   </Button>
-                </>
-              )}
-              {selectedReviewBurial.status === 'Pending Payment' && (
-                <Button
-                  size="sm"
-                  variant="primary"
-                  className="bg-emerald-600 hover:bg-emerald-700 font-bold text-xs"
-                  onClick={() => handleConfirmPayment(selectedReviewBurial)}
-                >
-                  ✓ Approve Payment (Cash Received)
-                </Button>
-              )}
+                )}
+                {(selectedReviewBurial.status === 'Pending Payment' || selectedReviewBurial.status === 'Waiting for Payment') && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    className="bg-emerald-600 hover:bg-emerald-700 font-bold text-xs text-white"
+                    onClick={() => handleConfirmPayment(selectedReviewBurial)}
+                  >
+                    ✓ Approve Payment (Cash Received)
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}

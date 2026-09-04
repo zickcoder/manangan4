@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Building, 
@@ -26,9 +26,10 @@ interface SidebarProps {
 
 export function AppSidebar({ isOpen, onClose }: SidebarProps) {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const userStr = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
-  let user: any = { name: 'Admin', role: 'Admin', email: 'ronmanangan10@gmail.com' };
+  let user: any = { name: 'Executive Administrator', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
   try {
     if (userStr) user = JSON.parse(userStr);
   } catch {}
@@ -53,7 +54,7 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
         {
           label: 'E-SERVICES',
           items: [
-            { name: 'Facility & Park Booking', path: '/facilities', icon: Building },
+            { name: 'Facility & Park Reservation', path: '/facilities', icon: Building },
             { name: 'Water & Drainage Desk', path: '/utilities', icon: Droplet },
             { name: 'Burial & Cemetery Permit', path: '/cemetery', icon: Cross },
             { name: 'Public Asset Catalog', path: '/assets', icon: Wrench },
@@ -83,6 +84,44 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
           ]
         }
       ];
+
+  const isItemActive = (itemPath: string) => {
+    if (!isCitizen) {
+      return location.pathname === itemPath;
+    }
+    if (itemPath === '/dashboard') {
+      return location.pathname === '/dashboard';
+    }
+    if (itemPath === '/my-tickets') {
+      return location.pathname === '/my-tickets';
+    }
+    if (itemPath === '/facilities') {
+      return (
+        location.pathname === '/facilities' ||
+        location.pathname === '/parks' ||
+        (location.pathname === '/citizen/services' && (!location.search || location.search.includes('tab=reserve')))
+      );
+    }
+    if (itemPath === '/utilities') {
+      return (
+        location.pathname === '/utilities' ||
+        (location.pathname === '/citizen/services' && location.search.includes('tab=utility'))
+      );
+    }
+    if (itemPath === '/cemetery') {
+      return (
+        location.pathname === '/cemetery' ||
+        (location.pathname === '/citizen/services' && location.search.includes('tab=cemetery'))
+      );
+    }
+    if (itemPath === '/assets') {
+      return (
+        location.pathname === '/assets' ||
+        (location.pathname === '/citizen/services' && location.search.includes('tab=assets'))
+      );
+    }
+    return location.pathname === itemPath;
+  };
 
   const getInitials = (name: string) => {
     if (!name) return 'U';
@@ -138,28 +177,23 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
               </div>
               {group.items.map((item) => {
                 const Icon = item.icon;
+                const active = isItemActive(item.path);
                 return (
                   <NavLink
                     key={item.path}
                     to={item.path}
                     onClick={onClose}
-                    className={({ isActive }) =>
-                      clsx(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all group relative",
-                        isActive
-                          ? "bg-blue-600 text-white shadow-md shadow-blue-600/30 font-semibold"
-                          : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                      )
-                    }
+                    className={clsx(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all group relative",
+                      active
+                        ? "bg-blue-600 text-white shadow-md shadow-blue-600/30 font-semibold"
+                        : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                    )}
                   >
-                    {({ isActive }) => (
-                      <>
-                        <Icon className={clsx("w-4 h-4 shrink-0 transition-transform group-hover:scale-110", isActive ? "text-white" : "text-slate-400 group-hover:text-blue-400")} />
-                        <span className="flex-1 truncate">{item.name}</span>
-                        {isActive && (
-                          <ChevronRight className="w-3.5 h-3.5 opacity-80" />
-                        )}
-                      </>
+                    <Icon className={clsx("w-4 h-4 shrink-0 transition-transform group-hover:scale-110", active ? "text-white" : "text-slate-400 group-hover:text-blue-400")} />
+                    <span className="flex-1 truncate">{item.name}</span>
+                    {active && (
+                      <ChevronRight className="w-3.5 h-3.5 opacity-80" />
                     )}
                   </NavLink>
                 );

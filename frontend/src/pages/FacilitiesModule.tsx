@@ -271,7 +271,7 @@ export function FacilitiesModule() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-          {['all', 'Pending Review', 'Pending Payment', 'Paid', 'Rejected'].map((status) => (
+          {['all', 'Pending Review', 'Approved', 'Pending Payment', 'Paid', 'Rejected'].map((status) => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -379,8 +379,23 @@ export function FacilitiesModule() {
               <p><span className="font-bold text-slate-700">Contact:</span> {selectedRes.applicant_phone || '—'}</p>
             </div>
 
-            {/* SET PAYMENT DUE DATE & FEE */}
-            {(selectedRes.status === 'Pending' || selectedRes.status === 'Pending Review') && (
+            {/* Special Equipment Requirements */}
+            {selectedRes.special_equipment && (Array.isArray(selectedRes.special_equipment) ? selectedRes.special_equipment.length > 0 : true) && (
+              <div className="p-3.5 bg-purple-50 rounded-xl border border-purple-200 space-y-1.5">
+                <p className="font-bold text-purple-900 text-xs uppercase tracking-wider">🔧 Special Equipment Requirements</p>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {(Array.isArray(selectedRes.special_equipment)
+                    ? selectedRes.special_equipment
+                    : String(selectedRes.special_equipment).split(',').map((s: string) => s.trim())
+                  ).filter(Boolean).map((eq: string, i: number) => (
+                    <span key={i} className="px-2 py-0.5 bg-purple-100 text-purple-800 text-[10px] font-semibold rounded-full border border-purple-200">{eq}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* SET PAYMENT DUE DATE & FEE - shown when Approved, before issuing payment notice */}
+            {selectedRes.status === 'Approved' && (
               <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 space-y-2">
                 <p className="font-bold text-amber-900 text-[11px]">🗓️ Set Payment Due Date & Fee:</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -426,14 +441,33 @@ export function FacilitiesModule() {
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
               <div className="flex gap-2">
+                {/* Pending Review: only Reject + Approve */}
                 {(selectedRes.status === 'Pending' || selectedRes.status === 'Pending Review') && (
-                  <Button size="sm" variant="danger" className="font-bold text-xs" onClick={() => handleUpdateStatus('Rejected')}>
-                    ✕ Reject Booking
+                  <>
+                    <Button size="sm" variant="danger" className="font-bold text-xs" onClick={() => handleUpdateStatus('Rejected')}>
+                      ✕ Reject Booking
+                    </Button>
+                    <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Approved')}>
+                      ✓ Approve Booking
+                    </Button>
+                  </>
+                )}
+                {/* Approved: Return to Pending Review */}
+                {selectedRes.status === 'Approved' && (
+                  <Button size="sm" variant="outline" className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50" onClick={() => handleUpdateStatus('Pending Review')}>
+                    ↩ Return to Pending Review
                   </Button>
                 )}
-                {(selectedRes.status === 'Pending' || selectedRes.status === 'Pending Review' || selectedRes.status === 'Pending Payment') && (
-                  <Button size="sm" variant="outline" className="font-bold text-xs text-slate-600" onClick={() => handleUpdateStatus('Cancelled')}>
-                    Cancel Booking
+                {/* Waiting for Payment: Return to Pending Review */}
+                {selectedRes.status === 'Pending Payment' && (
+                  <Button size="sm" variant="outline" className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50" onClick={() => handleUpdateStatus('Pending Review')}>
+                    ↩ Return to Pending Review
+                  </Button>
+                )}
+                {/* Rejected: Return to Pending Review */}
+                {selectedRes.status === 'Rejected' && (
+                  <Button size="sm" variant="outline" className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50" onClick={() => handleUpdateStatus('Pending Review')}>
+                    ↩ Return to Pending Review
                   </Button>
                 )}
               </div>
@@ -441,11 +475,13 @@ export function FacilitiesModule() {
                 <Button size="sm" variant="outline" className="font-bold text-xs" onClick={() => setIsReviewModalOpen(false)}>
                   Close
                 </Button>
-                {(selectedRes.status === 'Pending' || selectedRes.status === 'Pending Review') && (
+                {/* Approved: Issue Payment Notice */}
+                {selectedRes.status === 'Approved' && (
                   <Button size="sm" variant="success" className="bg-blue-600 hover:bg-blue-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Pending Payment')}>
                     Grant Reservation & Issue Payment Notice
                   </Button>
                 )}
+                {/* Waiting for Payment: Confirm Cash Received */}
                 {selectedRes.status === 'Pending Payment' && (
                   <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Paid')}>
                     ✓ Approve Payment (Cash Received)

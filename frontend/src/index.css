@@ -116,3 +116,65 @@ input, select, textarea {
   flex-shrink: 0;
   min-width: 0;
 }
+
+/* ─── Print Styles ─── */
+@media print {
+  /* Hide navigation, sidebars, headers, floating widgets, action buttons, and backdrops */
+  header,
+  aside,
+  nav,
+  .glass-header,
+  .gradient-sidebar,
+  .print\:hidden,
+  .no-print,
+  button,
+  [role="button"] {
+    display: none !important;
+  }
+
+  /* Reset document root and background for crisp printing */
+  html, body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Flatten modal overlay and remove outlines/shadows */
+  .fixed.inset-0 {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    overflow: visible !important;
+  }
+
+  /* Remove dialog box shadow and default borders */
+  .shadow-large,
+  .shadow-2xl,
+  .shadow-xl,
+  .shadow-md,
+  .shadow-soft {
+    box-shadow: none !important;
+  }
+
+  /* Ensure modal body and inner scroll containers are fully expanded */
+  .overflow-y-auto,
+  .overflow-x-auto,
+  .overflow-hidden {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  /* Preserve page breaks cleanly */
+  .print-page-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}

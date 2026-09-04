@@ -29,17 +29,10 @@ export function PublicNavbar() {
         {/* Center Nav Links */}
         <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-[#475569]">
           <Link to="/" className="text-blue-600 hover:text-blue-700 transition-colors">Home</Link>
-          <a href="#services" className="hover:text-blue-600 transition-colors">Municipal Services</a>
         </nav>
 
         {/* Actions (Login) */}
         <div className="flex items-center gap-2.5">
-          <Link to="/login">
-            <Button size="sm" variant="primary" leftIcon={<LogIn className="w-3.5 h-3.5" />}>
-              Citizen Sign In
-            </Button>
-          </Link>
-
           <Link to="/admin/login">
             <Button size="sm" variant="ghost" className="text-slate-600 text-xs font-bold hover:text-slate-900">
               Staff Portal →

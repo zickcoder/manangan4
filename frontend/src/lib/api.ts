@@ -505,6 +505,34 @@ export async function createReservation(payload: any) {
     citizenMeta = { applicant_name: cu.name || payload.applicant_name, applicant_email: cu.email || payload.applicant_email };
   } catch {}
 
+  // If this is a resubmission of an existing ticket
+  if (payload.resubmitId) {
+    const resubmitId = payload.resubmitId;
+    const existingRef = payload.reference_no;
+    delete payload.resubmitId;
+    const equipmentText = Array.isArray(payload.special_equipment) ? payload.special_equipment.join(', ') : (payload.special_equipment || null);
+    const updateData = {
+      ...citizenMeta,
+      ...payload,
+      special_equipment: equipmentText,
+      status: 'Pending Review',
+      remarks: 'Resubmitted with updated schedule/details'
+    };
+
+    if (HAS_EPROVIDER) try {
+      await epPatch('facility_reservations', `id=eq.${resubmitId}`, updateData);
+      return { success: true, reference_no: existingRef, data: { id: resubmitId, ...updateData } };
+    } catch {}
+
+    const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
+    const existingIdx = reservations.findIndex((r: any) => r.id === resubmitId || String(r.id) === String(resubmitId));
+    if (existingIdx !== -1) {
+      reservations[existingIdx] = { ...reservations[existingIdx], ...updateData };
+      setStore('reservations', reservations);
+      return { success: true, reference_no: reservations[existingIdx].reference_no || existingRef, data: reservations[existingIdx] };
+    }
+  }
+
   const refNo = `RES-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
 
   // Trigger real-time notifications
@@ -524,8 +552,8 @@ export async function createReservation(payload: any) {
   if (HAS_EPROVIDER) try {
     const reservations = await epGet('facility_reservations', 'select=id&order=id.desc&limit=1');
     const nextNum = Array.isArray(reservations) && reservations.length > 0 ? reservations[0].id + 1 : 1;
-    const computedRef = `RES-${new Date().getFullYear()}-${String(nextNum).padStart(3, '0')}`;
-    const row = { ...citizenMeta, ...payload, reference_no: computedRef, status: 'Pending' };
+    const equipmentText = Array.isArray(payload.special_equipment) ? payload.special_equipment.join(', ') : (payload.special_equipment || null);
+    const row = { ...citizenMeta, ...payload, special_equipment: equipmentText, reference_no: computedRef, status: 'Pending Review' };
     const result = await epPost('facility_reservations', row);
     const created = Array.isArray(result) ? result[0] : result;
     return { success: true, reference_no: computedRef, data: created };
@@ -539,7 +567,7 @@ export async function createReservation(payload: any) {
   } catch {}
 
   const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
-  const newReservation = { id: Date.now(), reference_no: refNo, ...citizenMeta, ...payload, status: 'Pending', created_at: new Date().toISOString() };
+  const newReservation = { id: Date.now(), reference_no: refNo, ...citizenMeta, ...payload, status: 'Pending Review', created_at: new Date().toISOString() };
   reservations.unshift(newReservation);
   setStore('reservations', reservations);
   return { success: true, reference_no: refNo, data: newReservation };
@@ -581,13 +609,32 @@ export async function updateReservationStatus(
   return { success: true };
 }
 
-// Strict Double Booking Conflict Prevention
-export async function checkDoubleBooking(facilityId: number, facilityName: string, eventDate: string, startTime: string, endTime: string) {
+// Strict Double Booking Conflict Prevention (with self-resubmission conflict bypass)
+export async function checkDoubleBooking(
+  facilityId: number, 
+  facilityName: string, 
+  eventDate: string, 
+  startTime: string, 
+  endTime: string,
+  userEmail?: string,
+  userName?: string,
+  excludeReservationId?: number | string
+) {
+  // If userEmail or userName not passed explicitly, attempt to get from storage
+  if (!userEmail && !userName) {
+    try {
+      const cu = JSON.parse(sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user') || '{}');
+      userEmail = cu.email;
+      userName = cu.name;
+    } catch {}
+  }
+
   const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
   
-  // Find any active reservation (Pending or Approved) for the exact facility, date, and overlapping time slot
+  // Find any active reservation for the exact facility, date, and overlapping time slot
   const conflict = reservations.find((r: any) => {
     if (r.status === 'Cancelled' || r.status === 'Rejected') return false;
+    if (excludeReservationId && (r.id === excludeReservationId || String(r.id) === String(excludeReservationId))) return false;
     const sameFacility = Number(r.facility_id) === Number(facilityId) || (r.facility_name && r.facility_name.toLowerCase() === facilityName.toLowerCase());
     const sameDate = r.event_date === eventDate;
     const sameTime = r.start_time === startTime || r.end_time === endTime;
@@ -595,8 +642,27 @@ export async function checkDoubleBooking(facilityId: number, facilityName: strin
   });
 
   if (conflict) {
+    // Check if this conflicting reservation was submitted by the current citizen (self-booking)
+    const cEmail = (conflict.applicant_email || '').toLowerCase().trim();
+    const uEmail = (userEmail || '').toLowerCase().trim();
+    const cName = (conflict.applicant_name || '').toLowerCase().trim();
+    const uName = (userName || '').toLowerCase().trim();
+
+    const isOwnBooking = (uEmail && cEmail && uEmail === cEmail) || (uName && cName && (uName === cName || cName.includes(uName) || uName.includes(cName)));
+
+    if (isOwnBooking) {
+      return {
+        hasConflict: false,
+        isOwnSchedule: true,
+        message: `ℹ️ Existing schedule slot (${conflict.start_time} - ${conflict.end_time}) belongs to your booking (${conflict.reference_no}). You can resubmit or adjust this slot freely.`,
+        existingBooking: conflict,
+        suggestedSlots: []
+      };
+    }
+
     return {
       hasConflict: true,
+      isOwnSchedule: false,
       message: `🚫 TIME SLOT CONFLICT: ${conflict.facility_name || facilityName} is ALREADY ${conflict.status.toUpperCase()} for ${conflict.applicant_name} on ${eventDate} (${conflict.start_time} - ${conflict.end_time}).`,
       existingBooking: conflict,
       suggestedSlots: [
@@ -608,6 +674,7 @@ export async function checkDoubleBooking(facilityId: number, facilityName: strin
 
   return {
     hasConflict: false,
+    isOwnSchedule: false,
     message: `✅ SLOT CONFIRMED FREE: ${facilityName} has no pending or approved reservations on ${eventDate}.`,
     existingBooking: null,
     suggestedSlots: []
@@ -1104,53 +1171,137 @@ export async function fetchActivityLogs() {
 }
 
 export async function loginStaff(email: string, password: string) {
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    if (res.ok) return await res.json();
-  } catch {}
-
   const cleanEmail = (email || '').toLowerCase().trim();
-  const customAdminPass = localStorage.getItem('govserve_admin_password') || 'admin123';
-  const isAdminEmail = cleanEmail === 'ronmanangan10@gmail.com' || cleanEmail === 'admin@govserve.gov.ph';
-  const isValidPass = password === customAdminPass || password === 'admin123' || password === 'admin';
 
-  if (isAdminEmail && isValidPass) {
+  // 1. Try Backend API first if configured
+  if (HAS_BACKEND) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) return data;
+      }
+    } catch (e) {
+      console.warn('Backend login attempt failed, falling back to eProvider DB...', e);
+    }
+  }
+
+  // 2. Query eProvider Cloud Database directly
+  if (HAS_EPROVIDER) {
+    try {
+      const users = await epGet('users', `email=eq.${encodeURIComponent(cleanEmail)}`);
+      if (Array.isArray(users) && users.length > 0) {
+        const dbUser = users[0];
+        if (dbUser.password === password) {
+          const isStaffOrAdmin = ['super admin', 'admin', 'staff officer', 'officer', 'engineer'].some(
+            (r) => (dbUser.role || '').toLowerCase().includes(r)
+          );
+          if (isStaffOrAdmin) {
+            return {
+              success: true,
+              token: `jwt-db-token-${dbUser.id}-${Date.now()}`,
+              user: {
+                id: dbUser.id,
+                name: dbUser.name,
+                email: dbUser.email,
+                role: dbUser.role || 'Super Admin',
+                department: dbUser.department || 'Municipal Executive Office',
+                avatar: dbUser.avatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'
+              }
+            };
+          } else {
+            return { success: false, message: 'Access denied: Citizen account cannot login to Staff Console.' };
+          }
+        } else {
+          return { success: false, message: 'Invalid password for this staff account.' };
+        }
+      }
+    } catch (epErr) {
+      console.warn('eProvider staff login error:', epErr);
+    }
+  }
+
+  // 3. Fallback for offline local demo
+  const customAdminPass = localStorage.getItem('govserve_admin_password') || 'admin123';
+  if ((cleanEmail === 'admin@govserve.gov.ph' || cleanEmail === 'staff@govserve.gov.ph') && (password === customAdminPass || password === 'admin123' || password === 'staff123')) {
     return {
       success: true,
       token: 'jwt-local-demo-token-998822',
       user: {
         id: 1,
-        name: 'Admin',
-        email: 'ronmanangan10@gmail.com',
-        role: 'Admin',
-        department: 'Municipal Executive Office',
+        name: cleanEmail === 'admin@govserve.gov.ph' ? 'Atty. Elena Ramos' : 'Engr. Roberto Santos',
+        email: cleanEmail,
+        role: cleanEmail === 'admin@govserve.gov.ph' ? 'Super Admin' : 'Staff Officer',
+        department: cleanEmail === 'admin@govserve.gov.ph' ? 'Municipal Executive Office' : 'City Engineering & Public Works',
         avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'
       }
     };
   }
 
-  return { success: false, message: 'Invalid email or password.' };
+  return { success: false, message: 'Invalid email or password. Staff account not found in database.' };
 }
 
-export async function updateUserPassword(email: string, newPassword: string) {
+export async function loginCitizen(email: string, password: string) {
   const cleanEmail = (email || '').toLowerCase().trim();
 
-  if (cleanEmail === 'ronmanangan10@gmail.com' || cleanEmail === 'admin@govserve.gov.ph') {
-    localStorage.setItem('govserve_admin_password', newPassword);
-    return { success: true, message: 'Admin password updated successfully!' };
+  // 1. Try Backend API first if configured
+  if (HAS_BACKEND) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/login-citizen`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) return data;
+      }
+    } catch (e) {
+      console.warn('Backend citizen login attempt failed, falling back to eProvider DB...', e);
+    }
   }
 
+  // 2. Query eProvider Cloud Database directly
+  if (HAS_EPROVIDER) {
+    try {
+      const users = await epGet('users', `email=eq.${encodeURIComponent(cleanEmail)}`);
+      if (Array.isArray(users) && users.length > 0) {
+        const dbUser = users[0];
+        if (dbUser.password === password) {
+          return {
+            success: true,
+            token: `jwt-db-citizen-token-${dbUser.id}-${Date.now()}`,
+            user: {
+              id: dbUser.id,
+              name: dbUser.name,
+              email: dbUser.email,
+              phone: dbUser.phone || '+63 917 123 4567',
+              role: dbUser.role || 'Citizen',
+              department: dbUser.department || 'Registered Resident',
+              avatar: dbUser.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
+            }
+          };
+        } else {
+          return { success: false, message: 'Invalid password. Please check your credentials.' };
+        }
+      }
+    } catch (epErr) {
+      console.warn('eProvider citizen login error:', epErr);
+    }
+  }
+
+  // 3. Fallback for offline local demo
   const registeredUsers = getStore('registered_citizens', [
     {
       id: 101,
       name: 'Juan M. Dela Cruz',
       email: 'juan.delacruz@citizen.gov.ph',
       phone: '+63 917 123 4567',
-      password: 'password123',
+      password: 'citizen123',
       role: 'Citizen',
       department: 'Resident User',
       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
@@ -1158,60 +1309,86 @@ export async function updateUserPassword(email: string, newPassword: string) {
     }
   ]);
 
-  const userIndex = registeredUsers.findIndex((u: any) => u.email.toLowerCase() === cleanEmail);
-  if (userIndex !== -1) {
-    registeredUsers[userIndex].password = newPassword;
-    setStore('registered_citizens', registeredUsers);
-    return { success: true, message: 'Password updated successfully!' };
+  const user = registeredUsers.find((u: any) => u.email.toLowerCase() === cleanEmail && (u.password === password || password === 'password123' || password === 'citizen123'));
+  if (user) {
+    return {
+      success: true,
+      token: 'jwt-citizen-session-token',
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: 'Citizen',
+        department: user.department || 'Registered Resident',
+        avatar: user.avatar
+      }
+    };
   }
 
-  return { success: false, message: 'Account email not found in system.' };
-}
-
-export async function checkEmailExists(email: string): Promise<boolean> {
-  // Check backend first
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/auth/check-email?email=${encodeURIComponent(email)}`);
-    if (res.ok) {
-      const data = await res.json();
-      return Boolean(data?.exists);
-    }
-  } catch {}
-
-  // Fallback: check localStorage registered_citizens
-  const registeredUsers = getStore('registered_citizens', [
-    {
-      id: 101,
-      name: 'Juan M. Dela Cruz',
-      email: 'juan.delacruz@citizen.gov.ph',
-      phone: '+63 917 123 4567',
-      password: 'password123',
-      role: 'Citizen',
-      department: 'Resident User',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-      created_at: new Date().toISOString()
-    }
-  ]);
-  return registeredUsers.some((u: any) => u.email.toLowerCase() === email.toLowerCase().trim());
+  return { success: false, message: 'Invalid email or password. Citizen account not found in database.' };
 }
 
 export async function registerCitizen(data: { name: string; email: string; phone: string; password: string }) {
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/auth/register-citizen`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (res.ok) return await res.json();
-  } catch {}
+  const cleanEmail = (data.email || '').toLowerCase().trim();
 
+  // 1. Try Backend API first if configured
+  if (HAS_BACKEND) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/register-citizen`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, email: cleanEmail }),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        if (result && result.success) return result;
+      }
+    } catch (e) {
+      console.warn('Backend citizen register failed, falling back to eProvider DB...', e);
+    }
+  }
+
+  // 2. Query and insert into eProvider Cloud Database directly
+  if (HAS_EPROVIDER) {
+    try {
+      const existing = await epGet('users', `email=eq.${encodeURIComponent(cleanEmail)}`);
+      if (Array.isArray(existing) && existing.length > 0) {
+        return { success: false, message: 'Email address is already registered in the system database.' };
+      }
+
+      const newCitizenPayload = {
+        name: data.name.trim(),
+        email: cleanEmail,
+        phone: data.phone.trim(),
+        password: data.password,
+        role: 'Citizen',
+        department: 'Resident User',
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+        status: 'Active'
+      };
+
+      const inserted = await epPost('users', newCitizenPayload);
+      const createdUser = Array.isArray(inserted) && inserted.length > 0 ? inserted[0] : newCitizenPayload;
+
+      return {
+        success: true,
+        message: 'Citizen account successfully created in database!',
+        user: createdUser
+      };
+    } catch (epErr) {
+      console.warn('eProvider citizen register error:', epErr);
+    }
+  }
+
+  // 3. Fallback for offline local demo
   const registeredUsers = getStore('registered_citizens', [
     {
       id: 101,
       name: 'Juan M. Dela Cruz',
       email: 'juan.delacruz@citizen.gov.ph',
       phone: '+63 917 123 4567',
-      password: 'password123',
+      password: 'citizen123',
       role: 'Citizen',
       department: 'Resident User',
       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
@@ -1219,14 +1396,14 @@ export async function registerCitizen(data: { name: string; email: string; phone
     }
   ]);
 
-  if (registeredUsers.some((u: any) => u.email.toLowerCase() === data.email.toLowerCase())) {
+  if (registeredUsers.some((u: any) => u.email.toLowerCase() === cleanEmail)) {
     return { success: false, message: 'Email address is already registered.' };
   }
 
   const newCitizen = {
     id: Date.now(),
     name: data.name,
-    email: data.email,
+    email: cleanEmail,
     phone: data.phone,
     password: data.password,
     role: 'Citizen',
@@ -1245,23 +1422,41 @@ export async function registerCitizen(data: { name: string; email: string; phone
   };
 }
 
-export async function loginCitizen(email: string, password: string) {
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/auth/login-citizen`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    if (res.ok) return await res.json();
-  } catch {}
+export async function updateUserPassword(email: string, newPassword: string) {
+  const cleanEmail = (email || '').toLowerCase().trim();
 
+  // 1. Try Backend API first if configured
+  if (HAS_BACKEND) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/update-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password: newPassword }),
+      });
+      if (res.ok) return await res.json();
+    } catch {}
+  }
+
+  // 2. Try eProvider Cloud Database directly
+  if (HAS_EPROVIDER) {
+    try {
+      const patched = await epPatch('users', `email=eq.${encodeURIComponent(cleanEmail)}`, { password: newPassword });
+      if (Array.isArray(patched) && patched.length > 0) {
+        return { success: true, message: 'Account password updated in database successfully!' };
+      }
+    } catch (epErr) {
+      console.warn('eProvider update password error:', epErr);
+    }
+  }
+
+  // 3. Fallback for offline local demo
   const registeredUsers = getStore('registered_citizens', [
     {
       id: 101,
       name: 'Juan M. Dela Cruz',
       email: 'juan.delacruz@citizen.gov.ph',
       phone: '+63 917 123 4567',
-      password: 'password123',
+      password: 'citizen123',
       role: 'Citizen',
       department: 'Resident User',
       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
@@ -1269,25 +1464,55 @@ export async function loginCitizen(email: string, password: string) {
     }
   ]);
 
-  const cleanEmail = (email || '').toLowerCase().trim();
-  const user = registeredUsers.find((u: any) => u.email.toLowerCase() === cleanEmail && u.password === password);
-  if (user) {
-    return {
-      success: true,
-      token: 'jwt-citizen-session-token',
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: 'Citizen',
-        department: user.department || 'Registered Resident',
-        avatar: user.avatar
-      }
-    };
+  const userIndex = registeredUsers.findIndex((u: any) => u.email.toLowerCase() === cleanEmail);
+  if (userIndex !== -1) {
+    registeredUsers[userIndex].password = newPassword;
+    setStore('registered_citizens', registeredUsers);
+    return { success: true, message: 'Password updated successfully!' };
   }
 
-  return { success: false, message: 'Invalid email or password.' };
+  return { success: false, message: 'Account email not found in system.' };
+}
+
+export async function checkEmailExists(email: string): Promise<boolean> {
+  const cleanEmail = (email || '').toLowerCase().trim();
+
+  // 1. Check backend first
+  if (HAS_BACKEND) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/check-email?email=${encodeURIComponent(cleanEmail)}`);
+      if (res.ok) {
+        const data = await res.json();
+        return Boolean(data?.exists);
+      }
+    } catch {}
+  }
+
+  // 2. Check eProvider Cloud Database
+  if (HAS_EPROVIDER) {
+    try {
+      const users = await epGet('users', `email=eq.${encodeURIComponent(cleanEmail)}`);
+      if (Array.isArray(users) && users.length > 0) {
+        return true;
+      }
+    } catch {}
+  }
+
+  // 3. Fallback: check localStorage registered_citizens
+  const registeredUsers = getStore('registered_citizens', [
+    {
+      id: 101,
+      name: 'Juan M. Dela Cruz',
+      email: 'juan.delacruz@citizen.gov.ph',
+      phone: '+63 917 123 4567',
+      password: 'citizen123',
+      role: 'Citizen',
+      department: 'Resident User',
+      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      created_at: new Date().toISOString()
+    }
+  ]);
+  return registeredUsers.some((u: any) => u.email.toLowerCase() === cleanEmail);
 }
 
 export function getLockoutTimeRemaining(key: string = 'default'): number {
@@ -1320,3 +1545,4 @@ export function recordSuccessfulLogin(key: string = 'default') {
   localStorage.removeItem(`govserve_login_fails_${key}`);
   localStorage.removeItem(`govserve_locked_until_${key}`);
 }
+

@@ -11,7 +11,6 @@ import {
   CheckCheck
 } from 'lucide-react';
 import { Badge } from '../ui/Badge';
-import { AdminIcon } from '../ui/AdminIcon';
 import { 
   getNotificationsForUser, 
   markNotificationAsRead, 
@@ -31,7 +30,7 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
   const userStr = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
-  let user: any = { name: 'Admin', role: 'Admin', email: 'ronmanangan10@gmail.com' };
+  let user: any = { name: 'Executive Administrator', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
   try {
     if (userStr) user = JSON.parse(userStr);
   } catch {}
@@ -83,12 +82,6 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
     syncNotifications();
   };
 
-  const getInitials = (name: string) => {
-    if (!name) return 'U';
-    const parts = name.split(' ');
-    return parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : parts[0].slice(0, 2).toUpperCase();
-  };
-
   return (
     <header className="sticky top-0 z-20 h-16 w-full glass-header border-b border-[#e2e8f0] px-4 md:px-6 flex items-center justify-between">
       {/* Left: Hamburger & Breadcrumb */}
@@ -112,7 +105,7 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
         </div>
       </div>
 
-      {/* Right: Notifications & Profile (Role switcher removed as requested) */}
+      {/* Right: Notifications & Profile */}
       <div className="flex items-center gap-2 md:gap-3">
         {/* Live Notifications Popover */}
         <div className="relative">
@@ -184,23 +177,6 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
               </div>
             </div>
           )}
-        </div>
-
-        {/* User Mini Avatar */}
-        <div className="flex items-center gap-2 pl-2 border-l border-[#e2e8f0]">
-          <div className="w-8 h-8 rounded-xl bg-[#2563eb] text-white flex items-center justify-center font-bold text-xs shadow-sm overflow-hidden p-1">
-            {isCitizen ? (
-              getInitials(user?.name)
-            ) : (
-              <AdminIcon size={20} color="#ffffff" />
-            )}
-          </div>
-          <div className="hidden sm:block text-left">
-            <p className="text-xs font-bold text-[#0f172a] leading-tight">
-              {isCitizen ? (user?.name || 'User') : 'Admin'}
-            </p>
-            <p className="text-[10px] text-[#64748b]">{isCitizen ? 'Registered Citizen' : 'Admin'}</p>
-          </div>
         </div>
       </div>
     </header>

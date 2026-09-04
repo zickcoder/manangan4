@@ -76,10 +76,7 @@ export function ForgotPasswordModal({ isOpen, onClose, defaultEmail = '' }: Forg
     setSending(true);
 
     try {
-      // Check if email is admin or registered citizen
-      const isAdmin = cleanEmail === 'admin@govserve.gov.ph';
-      const exists = isAdmin || (await checkEmailExists(cleanEmail));
-
+      const exists = await checkEmailExists(cleanEmail);
       if (!exists) {
         setError('⚠️ This email address is not registered in our system.');
         setSending(false);
