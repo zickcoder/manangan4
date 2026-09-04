@@ -19,9 +19,9 @@ import emailjs from '@emailjs/browser';
 import { registerCitizen, checkEmailExists } from '../lib/api';
 
 // User's Real EmailJS Configuration
-const EMAILJS_SERVICE_ID = 'service_12mtxp4';
-const EMAILJS_TEMPLATE_ID = 'template_vttotnj';
-const EMAILJS_PUBLIC_KEY = 'tXXuBdfHK5Se9XoeL';
+const EMAILJS_SERVICE_ID = 'service_6vsq3nj';
+const EMAILJS_TEMPLATE_ID = 'template_dchi14k';
+const EMAILJS_PUBLIC_KEY = '-3noUYuzaJc6YK0ej';
 
 export function CitizenRegisterPage() {
   const navigate = useNavigate();
