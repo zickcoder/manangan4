@@ -164,7 +164,14 @@ export function ParksModule() {
         message: 'Reserving park ground and generating ticket.'
       });
 
-      await createReservation(newForm);
+      const parkObj = parks.find(p => p.id === Number(newForm.facility_id)) || parks[0];
+      await createReservation({
+        ...newForm,
+        facility_category: 'Park & Recreation',
+        facility_name: parkObj?.name,
+        facility_location: parkObj?.location,
+        hourly_rate: parkObj?.hourly_rate
+      });
       setIsNewModalOpen(false);
       loadData();
 

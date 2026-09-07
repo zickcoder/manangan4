@@ -45,10 +45,10 @@ import {
 import { Facility, CemeteryPlot, Asset } from '../types';
 
 interface CitizenServicesProps {
-  defaultTab?: 'reserve' | 'utility' | 'cemetery' | 'assets';
+  defaultTab?: 'facility' | 'parks' | 'reserve' | 'utility' | 'cemetery' | 'assets';
 }
 
-export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesProps) {
+export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServicesProps) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -56,14 +56,15 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
 
   // Read defaultTab every render so it stays in sync with sidebar clicks
   const tabParam = searchParams.get('tab') as any;
-  const [activeTab, setActiveTab] = useState<'reserve' | 'utility' | 'cemetery' | 'assets'>(
-    tabParam || defaultTab
+  const initialTab = tabParam || defaultTab;
+  const [activeTab, setActiveTab] = useState<'facility' | 'parks' | 'reserve' | 'utility' | 'cemetery' | 'assets'>(
+    initialTab === 'reserve' ? 'facility' : initialTab
   );
 
   // Sync when defaultTab prop changes (sidebar link clicked)
   useEffect(() => {
     const incoming = tabParam || defaultTab;
-    if (incoming) setActiveTab(incoming);
+    if (incoming) setActiveTab(incoming === 'reserve' ? 'facility' : incoming);
   }, [defaultTab, tabParam]);
 
   // Current Logged In Citizen
@@ -304,7 +305,31 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
     }).catch(console.error);
   }, [selectedCemetery]);
 
-  const selectedFacilityObj = facilities.find(f => f.id === selectedFacilityId) || facilities[0] || {
+  const isParksMode = activeTab === 'parks';
+
+  const availableVenues = facilities.filter(f => {
+    const cat = (f.category || '').toLowerCase();
+    return isParksMode ? (cat.includes('park') || cat.includes('recreation')) : (!cat.includes('park') && !cat.includes('recreation'));
+  });
+
+  useEffect(() => {
+    if (availableVenues.length > 0) {
+      const exists = availableVenues.some(f => f.id === selectedFacilityId);
+      if (!exists) {
+        setSelectedFacilityId(availableVenues[0].id);
+      }
+    }
+  }, [activeTab, facilities]);
+
+  const selectedFacilityObj = availableVenues.find(f => f.id === selectedFacilityId) || availableVenues[0] || (isParksMode ? {
+    id: 3,
+    name: 'Camarin Green Urban Recreation Park',
+    category: 'Park & Recreation',
+    capacity: 500,
+    hourly_rate: 0,
+    location: 'Camarin Road Sector 3',
+    amenities: 'Jogging Trail, Children Playground, Gazebo, Covered Picnic Sheds'
+  } : {
     id: 1,
     name: 'Barangay 178 Multi-Purpose Civic Center',
     category: 'Government Facility',
@@ -312,7 +337,7 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
     hourly_rate: 500,
     location: 'Civic Complex, Mindanao Ave.',
     amenities: 'Central Aircon, Full PA Sound System, Stage, Chairs'
-  };
+  });
   const currentAttendees = parseInt(reserveForm.attendees, 10) || 0;
   const isPaxExceeded = selectedFacilityObj ? currentAttendees > selectedFacilityObj.capacity : false;
 
@@ -398,9 +423,9 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
         applicant_email: reserveForm.applicant_email.trim(),
         applicant_phone: reserveForm.applicant_phone.trim(),
         purpose: reserveForm.purpose.trim(),
-        facility_id: selectedFacilityId,
+        facility_id: selectedFacilityObj.id,
         facility_name: selectedFacilityObj.name,
-        facility_category: selectedFacilityObj.category,
+        facility_category: isParksMode ? 'Park & Recreation' : 'Government Facility',
         facility_location: selectedFacilityObj.location,
         hourly_rate: selectedFacilityObj.hourly_rate,
         attendees: currentAttendees,
@@ -553,12 +578,38 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl sm:text-2xl font-extrabold text-[#0f172a] font-display">
-              Municipal E-Services Desk
+              {isParksMode
+                ? 'Parks & Recreation Grounds Scheduling'
+                : activeTab === 'facility' || activeTab === 'reserve'
+                ? 'Government Facility Reservation & Scheduling'
+                : activeTab === 'utility'
+                ? 'Water & Drainage Incident Desk'
+                : activeTab === 'cemetery'
+                ? 'Burial & Cemetery Permit Application'
+                : 'Public Asset & Equipment Catalog'}
             </h2>
-            <Badge variant="info" size="sm">Online Processing</Badge>
+            <Badge variant={isParksMode ? 'success' : activeTab === 'facility' || activeTab === 'reserve' ? 'info' : activeTab === 'utility' ? 'warning' : activeTab === 'cemetery' ? 'purple' : 'info'} size="sm">
+              {isParksMode
+                ? 'Parks & Recreation'
+                : activeTab === 'facility' || activeTab === 'reserve'
+                ? 'Government Facilities'
+                : activeTab === 'utility'
+                ? 'Public Works Desk'
+                : activeTab === 'cemetery'
+                ? 'Civil Registry & Memorial'
+                : 'Asset Inventory'}
+            </Badge>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Submit service applications, incident hazard reports, and browse government asset inventory directly from your citizen account.
+            {isParksMode
+              ? 'Schedule community gatherings, outdoor wellness activities, and sports leagues at municipal parks and public plazas.'
+              : activeTab === 'facility' || activeTab === 'reserve'
+              ? 'Reserve municipal multi-purpose civic centers, sports gymnasiums, and public event halls for official and civic functions.'
+              : activeTab === 'utility'
+              ? 'Submit hazard reports, pipe leakage alerts, and drainage maintenance requests for rapid municipal crew dispatch.'
+              : activeTab === 'cemetery'
+              ? 'Apply for public cemetery interment, view available columbarium niches, and submit requirements online.'
+              : 'Browse municipal heavy equipment, disaster response vehicles, mobile water pumps, and emergency generators.'}
           </p>
         </div>
 
@@ -567,54 +618,26 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
         </Button>
       </div>
 
-      {/* 4-Tab Navigation Selector */}
-      <div className="bg-white rounded-2xl shadow-soft border border-[#cbd5e1] p-1.5 flex flex-wrap sm:flex-nowrap gap-1">
-        {[
-          { id: 'reserve', label: 'Facility & Park Reservation', icon: Building, path: '/facilities' },
-          { id: 'utility', label: 'Water & Drainage Desk', icon: Droplet, path: '/utilities' },
-          { id: 'cemetery', label: 'Burial & Cemetery Permit', icon: Cross, path: '/cemetery' },
-          { id: 'assets', label: 'Public Asset Catalog', icon: Wrench, path: '/assets' },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id as any);
-                navigate(tab.path);
-              }}
-              className={`flex-1 py-3 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                isActive
-                  ? 'bg-blue-600 text-white shadow-blue shadow-md'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Icon className="w-4 h-4 shrink-0" />
-              <span className="truncate">{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Tab 1: Facility Reservation */}
-      {activeTab === 'reserve' && (
+      {/* Reservation View (Government Facility or Parks & Recreation) */}
+      {(activeTab === 'facility' || activeTab === 'reserve' || activeTab === 'parks') && (
         <div className="space-y-6 animate-fade-in">
           {reservationSuccess ? (
             <Card className="text-center p-8 border-emerald-200 bg-emerald-50/40">
               <div className="w-14 h-14 bg-emerald-600 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-600/30">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
-              <h3 className="text-2xl font-extrabold text-[#0f172a] font-display">Reservation Request Logged!</h3>
+              <h3 className="text-2xl font-extrabold text-[#0f172a] font-display">
+                {isParksMode ? 'Park Schedule Submitted!' : 'Reservation Request Logged!'}
+              </h3>
               <p className="text-xs sm:text-sm text-slate-600 mt-2 max-w-md mx-auto">
-                Reference Number: <span className="font-bold font-mono text-blue-600">{reservationSuccess.reference_no}</span>. This request is now visible in your dashboard and the admin desk.
+                Reference Number: <span className="font-bold font-mono text-blue-600">{reservationSuccess.reference_no}</span>. This request is now visible in your tickets ledger and the admin desk.
               </p>
               <div className="pt-4 flex justify-center gap-3">
                 <Button size="md" onClick={() => setReservationSuccess(null)}>
-                  Book Another Facility
+                  {isParksMode ? 'Book Another Park Ground' : 'Book Another Facility'}
                 </Button>
-                <Button size="md" variant="outline" onClick={() => navigate('/dashboard')}>
-                  View in Dashboard
+                <Button size="md" variant="outline" onClick={() => navigate('/my-tickets')}>
+                  View in My Tickets
                 </Button>
               </div>
             </Card>
@@ -622,9 +645,11 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Left venue cards */}
               <div className="space-y-3">
-                <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">Select Space</p>
+                <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  {isParksMode ? 'Select Park / Ground' : 'Select Government Facility'}
+                </p>
                 <div className="space-y-2.5">
-                  {facilities.slice(0, 4).map((fac) => {
+                  {availableVenues.map((fac) => {
                     const isSelected = selectedFacilityId === fac.id;
                     return (
                       <div
@@ -632,18 +657,18 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
                         onClick={() => setSelectedFacilityId(fac.id)}
                         className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
                           isSelected
-                            ? 'bg-blue-50 border-blue-600 shadow-soft ring-2 ring-blue-500/20'
+                            ? isParksMode ? 'bg-emerald-50 border-emerald-600 shadow-soft ring-2 ring-emerald-500/20' : 'bg-blue-50 border-blue-600 shadow-soft ring-2 ring-blue-500/20'
                             : 'bg-white border-slate-200 hover:border-slate-300'
                         }`}
                       >
                         <div className="flex items-start gap-3">
-                          <div className={`p-2 rounded-xl shrink-0 ${(fac?.category || '').toLowerCase().includes('park') ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
-                            {(fac?.category || '').toLowerCase().includes('park') ? <Trees className="w-4 h-4" /> : <Building className="w-4 h-4" />}
+                          <div className={`p-2 rounded-xl shrink-0 ${isParksMode ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                            {isParksMode ? <Trees className="w-4 h-4" /> : <Building className="w-4 h-4" />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] font-bold text-slate-400 uppercase truncate">{fac.category}</span>
-                              <span className="text-[11px] font-bold text-blue-700">₱{fac.hourly_rate}/hr</span>
+                              <span className={`text-[11px] font-bold ${isParksMode ? 'text-emerald-700' : 'text-blue-700'}`}>₱{fac.hourly_rate}/hr</span>
                             </div>
                             <h4 className="text-xs font-bold text-slate-900 leading-tight mt-0.5 truncate">{fac.name}</h4>
                             <p className="text-[10px] text-slate-500 mt-0.5">Cap: <strong>{fac.capacity} Pax</strong> • {fac.location}</p>
@@ -668,8 +693,8 @@ export function CitizenServicesPage({ defaultTab = 'reserve' }: CitizenServicesP
               <div className="lg:col-span-2">
                 <Card className="border-[#cbd5e1]">
                   <CardHeader>
-                    <CardTitle>Facility & Park Reservation Form</CardTitle>
-                    <CardDescription>Select event purpose, special equipment, and verify schedule</CardDescription>
+                    <CardTitle>{isParksMode ? 'Parks & Recreation Grounds Scheduling Form' : 'Government Facility Reservation Form'}</CardTitle>
+                    <CardDescription>{isParksMode ? 'Select recreation purpose, special equipment, and confirm park schedule' : 'Select event purpose, special equipment, and verify schedule'}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     {resubmittingTicket && (

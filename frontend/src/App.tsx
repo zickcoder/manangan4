@@ -28,7 +28,7 @@ function getUser() {
 // Smart wrapper: Citizens see Citizen E-Services with key for fresh tab mounting; Staff/Admins see Staff Modules
 function SmartRoute({ staffElement, citizenTab }: {
   staffElement: React.ReactElement;
-  citizenTab: 'reserve' | 'utility' | 'cemetery' | 'assets';
+  citizenTab: 'facility' | 'parks' | 'reserve' | 'utility' | 'cemetery' | 'assets';
 }) {
   const user = getUser();
   if (user?.role === 'Citizen') {
@@ -54,10 +54,10 @@ export function App() {
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/my-tickets" element={<MyTicketsPage />} />
-          <Route path="/citizen/services" element={<CitizenServicesPage />} />
+          <Route path="/citizen/services" element={<Navigate to="/facilities" replace />} />
 
-          <Route path="/facilities" element={<SmartRoute staffElement={<FacilitiesModule />} citizenTab="reserve" />} />
-          <Route path="/parks"      element={<SmartRoute staffElement={<ParksModule />}      citizenTab="reserve" />} />
+          <Route path="/facilities" element={<SmartRoute staffElement={<FacilitiesModule />} citizenTab="facility" />} />
+          <Route path="/parks"      element={<SmartRoute staffElement={<ParksModule />}      citizenTab="parks" />} />
           <Route path="/cemetery"   element={<SmartRoute staffElement={<CemeteryModule />}   citizenTab="cemetery" />} />
           <Route path="/utilities"  element={<SmartRoute staffElement={<UtilitiesModule />}  citizenTab="utility" />} />
           <Route path="/assets"     element={<SmartRoute staffElement={<AssetsModule />}     citizenTab="assets" />} />

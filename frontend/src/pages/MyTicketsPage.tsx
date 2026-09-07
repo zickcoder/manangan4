@@ -106,6 +106,9 @@ export function MyTicketsPage() {
       } else if (item.category === 'utility') {
         await cancelUtilityRequest(item.originalId);
       }
+      if (selectedSubmission?.id === item.id) {
+        setSelectedSubmission(null);
+      }
       loadData();
       alert(`Application ${item.ref_no} has been cancelled.`);
     } catch (e) {
@@ -115,13 +118,19 @@ export function MyTicketsPage() {
 
   const handleResubmit = (item: any) => {
     sessionStorage.setItem('govserve_resubmit_ticket', JSON.stringify(item));
-    const tabMap: Record<string, string> = {
-      facility: 'reserve',
-      utility: 'utility',
-      cemetery: 'cemetery'
-    };
-    const tab = tabMap[item.category] || 'reserve';
-    navigate(`/citizen/services?tab=${tab}`, { state: { resubmitItem: item } });
+    if (item.category === 'facility') {
+      const isPark = (item.facility_category || '').toLowerCase().includes('park') || 
+                     (item.title || '').toLowerCase().includes('park') ||
+                     (item.title || '').toLowerCase().includes('amphitheater') ||
+                     (item.title || '').toLowerCase().includes('plaza');
+      navigate(isPark ? '/parks' : '/facilities', { state: { resubmitItem: item } });
+    } else if (item.category === 'utility') {
+      navigate('/utilities', { state: { resubmitItem: item } });
+    } else if (item.category === 'cemetery') {
+      navigate('/cemetery', { state: { resubmitItem: item } });
+    } else {
+      navigate('/facilities', { state: { resubmitItem: item } });
+    }
   };
 
   const handleProcessPayment = async () => {
@@ -249,27 +258,34 @@ export function MyTicketsPage() {
   };
 
   const allSubmissions = [
-    ...myReservations.map((r) => ({
-      id: `res-${r.id}`,
-      originalId: r.id,
-      ref_no: r.reference_no || `RES-${r.id}`,
-      category: 'facility',
-      type: 'Facility Reservation',
-      title: r.facility_name || 'Government Facility',
-      date: formatDateSafely(r.event_date),
-      time: `${r.start_time || ''} - ${r.end_time || ''}`,
-      status: r.status || 'Pending',
-      fee_amount: (r as any).fee_amount || (r.hourly_rate ? r.hourly_rate * 4 : 2000),
-      payment_method: (r as any).payment_method,
-      paid_at: (r as any).paid_at,
-      payment_due_date: (r as any).payment_due_date,
-      badgeVariant: r.status === 'Approved' || r.status === 'Paid' ? 'success' : r.status === 'Pending Payment' ? 'info' : r.status === 'Rejected' ? 'destructive' : r.status === 'Cancelled' ? 'default' : 'warning',
-      details: r.purpose || 'Event Booking',
-      special_equipment: (r as any).special_equipment,
-      applicant: r.applicant_name || '',
-      contact: r.applicant_phone || '',
-      created_at: format12HourDateTime(r.created_at || new Date().toISOString())
-    })),
+    ...myReservations.map((r) => {
+      const isPark = (r.facility_category || '').toLowerCase().includes('park') || 
+                     (r.facility_name || '').toLowerCase().includes('park') ||
+                     (r.facility_name || '').toLowerCase().includes('amphitheater') ||
+                     (r.facility_name || '').toLowerCase().includes('plaza');
+      return {
+        id: `res-${r.id}`,
+        originalId: r.id,
+        ref_no: r.reference_no || `RES-${r.id}`,
+        category: 'facility',
+        facility_category: isPark ? 'Park & Recreation' : 'Government Facility',
+        type: isPark ? 'Park & Recreation Grounds Scheduling' : 'Government Facility Reservation',
+        title: r.facility_name || (isPark ? 'Municipal Park / Ground' : 'Government Facility'),
+        date: formatDateSafely(r.event_date),
+        time: `${r.start_time || ''} - ${r.end_time || ''}`,
+        status: r.status || 'Pending',
+        fee_amount: (r as any).fee_amount || (r.hourly_rate ? r.hourly_rate * 4 : 2000),
+        payment_method: (r as any).payment_method,
+        paid_at: (r as any).paid_at,
+        payment_due_date: (r as any).payment_due_date,
+        badgeVariant: r.status === 'Approved' || r.status === 'Paid' ? 'success' : r.status === 'Pending Payment' ? 'info' : r.status === 'Rejected' ? 'destructive' : r.status === 'Cancelled' ? 'default' : 'warning',
+        details: r.purpose || 'Event Booking',
+        special_equipment: (r as any).special_equipment,
+        applicant: r.applicant_name || '',
+        contact: r.applicant_phone || '',
+        created_at: format12HourDateTime(r.created_at || new Date().toISOString())
+      };
+    }),
     ...myUtilities.map((u) => ({
       id: `util-${u.id}`,
       originalId: u.id,
@@ -538,34 +554,43 @@ export function MyTicketsPage() {
                       </td>
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
-                            leftIcon={<Eye className="w-3.5 h-3.5 text-blue-600" />}
-                            onClick={() => setSelectedSubmission(item)}
-                          >
-                            View Ticket
-                          </Button>
-                          {(item.status === 'Pending' || item.status === 'Pending Review') && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-xs text-purple-700 hover:bg-purple-50 border-purple-300 font-bold"
-                              onClick={() => handleResubmit(item)}
-                            >
-                              Resubmit
-                            </Button>
-                          )}
-                          {(item.status === 'Pending Review' || item.status === 'Pending Payment' || item.status === 'Pending' || item.status === 'Waiting for Payment') && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-xs text-rose-600 hover:bg-rose-50 border-rose-200"
-                              onClick={() => handleCancelTicket(item)}
-                            >
-                              Cancel
-                            </Button>
+                          {item.status === 'Cancelled' || item.status === 'Canceled' ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 italic px-3 py-1 bg-slate-100 rounded-xl border border-slate-200">
+                              <Ban className="w-3.5 h-3.5 text-slate-400" />
+                              Cancelled
+                            </span>
+                          ) : (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
+                                leftIcon={<Eye className="w-3.5 h-3.5 text-blue-600" />}
+                                onClick={() => setSelectedSubmission(item)}
+                              >
+                                View Ticket
+                              </Button>
+                              {(item.status === 'Pending' || item.status === 'Pending Review') && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-xs text-purple-700 hover:bg-purple-50 border-purple-300 font-bold"
+                                  onClick={() => handleResubmit(item)}
+                                >
+                                  Resubmit
+                                </Button>
+                              )}
+                              {(item.status === 'Pending Review' || item.status === 'Pending Payment' || item.status === 'Pending' || item.status === 'Waiting for Payment') && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-xs text-rose-600 hover:bg-rose-50 border-rose-200"
+                                  onClick={() => handleCancelTicket(item)}
+                                >
+                                  Cancel
+                                </Button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
@@ -579,27 +604,27 @@ export function MyTicketsPage() {
           {/* Pagination & Dropdown Menu Footer */}
           <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2">
-              <span className="text-slate-600 font-semibold">Show per page:</span>
+              <span className="text-slate-500 font-medium">Rows per page:</span>
               <select
                 value={pageSize}
                 onChange={(e) => {
                   setPageSize(Number(e.target.value));
                   setCurrentPage(1);
                 }}
-                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="bg-white border border-slate-300 text-slate-700 text-xs font-bold rounded-lg px-2.5 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 cursor-pointer"
               >
-                <option value={7}>7 items per page</option>
-                <option value={10}>10 items per page</option>
-                <option value={15}>15 items per page</option>
-                <option value={9999}>Show all items</option>
+                <option value={7}>7 rows</option>
+                <option value={15}>15 rows</option>
+                <option value={30}>30 rows</option>
+                <option value={9999}>View All</option>
               </select>
-              <span className="text-slate-500 font-medium">
-                (Showing {paginatedSubmissions.length} of {filteredSubmissions.length} items)
-              </span>
             </div>
 
             {pageSize !== 9999 && totalPages > 1 && (
               <div className="flex items-center gap-2">
+                <span className="text-slate-500 font-medium">
+                  Page {currentPage} of {totalPages}
+                </span>
                 <Button
                   size="sm"
                   variant="outline"
@@ -609,9 +634,6 @@ export function MyTicketsPage() {
                 >
                   ← Prev
                 </Button>
-                <span className="font-bold text-slate-700 px-2">
-                  Page {currentPage} of {totalPages}
-                </span>
                 <Button
                   size="sm"
                   variant="outline"
@@ -629,7 +651,7 @@ export function MyTicketsPage() {
 
       {/* Modal: View Full Application / Printable Receipt */}
       <Modal
-        isOpen={!!selectedSubmission}
+        isOpen={Boolean(selectedSubmission && selectedSubmission.status !== 'Cancelled' && selectedSubmission.status !== 'Canceled')}
         onClose={() => setSelectedSubmission(null)}
         title={`Official Order of Payment & Ticket Voucher — ${selectedSubmission?.ref_no}`}
         description="Official Municipal Ticket Copy. Present this at the LGU Treasury Desk for Face-to-Face Payment."

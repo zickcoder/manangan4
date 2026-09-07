@@ -114,8 +114,8 @@ app.get('/api/facilities/reservations', async (req, res) => {
       conditions.push(`r.status = $${params.length}`);
     }
     if (category && category !== 'all') {
-      params.push(category);
-      conditions.push(`f.category = $${params.length}`);
+      params.push(`%${category}%`);
+      conditions.push(`f.category ILIKE $${params.length}`);
     }
 
     if (conditions.length > 0) {

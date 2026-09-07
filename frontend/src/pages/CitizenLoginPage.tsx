@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { loginCitizen, getLockoutTimeRemaining, recordFailedAttempt, recordSuccessfulLogin, checkEmailExists, updateUserPassword } from '../lib/api';
+import { getStoredNotifications, saveStoredNotifications } from '../lib/notifications';
 
 const EMAILJS_SERVICE_ID = 'service_6vsq3nj';
 const EMAILJS_TEMPLATE_ID = 'template_dchi14k';
@@ -79,6 +80,14 @@ export function CitizenLoginPage() {
         recordSuccessfulLogin('citizen');
         sessionStorage.setItem('govserve_user', JSON.stringify(res.user));
         localStorage.setItem('govserve_user', JSON.stringify(res.user));
+        // Purge any orphaned citizen notifications that lack a targetEmail (legacy ghost data)
+        try {
+          const stored = getStoredNotifications();
+          const cleaned = stored.filter((n: any) =>
+            n.targetRole !== 'Citizen' || (n.targetEmail && n.targetEmail.includes('@'))
+          );
+          if (cleaned.length !== stored.length) saveStoredNotifications(cleaned);
+        } catch {}
         navigate('/dashboard');
       } else {
         const status = recordFailedAttempt('citizen');

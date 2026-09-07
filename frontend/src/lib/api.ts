@@ -386,6 +386,7 @@ const DEFAULT_RESERVATIONS = [
     reference_no: 'RES-2026-001',
     facility_id: 1,
     facility_name: 'Barangay 178 Multi-Purpose Civic Center',
+    facility_category: 'Government Facility',
     applicant_name: 'Juan M. Dela Cruz',
     applicant_email: 'juan.delacruz@citizen.gov.ph',
     applicant_phone: '+63 917 123 4567',
@@ -397,6 +398,24 @@ const DEFAULT_RESERVATIONS = [
     special_equipment: ['Sound System & 2 Wireless Microphones', 'Monoblock Chairs (100 - 300 units)'],
     status: 'Approved',
     remarks: 'Approved by Executive Committee & Facilities Bureau'
+  },
+  {
+    id: 2,
+    reference_no: 'RES-2026-002',
+    facility_id: 3,
+    facility_name: 'Camarin Green Urban Recreation Park',
+    facility_category: 'Park & Recreation',
+    applicant_name: 'Maria Santos',
+    applicant_email: 'maria.santos@citizen.gov.ph',
+    applicant_phone: '+63 918 555 1234',
+    purpose: 'Community Sunrise Yoga & Environmental Tree Planting',
+    event_date: '2026-09-12',
+    start_time: '06:00 AM',
+    end_time: '09:00 AM',
+    attendees: 80,
+    special_equipment: ['Foldable Tables & Canopies'],
+    status: 'Approved',
+    remarks: 'Approved by Parks Administration Desk'
   }
 ];
 
@@ -484,36 +503,105 @@ export async function fetchFacilities(category = 'all') {
 }
 
 export async function fetchReservations(status = 'all', category = 'all') {
+  let list: any[] = [];
+  let fetched = false;
+
   if (HAS_EPROVIDER) try {
     const q = status !== 'all' ? `status=eq.${encodeURIComponent(status)}&order=id.desc` : 'order=id.desc';
     const data = await epGet('facility_reservations', q);
-    return Array.isArray(data) ? data : [];
+    if (Array.isArray(data) && data.length > 0) {
+      list = data;
+      fetched = true;
+    }
   } catch {}
-  if (HAS_BACKEND) try {
+
+  if (!fetched && HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/facilities/reservations?status=${encodeURIComponent(status)}&category=${encodeURIComponent(category)}`);
-    if (res.ok) { const data = await res.json(); if (data?.data) return data.data; }
+    if (res.ok) { 
+      const data = await res.json(); 
+      if (data?.data) {
+        list = data.data;
+        fetched = true;
+      }
+    }
   } catch {}
-  let list = getStore('reservations', DEFAULT_RESERVATIONS);
-  if (status !== 'all') list = list.filter((r: any) => r.status.toLowerCase() === status.toLowerCase());
+
+  if (!fetched) {
+    list = getStore('reservations', DEFAULT_RESERVATIONS);
+  }
+
+  // Filter by status if not all
+  if (status !== 'all') {
+    list = list.filter((r: any) => (r.status || '').toLowerCase() === status.toLowerCase());
+  }
+
+  // Strictly filter by category if not all
+  if (category !== 'all') {
+    const allFacs = getStore('facilities', DEFAULT_FACILITIES);
+    list = list.filter((r: any) => {
+      let rCat = (r.facility_category || r.category || '').toLowerCase().trim();
+      if (!rCat && r.facility_id) {
+        const matched = allFacs.find((f: any) => Number(f.id) === Number(r.facility_id));
+        if (matched?.category) rCat = matched.category.toLowerCase().trim();
+      }
+      if (!rCat && r.facility_name) {
+        const matched = allFacs.find((f: any) => f.name?.toLowerCase() === r.facility_name?.toLowerCase());
+        if (matched?.category) rCat = matched.category.toLowerCase().trim();
+      }
+      if (!rCat) {
+        const n = (r.facility_name || '').toLowerCase();
+        if (n.includes('park') || n.includes('amphitheater') || n.includes('plaza') || n.includes('playground') || n.includes('grounds') || n.includes('recreation')) {
+          rCat = 'park & recreation';
+        } else {
+          rCat = 'government facility';
+        }
+      }
+
+      const target = category.toLowerCase().trim();
+      if (target.includes('park') || target.includes('recreation')) {
+        return rCat.includes('park') || rCat.includes('recreation');
+      }
+      if (target.includes('government') || target.includes('facility')) {
+        return (rCat.includes('government') || rCat.includes('facility')) && !rCat.includes('park') && !rCat.includes('recreation');
+      }
+      return rCat === target;
+    });
+  }
+
   return list;
 }
 
 export async function createReservation(payload: any) {
   let citizenMeta: any = {};
+  let callerRole = 'Citizen';
   try {
     const cu = JSON.parse(sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user') || '{}');
     citizenMeta = { applicant_name: cu.name || payload.applicant_name, applicant_email: cu.email || payload.applicant_email };
+    callerRole = cu.role || 'Citizen';
   } catch {}
+  // True when booking was created by a staff/admin user (not a citizen submitting)
+  const isStaffBooking = callerRole !== 'Citizen';
+
+  const allFacs = getStore('facilities', DEFAULT_FACILITIES);
+  const matchedFac = allFacs.find((f: any) => Number(f.id) === Number(payload.facility_id));
+  const normalizedCategory = payload.facility_category || matchedFac?.category || 'Government Facility';
+  const normalizedName = payload.facility_name || matchedFac?.name || 'Municipal Venue';
+  const normalizedLocation = payload.facility_location || matchedFac?.location || '';
+  const normalizedRate = payload.hourly_rate ?? matchedFac?.hourly_rate ?? 0;
+  const equipmentText = Array.isArray(payload.special_equipment) ? payload.special_equipment.join(', ') : (payload.special_equipment || null);
 
   // If this is a resubmission of an existing ticket
   if (payload.resubmitId) {
     const resubmitId = payload.resubmitId;
     const existingRef = payload.reference_no;
     delete payload.resubmitId;
-    const equipmentText = Array.isArray(payload.special_equipment) ? payload.special_equipment.join(', ') : (payload.special_equipment || null);
     const updateData = {
       ...citizenMeta,
       ...payload,
+      facility_category: normalizedCategory,
+      facility_name: normalizedName,
+      facility_location: normalizedLocation,
+      hourly_rate: normalizedRate,
       special_equipment: equipmentText,
       status: 'Pending Review',
       remarks: 'Resubmitted with updated schedule/details'
@@ -534,40 +622,56 @@ export async function createReservation(payload: any) {
   }
 
   const refNo = `RES-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+  const applicantEmail = citizenMeta.applicant_email || citizenMeta.citizen_email || payload.applicant_email || payload.citizen_email;
 
-  // Trigger real-time notifications
-  addNotification({
-    title: 'New Facility Booking Submitted',
-    text: `${citizenMeta.applicant_name || 'Resident'} booked ${payload.facility_name || 'Facility'} for ${payload.event_date || 'scheduled date'}.`,
-    targetRole: 'Admin',
-    category: 'reservation',
-  });
-  addNotification({
-    title: 'Reservation Ticket Created',
-    text: `Your reservation request (${refNo}) has been successfully submitted and is under LGU review.`,
-    targetRole: 'Citizen',
-    category: 'reservation',
-  });
+  // Only notify admin when a citizen submits (never self-notify when staff creates a booking)
+  if (!isStaffBooking) {
+    addNotification({
+      title: 'New Booking Submitted',
+      text: `${citizenMeta.applicant_name || 'Resident'} booked ${normalizedName} for ${payload.event_date || 'scheduled date'}.`,
+      targetRole: 'Admin',
+      category: 'reservation',
+    });
+    // Only send citizen confirmation when we have a valid email target
+    if (applicantEmail && applicantEmail.includes('@')) {
+      addNotification({
+        title: 'Reservation Ticket Created',
+        text: `Your reservation request (${refNo}) has been successfully submitted and is under LGU review.`,
+        targetRole: 'Citizen',
+        targetEmail: applicantEmail,
+        category: 'reservation',
+      });
+    }
+  }
+
+  const newReservation = {
+    id: Date.now(),
+    reference_no: refNo,
+    ...citizenMeta,
+    ...payload,
+    facility_category: normalizedCategory,
+    facility_name: normalizedName,
+    facility_location: normalizedLocation,
+    hourly_rate: normalizedRate,
+    special_equipment: equipmentText,
+    status: 'Pending Review',
+    created_at: new Date().toISOString()
+  };
 
   if (HAS_EPROVIDER) try {
-    const reservations = await epGet('facility_reservations', 'select=id&order=id.desc&limit=1');
-    const nextNum = Array.isArray(reservations) && reservations.length > 0 ? reservations[0].id + 1 : 1;
-    const equipmentText = Array.isArray(payload.special_equipment) ? payload.special_equipment.join(', ') : (payload.special_equipment || null);
-    const row = { ...citizenMeta, ...payload, special_equipment: equipmentText, reference_no: computedRef, status: 'Pending Review' };
-    const result = await epPost('facility_reservations', row);
+    const result = await epPost('facility_reservations', newReservation);
     const created = Array.isArray(result) ? result[0] : result;
-    return { success: true, reference_no: computedRef, data: created };
+    return { success: true, reference_no: refNo, data: created || newReservation };
   } catch {}
 
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/facilities/reservations`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newReservation)
     });
     if (res.ok) return await res.json();
   } catch {}
 
   const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
-  const newReservation = { id: Date.now(), reference_no: refNo, ...citizenMeta, ...payload, status: 'Pending Review', created_at: new Date().toISOString() };
   reservations.unshift(newReservation);
   setStore('reservations', reservations);
   return { success: true, reference_no: refNo, data: newReservation };
@@ -580,13 +684,29 @@ export async function updateReservationStatus(
   reviewer_name?: string,
   extraData?: { fee_amount?: number; payment_due_date?: string; paid_at?: string; payment_method?: string }
 ) {
-  // Trigger real-time notification to Citizen
-  addNotification({
-    title: `Reservation ${status}`,
-    text: `Your reservation request status has been updated to "${status}". ${remarks ? 'Note: ' + remarks : ''}`,
-    targetRole: 'Citizen',
-    category: 'reservation',
-  });
+  let targetEmail = '';
+  if (HAS_EPROVIDER) try {
+    const res = await epGet('facility_reservations', `id=eq.${id}&select=applicant_email,citizen_email`);
+    if (Array.isArray(res) && res[0]) {
+      targetEmail = res[0].applicant_email || res[0].citizen_email || '';
+    }
+  } catch {}
+  if (!targetEmail) {
+    const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
+    const item = reservations.find((r: any) => r.id === id || String(r.id) === String(id));
+    if (item) targetEmail = item.applicant_email || item.citizen_email || '';
+  }
+
+  // Trigger real-time notification to Citizen only when we have a valid email
+  if (targetEmail && targetEmail.includes('@')) {
+    addNotification({
+      title: `Reservation ${status}`,
+      text: `Your reservation request status has been updated to "${status}". ${remarks ? 'Note: ' + remarks : ''}`,
+      targetRole: 'Citizen',
+      targetEmail,
+      category: 'reservation',
+    });
+  }
 
   if (HAS_EPROVIDER) try {
     await epPatch('facility_reservations', `id=eq.${id}`, { status, remarks, reviewer_name, ...extraData });
@@ -879,12 +999,16 @@ export async function updateBurialStatus(id: number, status: string, extraData?:
     setStore('burials', burials);
     processAutoOccupancy();
 
-    addNotification({
-      title: `Burial Application ${status}`,
-      text: `Application ${burial.reference_no} status changed to ${status}.`,
-      targetRole: 'Citizen',
-      category: 'cemetery'
-    });
+    const burialUpdateEmail = burial.citizen_email || burial.applicant_email;
+    if (burialUpdateEmail && burialUpdateEmail.includes('@')) {
+      addNotification({
+        title: `Burial Application ${status}`,
+        text: `Application ${burial.reference_no} status changed to ${status}.`,
+        targetRole: 'Citizen',
+        targetEmail: burialUpdateEmail,
+        category: 'cemetery'
+      });
+    }
 
     return { success: true, data: burial };
   }
@@ -893,27 +1017,36 @@ export async function updateBurialStatus(id: number, status: string, extraData?:
 
 export async function createBurial(payload: any) {
   let citizenMeta: any = {};
+  let callerRole = 'Citizen';
   try {
     const cu = JSON.parse(sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user') || '{}');
     citizenMeta = { citizen_id: cu.id, citizen_email: cu.email };
+    callerRole = cu.role || 'Citizen';
   } catch {}
+  const isStaffBooking = callerRole !== 'Citizen';
 
   const burials = getStore('burials', DEFAULT_BURIALS);
   const refNo = `BUR-${new Date().getFullYear()}-${String(burials.length + 1).padStart(3, '0')}`;
   const permitNo = `BP-${new Date().getFullYear()}-${String(burials.length + 89).padStart(4, '0')}`;
 
-  addNotification({
-    title: 'Burial Permit Application Submitted',
-    text: `Burial permit request (${refNo}) filed for deceased ${payload.deceased_name || payload.deceased_full_name || 'Individual'}.`,
-    targetRole: 'Admin',
-    category: 'cemetery'
-  });
-  addNotification({
-    title: 'Burial Application Registered',
-    text: `Your burial application (${refNo}) has been successfully logged and is pending LGU review.`,
-    targetRole: 'Citizen',
-    category: 'cemetery'
-  });
+  if (!isStaffBooking) {
+    addNotification({
+      title: 'Burial Permit Application Submitted',
+      text: `Burial permit request (${refNo}) filed for deceased ${payload.deceased_name || payload.deceased_full_name || 'Individual'}.`,
+      targetRole: 'Admin',
+      category: 'cemetery'
+    });
+    const burialTargetEmail = citizenMeta.citizen_email || payload.citizen_email || payload.applicant_email;
+    if (burialTargetEmail && burialTargetEmail.includes('@')) {
+      addNotification({
+        title: 'Burial Application Registered',
+        text: `Your burial application (${refNo}) has been successfully logged and is pending LGU review.`,
+        targetRole: 'Citizen',
+        targetEmail: burialTargetEmail,
+        category: 'cemetery'
+      });
+    }
+  }
 
   if (HAS_EPROVIDER) try {
     const row = { ...citizenMeta, ...payload, reference_no: refNo, permit_no: permitNo, status: 'Pending Review' };
@@ -977,27 +1110,36 @@ export async function fetchUtilities(status = 'all', service_type = 'all') {
 
 export async function createUtilityRequest(payload: any) {
   let citizenMeta: any = {};
+  let callerRole = 'Citizen';
   try {
     const cu = JSON.parse(sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user') || '{}');
     citizenMeta = { citizen_id: cu.id, citizen_email: cu.email };
+    callerRole = cu.role || 'Citizen';
   } catch {}
+  const isStaffBooking = callerRole !== 'Citizen';
 
   const utilities = getStore('utilities', DEFAULT_UTILITIES);
   const ticketNo = `UTL-${new Date().getFullYear()}-${String(utilities.length + 1).padStart(3, '0')}`;
   const aiScore = payload.service_type === 'Flash Flooding' ? 95 : payload.urgency === 'Urgent' ? 85 : 65;
 
-  addNotification({
-    title: 'New Water/Drainage Ticket Logged',
-    text: `Incident report (${ticketNo}) filed for ${payload.service_type || 'Hazard'} at ${payload.location || 'Municipal Area'}.`,
-    targetRole: 'Admin',
-    category: 'utility'
-  });
-  addNotification({
-    title: 'Utility Ticket Created',
-    text: `Your ticket (${ticketNo}) has been filed and queued for response crew dispatch.`,
-    targetRole: 'Citizen',
-    category: 'utility'
-  });
+  if (!isStaffBooking) {
+    addNotification({
+      title: 'New Water/Drainage Ticket Logged',
+      text: `Incident report (${ticketNo}) filed for ${payload.service_type || 'Hazard'} at ${payload.location || 'Municipal Area'}.`,
+      targetRole: 'Admin',
+      category: 'utility'
+    });
+    const utilityTargetEmail = citizenMeta.citizen_email || payload.citizen_email;
+    if (utilityTargetEmail && utilityTargetEmail.includes('@')) {
+      addNotification({
+        title: 'Utility Ticket Created',
+        text: `Your ticket (${ticketNo}) has been filed and queued for response crew dispatch.`,
+        targetRole: 'Citizen',
+        targetEmail: utilityTargetEmail,
+        category: 'utility'
+      });
+    }
+  }
 
   if (HAS_EPROVIDER) try {
     const row = { ...citizenMeta, ...payload, ticket_no: ticketNo, urgency: payload.urgency || 'Normal', ai_priority_score: aiScore, status: 'Pending' };
@@ -1032,12 +1174,26 @@ export async function createUtilityRequest(payload: any) {
 }
 
 export async function updateUtilityStatus(id: number, status: string, assigned_team?: string, resolution_notes?: string) {
-  addNotification({
-    title: `Utility Ticket ${status}`,
-    text: `Your utility report status updated to "${status}". ${assigned_team ? 'Assigned: ' + assigned_team : ''}`,
-    targetRole: 'Citizen',
-    category: 'utility'
-  });
+  let targetEmail = '';
+  if (HAS_EPROVIDER) try {
+    const res = await epGet('utility_requests', `id=eq.${id}&select=citizen_email`);
+    if (Array.isArray(res) && res[0]) targetEmail = res[0].citizen_email || '';
+  } catch {}
+  if (!targetEmail) {
+    const utilities = getStore('utilities', DEFAULT_UTILITIES);
+    const item = utilities.find((u: any) => u.id === id || String(u.id) === String(id));
+    if (item) targetEmail = item.citizen_email || '';
+  }
+
+  if (targetEmail && targetEmail.includes('@')) {
+    addNotification({
+      title: `Utility Ticket ${status}`,
+      text: `Your utility report status updated to "${status}". ${assigned_team ? 'Assigned: ' + assigned_team : ''}`,
+      targetRole: 'Citizen',
+      targetEmail,
+      category: 'utility'
+    });
+  }
 
   if (HAS_EPROVIDER) try {
     await epPatch('utility_requests', `id=eq.${id}`, { status, assigned_team, resolution_notes });

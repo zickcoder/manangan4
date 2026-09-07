@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Menu, 
-  Search, 
   Bell, 
   Sparkles, 
   CheckCircle2, 
@@ -24,31 +23,59 @@ interface HeaderProps {
   subtitle?: string;
 }
 
+/** Always returns the freshest user from storage (tab-isolated session first) */
+function getCurrentUser() {
+  try {
+    const s = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
+    return s ? JSON.parse(s) : { name: 'Executive Administrator', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
+  } catch {
+    return { name: 'Executive Administrator', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
+  }
+}
+
 export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [currentUser, setCurrentUser] = useState(getCurrentUser);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const userStr = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
-  let user: any = { name: 'Executive Administrator', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
-  try {
-    if (userStr) user = JSON.parse(userStr);
-  } catch {}
-
-  const isCitizen = user?.role === 'Citizen';
+  const isCitizen = currentUser?.role === 'Citizen';
 
   const syncNotifications = () => {
-    const list = getNotificationsForUser(user?.role || (isCitizen ? 'Citizen' : 'Super Admin'));
+    // Re-read user on every sync — prevents stale role/email cross-contamination
+    const freshUser = getCurrentUser();
+    setCurrentUser(freshUser);
+    const list = getNotificationsForUser(
+      freshUser?.role || 'Super Admin',
+      freshUser?.email
+    );
     setNotifications(list);
   };
 
   useEffect(() => {
     syncNotifications();
+
+    // Refresh on notification changes
     window.addEventListener('govserve_notifications_updated', syncNotifications);
+    // Refresh when localStorage changes (cross-tab login/logout)
+    window.addEventListener('storage', syncNotifications);
+
+    // Refresh relative timestamps every 30 seconds
+    intervalRef.current = setInterval(syncNotifications, 30000);
+
     return () => {
       window.removeEventListener('govserve_notifications_updated', syncNotifications);
+      window.removeEventListener('storage', syncNotifications);
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
+
+  // Re-sync whenever route changes (e.g. citizen → admin navigation)
+  useEffect(() => {
+    syncNotifications();
+  }, [location.pathname]);
 
   const unreadCount = notifications.filter((n) => n.unread).length;
 
@@ -78,7 +105,10 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
   };
 
   const handleMarkAllRead = () => {
-    markAllNotificationsAsRead(user?.role || (isCitizen ? 'Citizen' : 'Super Admin'));
+    markAllNotificationsAsRead(
+      currentUser?.role || 'Super Admin',
+      currentUser?.email
+    );
     syncNotifications();
   };
 

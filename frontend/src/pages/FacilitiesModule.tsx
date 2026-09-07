@@ -189,7 +189,14 @@ export function FacilitiesModule() {
         message: 'Checking schedule availability and creating booking ticket.'
       });
 
-      await createReservation(newForm);
+      const facObj = facilities.find(f => f.id === Number(newForm.facility_id)) || facilities[0];
+      await createReservation({
+        ...newForm,
+        facility_category: 'Government Facility',
+        facility_name: facObj?.name,
+        facility_location: facObj?.location,
+        hourly_rate: facObj?.hourly_rate
+      });
       setIsNewModalOpen(false);
       loadData();
 

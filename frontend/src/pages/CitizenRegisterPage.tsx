@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 import { registerCitizen, checkEmailExists } from '../lib/api';
+import { clearUserNotifications } from '../lib/notifications';
 
 // User's Real EmailJS Configuration
 const EMAILJS_SERVICE_ID = 'service_6vsq3nj';
@@ -274,6 +275,8 @@ export function CitizenRegisterPage() {
       if (res.success) {
         sessionStorage.setItem('govserve_user', JSON.stringify(res.user));
         localStorage.setItem('govserve_user', JSON.stringify(res.user));
+        // Clear any legacy/ghost notifications so new accounts start with a clean inbox
+        clearUserNotifications('Citizen', email.trim());
         navigate('/dashboard');
       } else {
         setError(res.message || 'Registration failed.');

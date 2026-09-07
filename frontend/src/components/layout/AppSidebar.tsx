@@ -52,11 +52,17 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
           ]
         },
         {
-          label: 'E-SERVICES',
+          label: 'FACILITIES & SPACES',
           items: [
-            { name: 'Facility & Park Reservation', path: '/facilities', icon: Building },
+            { name: 'Facility Reservation', path: '/facilities', icon: Building },
+            { name: 'Parks & Recreation', path: '/parks', icon: Trees },
+            { name: 'Cemetery & Burial', path: '/cemetery', icon: Cross },
+          ]
+        },
+        {
+          label: 'UTILITIES & ASSETS',
+          items: [
             { name: 'Water & Drainage Desk', path: '/utilities', icon: Droplet },
-            { name: 'Burial & Cemetery Permit', path: '/cemetery', icon: Cross },
             { name: 'Public Asset Catalog', path: '/assets', icon: Wrench },
           ]
         }
@@ -86,40 +92,6 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
       ];
 
   const isItemActive = (itemPath: string) => {
-    if (!isCitizen) {
-      return location.pathname === itemPath;
-    }
-    if (itemPath === '/dashboard') {
-      return location.pathname === '/dashboard';
-    }
-    if (itemPath === '/my-tickets') {
-      return location.pathname === '/my-tickets';
-    }
-    if (itemPath === '/facilities') {
-      return (
-        location.pathname === '/facilities' ||
-        location.pathname === '/parks' ||
-        (location.pathname === '/citizen/services' && (!location.search || location.search.includes('tab=reserve')))
-      );
-    }
-    if (itemPath === '/utilities') {
-      return (
-        location.pathname === '/utilities' ||
-        (location.pathname === '/citizen/services' && location.search.includes('tab=utility'))
-      );
-    }
-    if (itemPath === '/cemetery') {
-      return (
-        location.pathname === '/cemetery' ||
-        (location.pathname === '/citizen/services' && location.search.includes('tab=cemetery'))
-      );
-    }
-    if (itemPath === '/assets') {
-      return (
-        location.pathname === '/assets' ||
-        (location.pathname === '/citizen/services' && location.search.includes('tab=assets'))
-      );
-    }
     return location.pathname === itemPath;
   };
 
