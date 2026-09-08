@@ -44,6 +44,7 @@ import {
   fetchFacilities, 
   createReservation, 
   checkFacilityAI, 
+  checkDoubleBooking,
   fetchCemeteries,
   fetchCemeteryPlots, 
   createBurial, 
@@ -242,32 +243,49 @@ export function PublicPortal() {
   const currentAttendees = parseInt(reserveForm.attendees, 10) || 0;
   const isPaxExceeded = selectedFacilityObj ? currentAttendees > selectedFacilityObj.capacity : false;
 
+  // Clear conflict notification when selecting a different facility
+  useEffect(() => {
+    setAiConflict(null);
+  }, [selectedFacilityId]);
+
   const handleCheckAIConflict = async () => {
     setAiChecking(true);
     try {
-      const res = await checkFacilityAI(
+      const bookingCheck = await checkDoubleBooking(
+        selectedFacilityId,
         selectedFacilityObj?.name || 'Civic Center',
         reserveForm.event_date,
         reserveForm.start_time,
         reserveForm.end_time,
-        selectedFacilityId
+        reserveForm.applicant_email,
+        reserveForm.applicant_name,
+        undefined,
+        selectedFacilityObj?.category
       );
-      
-      // Simulate conflict on specific busy dates or when requested
-      if (reserveForm.event_date.endsWith('05') || reserveForm.event_date.endsWith('15')) {
+
+      if (bookingCheck.hasConflict) {
         setAiConflict({
           hasConflict: true,
-          aiAnalysis: `Conflict Notice: ${selectedFacilityObj.name} has a scheduled Municipal LGU Townhall Assembly on ${reserveForm.event_date} from 08:00 AM - 01:00 PM.`,
-          alternativeSlots: [
-            `${reserveForm.event_date} (02:00 PM - 06:00 PM)`
-          ]
+          aiAnalysis: bookingCheck.message,
+          alternativeSlots: bookingCheck.suggestedSlots || [`${reserveForm.event_date} (02:00 PM - 06:00 PM)`]
         });
       } else {
-        setAiConflict({
-          hasConflict: false,
-          aiAnalysis: `✅ AI Slot Verification Passed: ${selectedFacilityObj.name} is completely available on ${reserveForm.event_date} for ${reserveForm.start_time} - ${reserveForm.end_time}. Venue capacity (${selectedFacilityObj.capacity} pax) is verified.`,
-          alternativeSlots: []
-        });
+        const res = await checkFacilityAI(
+          selectedFacilityObj?.name || 'Civic Center',
+          reserveForm.event_date,
+          reserveForm.start_time,
+          reserveForm.end_time,
+          selectedFacilityId
+        );
+        if (res?.hasConflict) {
+          setAiConflict(res);
+        } else {
+          setAiConflict({
+            hasConflict: false,
+            aiAnalysis: `✅ AI Slot Verification Passed: ${selectedFacilityObj.name} is completely available on ${reserveForm.event_date} for ${reserveForm.start_time} - ${reserveForm.end_time}. Venue capacity (${selectedFacilityObj.capacity} pax) is verified.`,
+            alternativeSlots: []
+          });
+        }
       }
     } catch (e) {
       console.error(e);

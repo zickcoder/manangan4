@@ -51,7 +51,7 @@ Return JSON with:
     },
     {
       role: 'user',
-      content: `Facility: ${facilityName}\nDate: ${eventDate}\nTime: ${startTime} to ${endTime}\nExisting Bookings: ${existingBookings || 1}`
+      content: `Facility: ${facilityName}\nDate: ${eventDate}\nTime: ${startTime} to ${endTime}\nExisting Bookings: ${typeof existingBookings === 'number' ? existingBookings : 0}`
     }
   ];
 

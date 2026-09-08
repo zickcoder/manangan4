@@ -585,6 +585,29 @@ export async function fetchReservations(status = 'all', category = 'all') {
     list = localList;
   }
 
+  // Ensure every reservation record is enriched with guaranteed facility_name and facility_category
+  const allFacsMaster = getStore('facilities', DEFAULT_FACILITIES);
+  list = list.map((r: any) => {
+    let rName = r.facility_name;
+    let rCat = r.facility_category || r.category;
+    if ((!rName || !rCat) && r.facility_id) {
+      const matched = allFacsMaster.find((f: any) => Number(f.id) === Number(r.facility_id));
+      if (matched) {
+        rName = rName || matched.name;
+        rCat = rCat || matched.category;
+      }
+    }
+    if (!rCat && rName) {
+      const matched = allFacsMaster.find((f: any) => (f.name || '').trim().toLowerCase() === String(rName).trim().toLowerCase());
+      if (matched) rCat = matched.category;
+    }
+    return {
+      ...r,
+      facility_name: rName || 'Municipal Facility',
+      facility_category: rCat || 'Government Facility'
+    };
+  });
+
   // Filter by status if not all
   if (status !== 'all') {
     list = list.filter((r: any) => (r.status || '').toLowerCase() === status.toLowerCase());
@@ -840,7 +863,6 @@ function areTimeSlotsConflicting(startA: string, endA: string, startB: string, e
   );
 }
 
-// Strict Double Booking Conflict Prevention (with self-resubmission conflict bypass)
 export async function checkDoubleBooking(
   facilityId: number, 
   facilityName: string, 
@@ -850,9 +872,8 @@ export async function checkDoubleBooking(
   userEmail?: string,
   userName?: string,
   excludeReservationId?: number | string,
-  facilityCategory?: string   // 'Park & Recreation' | 'Government Facility'
+  facilityCategory?: string
 ) {
-  // If userEmail not passed explicitly, attempt to get from storage
   let currentUserId: any = undefined;
   if (!userEmail) {
     try {
@@ -868,7 +889,6 @@ export async function checkDoubleBooking(
     } catch {}
   }
 
-  // Fetch live reservations from backend + local store
   let reservations: any[] = [];
   try {
     reservations = await fetchReservations('all', 'all');
@@ -876,52 +896,78 @@ export async function checkDoubleBooking(
     reservations = getStore('reservations', DEFAULT_RESERVATIONS);
   }
 
-  // Determine if we're checking a Park or a Gov Facility
+  const allFacilitiesList = getStore('facilities', DEFAULT_FACILITIES);
+
+  // Normalize target check parameters
+  const normTargetName = (facilityName || '').toLowerCase().trim();
+  const normTargetId = facilityId ? Number(facilityId) : null;
   const isCheckingPark = facilityCategory
     ? (facilityCategory.toLowerCase().includes('park') || facilityCategory.toLowerCase().includes('recreation'))
-    : (facilityName.toLowerCase().includes('park') || facilityName.toLowerCase().includes('amphitheater') ||
-       facilityName.toLowerCase().includes('plaza') || facilityName.toLowerCase().includes('grounds') ||
-       facilityName.toLowerCase().includes('recreation'));
+    : (normTargetName.includes('park') || normTargetName.includes('amphitheater') ||
+       normTargetName.includes('plaza') || normTargetName.includes('grounds') ||
+       normTargetName.includes('recreation'));
 
   // Target event date normalized (YYYY-MM-DD)
   const targetDateStr = (eventDate || '').split('T')[0].trim();
 
-  // Find any active reservation for the EXACT same facility, date, and overlapping time
+  // Find any active reservation for the EXACT same specific facility, date, and overlapping time
   const conflict = reservations.find((r: any) => {
     if (r.status === 'Cancelled' || r.status === 'Rejected') return false;
     if (excludeReservationId && (r.id === excludeReservationId || String(r.id) === String(excludeReservationId))) return false;
 
-    // ── Category isolation: park vs. gov facility ──────────────────────────
-    const rCatRaw = (r.facility_category || r.category || r.facility_name || '').toLowerCase();
-    const rIsPark = rCatRaw.includes('park') || rCatRaw.includes('amphitheater') ||
-                    rCatRaw.includes('plaza') || rCatRaw.includes('recreation') || rCatRaw.includes('grounds');
-    if (isCheckingPark !== rIsPark) return false;
-    // ───────────────────────────────────────────────────────────────────────
+    // Resolve reservation's facility info
+    let rFacId = r.facility_id ? Number(r.facility_id) : null;
+    let rFacName = (r.facility_name || '').toLowerCase().trim();
+    let rFacCat = (r.facility_category || r.category || '').toLowerCase().trim();
 
-    // Strict specific facility isolation: must match THIS specific venue only
-    const normTargetName = (facilityName || '').toLowerCase().trim();
-    const normResName = (r.facility_name || '').toLowerCase().trim();
-    if (normTargetName && normResName && normTargetName !== normResName) {
+    if ((!rFacName || !rFacCat) && rFacId) {
+      const match = allFacilitiesList.find((f: any) => Number(f.id) === rFacId);
+      if (match) {
+        if (!rFacName) rFacName = (match.name || '').toLowerCase().trim();
+        if (!rFacCat) rFacCat = (match.category || '').toLowerCase().trim();
+      }
+    }
+    if (!rFacId && rFacName) {
+      const match = allFacilitiesList.find((f: any) => (f.name || '').toLowerCase().trim() === rFacName);
+      if (match) {
+        rFacId = Number(match.id);
+        if (!rFacCat) rFacCat = (match.category || '').toLowerCase().trim();
+      }
+    }
+
+    // ── 1. Category isolation: strictly separate Government Facility vs Park & Recreation ──
+    const rIsPark = rFacCat.includes('park') || rFacCat.includes('recreation') ||
+                    rFacName.includes('park') || rFacName.includes('amphitheater') ||
+                    rFacName.includes('plaza') || rFacName.includes('grounds');
+
+    if (isCheckingPark !== rIsPark) {
+      return false; // NEVER conflict across Government Facility and Park & Recreation
+    }
+
+    // ── 2. Strict Specific Venue Isolation: must match THIS specific venue only ──
+    // If both have names and they differ, it is NOT the same facility
+    if (normTargetName && rFacName && normTargetName !== rFacName) {
       return false;
     }
 
-    const normTargetId = facilityId ? Number(facilityId) : null;
-    const normResId = r.facility_id ? Number(r.facility_id) : null;
-    if (normTargetId && normResId && normTargetId !== normResId) {
+    // If both have IDs and they differ, it is NOT the same facility
+    if (normTargetId !== null && rFacId !== null && normTargetId !== rFacId) {
       return false;
     }
 
-    const sameFacility = Boolean(
-      (normTargetName && normResName && normTargetName === normResName) ||
-      (normTargetId && normResId && normTargetId === normResId)
-    );
-    if (!sameFacility) return false;
+    // Must positively match either ID or exact venue name
+    const idMatches = (normTargetId !== null && rFacId !== null && normTargetId === rFacId);
+    const nameMatches = (normTargetName && rFacName && normTargetName === rFacName);
 
-    // Date comparison (robust to ISO strings or YYYY-MM-DD)
+    if (!idMatches && !nameMatches) {
+      return false;
+    }
+
+    // ── 3. Date comparison (YYYY-MM-DD) ──
     const rDateStr = (r.event_date || '').split('T')[0].trim();
     if (rDateStr !== targetDateStr) return false;
 
-    // Time slot conflict check
+    // ── 4. Time slot overlap comparison ──
     return areTimeSlotsConflicting(r.start_time || '', r.end_time || '', startTime, endTime);
   });
 

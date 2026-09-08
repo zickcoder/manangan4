@@ -442,6 +442,11 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     });
   };
 
+  // Immediately clear conflict state when switching venues or tabs
+  useEffect(() => {
+    setAiConflict(null);
+  }, [selectedFacilityId, activeTab]);
+
   // Real-time automatic double booking check (only runs when NOT resubmitting)
   useEffect(() => {
     if (!selectedFacilityObj || !reserveForm.event_date) return;

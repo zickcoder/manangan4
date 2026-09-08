@@ -151,7 +151,7 @@ app.get('/api/facilities/reservations', async (req, res) => {
     let query = `
       SELECT r.*, f.name as facility_name, f.category as facility_category, f.location as facility_location, f.hourly_rate
       FROM facility_reservations r
-      JOIN facilities f ON r.facility_id = f.id
+      LEFT JOIN facilities f ON r.facility_id = f.id
     `;
     const params = [];
     const conditions = [];
@@ -235,12 +235,23 @@ app.post('/api/ai/facility-check', async (req, res) => {
   try {
     const { facilityName, eventDate, startTime, endTime, facilityId } = req.body;
     
-    // Count existing bookings for this facility & date
-    const countRes = await pool.query(
-      "SELECT COUNT(*) FROM facility_reservations WHERE facility_id = $1 AND event_date = $2 AND status != 'Rejected'",
-      [facilityId || 1, eventDate || new Date().toISOString().split('T')[0]]
-    );
-    const existingCount = parseInt(countRes.rows[0]?.count || 0);
+    // Count existing bookings strictly for THIS facility & date (isolated per venue)
+    let existingCount = 0;
+    if (facilityId) {
+      const countRes = await pool.query(
+        "SELECT COUNT(*) FROM facility_reservations WHERE facility_id = $1 AND event_date = $2 AND status NOT IN ('Rejected', 'Cancelled')",
+        [facilityId, eventDate || new Date().toISOString().split('T')[0]]
+      );
+      existingCount = parseInt(countRes.rows[0]?.count || 0);
+    } else if (facilityName) {
+      const countRes = await pool.query(
+        `SELECT COUNT(*) FROM facility_reservations r 
+         LEFT JOIN facilities f ON r.facility_id = f.id 
+         WHERE (f.name ILIKE $1 OR r.purpose ILIKE $1) AND r.event_date = $2 AND r.status NOT IN ('Rejected', 'Cancelled')`,
+        [`%${facilityName}%`, eventDate || new Date().toISOString().split('T')[0]]
+      );
+      existingCount = parseInt(countRes.rows[0]?.count || 0);
+    }
 
     const suggestion = await checkFacilityConflictAndSuggest({
       facilityName: facilityName || 'Civic Center',
