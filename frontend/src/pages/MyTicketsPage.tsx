@@ -58,6 +58,7 @@ export function MyTicketsPage() {
   const [filterCategory, setFilterCategory] = useState<'all' | 'facility' | 'utility' | 'cemetery'>(
     catParam === 'facility' || catParam === 'utility' || catParam === 'cemetery' ? catParam : 'all'
   );
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'waiting_payment' | 'paid' | 'rejected' | 'cancelled'>('all');
   const [selectedSubmission, setSelectedSubmission] = useState<any | null>(null);
 
   useEffect(() => {
@@ -369,9 +370,37 @@ export function MyTicketsPage() {
     return 5;
   };
 
+  const matchesStatusFilter = (status: string, filter: string) => {
+    if (filter === 'all') return true;
+    const s = (status || '').toLowerCase().trim();
+    if (filter === 'rejected') return s.includes('reject');
+    if (filter === 'cancelled') return s.includes('cancel');
+    if (filter === 'waiting_payment') return s.includes('payment') || s.includes('waiting');
+    if (filter === 'paid') return s.includes('paid');
+    if (filter === 'approved') return s.includes('approved') || s.includes('resolved') || s.includes('in progress');
+    if (filter === 'pending') return s.includes('pending') && !s.includes('payment') && !s.includes('waiting');
+    return false;
+  };
+
+  const categoryScopedSubmissions = allSubmissions.filter((item) => {
+    if (filterCategory !== 'all' && item.category !== filterCategory) return false;
+    return true;
+  });
+
+  const statusCounts = {
+    all: categoryScopedSubmissions.length,
+    pending: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'pending')).length,
+    approved: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'approved')).length,
+    waiting_payment: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'waiting_payment')).length,
+    paid: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'paid')).length,
+    rejected: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'rejected')).length,
+    cancelled: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'cancelled')).length,
+  };
+
   const filteredSubmissions = allSubmissions
     .filter((item) => {
       if (filterCategory !== 'all' && item.category !== filterCategory) return false;
+      if (!matchesStatusFilter(item.status, statusFilter)) return false;
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase().trim();
       return (
@@ -541,6 +570,46 @@ export function MyTicketsPage() {
             </div>
           </div>
         </CardHeader>
+
+        {/* Status Filter Ribbon */}
+        <div className="px-6 py-3 bg-slate-50/70 border-b border-slate-200 flex items-center gap-1.5 overflow-x-auto">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1.5 shrink-0 flex items-center gap-1">
+            <Filter className="w-3.5 h-3.5" /> Status:
+          </span>
+          {[
+            { id: 'all', label: 'All Statuses', count: statusCounts.all, activeBg: 'bg-slate-800 text-white' },
+            { id: 'pending', label: 'Pending', count: statusCounts.pending, activeBg: 'bg-amber-500 text-white' },
+            { id: 'approved', label: 'Approved', count: statusCounts.approved, activeBg: 'bg-emerald-600 text-white' },
+            { id: 'waiting_payment', label: 'Waiting for Payment', count: statusCounts.waiting_payment, activeBg: 'bg-blue-600 text-white' },
+            { id: 'paid', label: 'Paid', count: statusCounts.paid, activeBg: 'bg-teal-600 text-white' },
+            { id: 'rejected', label: 'Rejected', count: statusCounts.rejected, activeBg: 'bg-rose-600 text-white' },
+            { id: 'cancelled', label: 'Cancelled', count: statusCounts.cancelled, activeBg: 'bg-slate-500 text-white' },
+          ].map((sf) => (
+            <button
+              key={sf.id}
+              onClick={() => {
+                setStatusFilter(sf.id as any);
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                statusFilter === sf.id
+                  ? `${sf.activeBg} shadow-sm ring-1 ring-black/5`
+                  : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200'
+              }`}
+            >
+              <span>{sf.label}</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                  statusFilter === sf.id
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                {sf.count}
+              </span>
+            </button>
+          ))}
+        </div>
 
         <CardContent className="p-0">
           <div className="overflow-x-auto">

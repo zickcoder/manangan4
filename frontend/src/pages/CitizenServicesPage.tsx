@@ -26,7 +26,8 @@ import {
   Plus,
   ArrowRight,
   ExternalLink,
-  FileText
+  FileText,
+  Calendar
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
