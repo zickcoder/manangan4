@@ -4,42 +4,52 @@ dotenv.config();
 
 const { Pool } = pg;
 
-const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'admin',
-};
+const isProduction = Boolean(process.env.DATABASE_URL);
+
+const poolConfig = process.env.DATABASE_URL
+  ? {
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
+    }
+  : {
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432'),
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || 'admin',
+      database: process.env.DB_NAME || 'govserve_db',
+    };
 
 export let pool = null;
 
 export async function initDatabase() {
   console.log('🔄 Initializing PostgreSQL database for GOVSERVE...');
   
-  const adminPool = new Pool({
-    ...dbConfig,
-    database: 'postgres',
-  });
+  if (!process.env.DATABASE_URL) {
+    const adminPool = new Pool({
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432'),
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || 'admin',
+      database: 'postgres',
+    });
 
-  try {
-    const res = await adminPool.query(
-      `SELECT 1 FROM pg_database WHERE datname = $1`,
-      [process.env.DB_NAME || 'govserve_db']
-    );
+    try {
+      const res = await adminPool.query(
+        `SELECT 1 FROM pg_database WHERE datname = $1`,
+        [process.env.DB_NAME || 'govserve_db']
+      );
 
-    if (res.rowCount === 0) {
-      await adminPool.query(`CREATE DATABASE "${process.env.DB_NAME || 'govserve_db'}"`);
+      if (res.rowCount === 0) {
+        await adminPool.query(`CREATE DATABASE "${process.env.DB_NAME || 'govserve_db'}"`);
+      }
+    } catch (err) {
+      console.error('DB check error:', err.message);
+    } finally {
+      await adminPool.end();
     }
-  } catch (err) {
-    console.error('DB check error:', err.message);
-  } finally {
-    await adminPool.end();
   }
 
-  pool = new Pool({
-    ...dbConfig,
-    database: process.env.DB_NAME || 'govserve_db',
-  });
+  pool = new Pool(poolConfig);
 
   try {
     await pool.query(`
