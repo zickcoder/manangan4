@@ -180,8 +180,8 @@ app.get('/api/facilities/reservations', async (req, res) => {
 // Book a Reservation (Public or Staff)
 app.post('/api/facilities/reservations', async (req, res) => {
   try {
-    const { facility_id, applicant_name, applicant_email, applicant_phone, purpose, event_date, start_time, end_time, attendees, remarks } = req.body;
-    const refCode = `RES-2026-${Math.floor(100 + Math.random() * 900)}`;
+    const { reference_no, facility_id, applicant_name, applicant_email, applicant_phone, purpose, event_date, start_time, end_time, attendees, remarks } = req.body;
+    const refCode = reference_no || `RES-2026-${Math.floor(100 + Math.random() * 900)}`;
 
     const result = await pool.query(`
       INSERT INTO facility_reservations (

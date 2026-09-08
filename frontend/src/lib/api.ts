@@ -757,6 +757,7 @@ export async function createReservation(payload: any) {
   reservations.unshift(newReservation);
   setStore('reservations', reservations);
 
+  let backendSuccess = false;
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/facilities/reservations`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newReservation)
@@ -765,12 +766,15 @@ export async function createReservation(payload: any) {
       const data = await res.json();
       if (data?.data) {
         newReservation.id = data.data.id || newReservation.id;
+        newReservation.reference_no = data.data.reference_no || newReservation.reference_no;
         setStore('reservations', reservations);
+        backendSuccess = true;
       }
     }
   } catch {}
 
-  if (HAS_EPROVIDER) try {
+  // Only post to eProvider as fallback if backend is offline/failed
+  if (!backendSuccess && HAS_EPROVIDER) try {
     await epPost('facility_reservations', newReservation);
   } catch {}
 

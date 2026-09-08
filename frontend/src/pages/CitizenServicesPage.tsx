@@ -371,6 +371,12 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     fetchCemeteries().then((list) => {
       if (list.length > 0) setCemeteries(Array.from(new Set(['Barangay 178 Municipal Cemetery', ...list])));
     }).catch(console.error);
+
+    const handleDataUpdate = () => {
+      fetchFacilities().then(setFacilities).catch(console.error);
+    };
+    window.addEventListener('govserve_data_updated', handleDataUpdate);
+    return () => window.removeEventListener('govserve_data_updated', handleDataUpdate);
   }, []);
 
   useEffect(() => {
@@ -494,6 +500,7 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
 
   const handleFacilityReserve = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (reserveSubmitting) return;
     setReserveError('');
 
     if (
@@ -1152,14 +1159,16 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                         <Button 
                           type="submit" 
                           size="md" 
-                          disabled={Boolean(aiConflict?.hasConflict) || isPaxExceeded || (Boolean(aiConflict?.isOwnSchedule) && !activeResubmit)}
+                          disabled={reserveSubmitting || Boolean(aiConflict?.hasConflict) || isPaxExceeded || (Boolean(aiConflict?.isOwnSchedule) && !activeResubmit)}
                           className={`w-full sm:w-auto px-8 font-bold ${
-                            isPaxExceeded || aiConflict?.hasConflict || (aiConflict?.isOwnSchedule && !activeResubmit)
+                            reserveSubmitting || isPaxExceeded || aiConflict?.hasConflict || (aiConflict?.isOwnSchedule && !activeResubmit)
                               ? 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300' 
                               : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
                           }`}
                         >
-                          {isPaxExceeded 
+                          {reserveSubmitting
+                            ? '⏳ Submitting Reservation...'
+                            : isPaxExceeded 
                             ? `🚫 Exceeds Max Capacity (${selectedFacilityObj.capacity} Pax)` 
                             : aiConflict?.hasConflict 
                             ? '🚫 Slot Already Booked' 
