@@ -593,6 +593,21 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
+app.patch('/api/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role, department } = req.body;
+    const result = await pool.query(
+      'UPDATE users SET role = COALESCE($1, role), department = COALESCE($2, department) WHERE id = $3 RETURNING id, name, email, role, department',
+      [role || null, department || null, id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ success: false, message: 'User not found.' });
+    res.json({ success: true, user: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
