@@ -510,6 +510,47 @@ export async function fetchFacilities(category = 'all') {
   return list;
 }
 
+export async function createFacility(payload: any) {
+  const newFac = { id: Date.now(), status: 'Available', ...payload };
+  const list = getStore('facilities', DEFAULT_FACILITIES);
+  list.push(newFac);
+  setStore('facilities', list);
+  if (HAS_BACKEND) try {
+    const res = await fetch(`${API_BASE}/facilities`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+    if (res.ok) { const data = await res.json(); if (data?.data) { newFac.id = data.data.id; setStore('facilities', list); } }
+  } catch {}
+  if (HAS_EPROVIDER) try { await epPost('facilities', payload); } catch {}
+  window.dispatchEvent(new Event('govserve_data_updated'));
+  return { success: true, data: newFac };
+}
+
+export async function updateFacility(id: number, payload: any) {
+  const list = getStore('facilities', DEFAULT_FACILITIES);
+  const idx = list.findIndex((f: any) => Number(f.id) === Number(id));
+  if (idx !== -1) { list[idx] = { ...list[idx], ...payload }; setStore('facilities', list); }
+  if (HAS_BACKEND) try {
+    await fetch(`${API_BASE}/facilities/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+  } catch {}
+  if (HAS_EPROVIDER) try { await epPatch('facilities', `id=eq.${id}`, payload); } catch {}
+  window.dispatchEvent(new Event('govserve_data_updated'));
+  return { success: true };
+}
+
+export async function deleteFacility(id: number) {
+  const list = getStore('facilities', DEFAULT_FACILITIES);
+  setStore('facilities', list.filter((f: any) => Number(f.id) !== Number(id)));
+  if (HAS_BACKEND) try { await fetch(`${API_BASE}/facilities/${id}`, { method: 'DELETE' }); } catch {}
+  if (HAS_EPROVIDER) try {
+    await fetch(`${EP_REST}/facilities?id=eq.${id}`, { method: 'DELETE', headers: EP_HEADERS });
+  } catch {}
+  window.dispatchEvent(new Event('govserve_data_updated'));
+  return { success: true };
+}
+
 export async function fetchReservations(status = 'all', category = 'all') {
   let list: any[] = [];
   let serverList: any[] = [];
@@ -857,13 +898,23 @@ export async function checkDoubleBooking(
     if (isCheckingPark !== rIsPark) return false;
     // ───────────────────────────────────────────────────────────────────────
 
-    // Exact facility check: both must belong to the same specific facility
-    const idMatches = (r.facility_id && facilityId) ? Number(r.facility_id) === Number(facilityId) : false;
-    const nameMatches = (r.facility_name && facilityName) 
-      ? r.facility_name.toLowerCase().trim() === facilityName.toLowerCase().trim()
-      : false;
+    // Strict specific facility isolation: must match THIS specific venue only
+    const normTargetName = (facilityName || '').toLowerCase().trim();
+    const normResName = (r.facility_name || '').toLowerCase().trim();
+    if (normTargetName && normResName && normTargetName !== normResName) {
+      return false;
+    }
 
-    const sameFacility = idMatches || nameMatches;
+    const normTargetId = facilityId ? Number(facilityId) : null;
+    const normResId = r.facility_id ? Number(r.facility_id) : null;
+    if (normTargetId && normResId && normTargetId !== normResId) {
+      return false;
+    }
+
+    const sameFacility = Boolean(
+      (normTargetName && normResName && normTargetName === normResName) ||
+      (normTargetId && normResId && normTargetId === normResId)
+    );
     if (!sameFacility) return false;
 
     // Date comparison (robust to ISO strings or YYYY-MM-DD)

@@ -9,7 +9,12 @@ import {
   Sparkles, 
   Calendar, 
   User, 
-  Eye 
+  Eye,
+  Pencil,
+  Trash2,
+  Package,
+  Save,
+  X
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -21,7 +26,10 @@ import {
   fetchReservations, 
   updateReservationStatus, 
   createReservation, 
-  checkFacilityAI 
+  checkFacilityAI,
+  createFacility,
+  updateFacility,
+  deleteFacility
 } from '../lib/api';
 import { Facility, FacilityReservation } from '../types';
 
@@ -36,6 +44,49 @@ export function FacilitiesModule() {
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [reviewRemarks, setReviewRemarks] = useState('');
+
+  // Facility CRUD
+  const [isFacilityFormOpen, setIsFacilityFormOpen] = useState(false);
+  const [editingFacility, setEditingFacility] = useState<Facility | null>(null);
+  const [facilityForm, setFacilityForm] = useState({
+    name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500',
+    location: '', amenities: '', status: 'Available', image_url: ''
+  });
+
+  const openAddFacility = () => {
+    setEditingFacility(null);
+    setFacilityForm({ name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500', location: '', amenities: '', status: 'Available', image_url: '' });
+    setIsFacilityFormOpen(true);
+  };
+
+  const openEditFacility = (fac: Facility) => {
+    setEditingFacility(fac);
+    setFacilityForm({
+      name: fac.name, category: fac.category, capacity: String(fac.capacity),
+      hourly_rate: String(fac.hourly_rate), location: fac.location,
+      amenities: fac.amenities || '', status: (fac as any).status || 'Available',
+      image_url: (fac as any).image_url || ''
+    });
+    setIsFacilityFormOpen(true);
+  };
+
+  const handleSaveFacility = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = { ...facilityForm, capacity: parseInt(facilityForm.capacity), hourly_rate: parseFloat(facilityForm.hourly_rate) };
+    if (editingFacility) {
+      await updateFacility(editingFacility.id, payload);
+    } else {
+      await createFacility(payload);
+    }
+    setIsFacilityFormOpen(false);
+    loadData();
+  };
+
+  const handleDeleteFacility = async (fac: Facility) => {
+    if (!window.confirm(`Delete "${fac.name}"? This cannot be undone.`)) return;
+    await deleteFacility(fac.id);
+    loadData();
+  };
 
   // Status Animation Modal
   const [animModal, setAnimModal] = useState<{
@@ -53,6 +104,57 @@ export function FacilitiesModule() {
   // AI Conflict check state
   const [aiChecking, setAiChecking] = useState(false);
   const [aiResult, setAiResult] = useState<any>(null);
+
+  const DEFAULT_FACILITY_EQUIPMENT = [
+    'Sound System & 2 Wireless Microphones',
+    'Monoblock Chairs (100 - 300 units)',
+    'Foldable Tables & Canopies',
+    'Stage Lighting & Spotlights',
+    'Basketball Electronic Scoreboard',
+    'Standby Diesel Generator (15kVA)',
+    'High-Definition Projector & Screen',
+    'Video Streaming Setup',
+  ];
+
+  const loadEquipment = () => {
+    try {
+      const stored = localStorage.getItem('govserve_equipment_facility');
+      if (stored) { const p = JSON.parse(stored); if (Array.isArray(p) && p.length > 0) return p; }
+    } catch {}
+    return DEFAULT_FACILITY_EQUIPMENT;
+  };
+
+  const [equipmentList, setEquipmentList] = useState<string[]>(loadEquipment);
+  const [newEquipItem, setNewEquipItem] = useState('');
+  const [editingEquipIdx, setEditingEquipIdx] = useState<number | null>(null);
+  const [editingEquipVal, setEditingEquipVal] = useState('');
+  const [isEquipManagerOpen, setIsEquipManagerOpen] = useState(false);
+
+  const saveEquipment = (list: string[]) => {
+    setEquipmentList(list);
+    localStorage.setItem('govserve_equipment_facility', JSON.stringify(list));
+    window.dispatchEvent(new Event('govserve_data_updated'));
+  };
+
+  const addEquipItem = () => {
+    const val = newEquipItem.trim();
+    if (!val || equipmentList.includes(val)) return;
+    saveEquipment([...equipmentList, val]);
+    setNewEquipItem('');
+  };
+
+  const deleteEquipItem = (idx: number) => {
+    saveEquipment(equipmentList.filter((_, i) => i !== idx));
+  };
+
+  const saveEditEquipItem = (idx: number) => {
+    const val = editingEquipVal.trim();
+    if (!val) return;
+    const updated = [...equipmentList];
+    updated[idx] = val;
+    saveEquipment(updated);
+    setEditingEquipIdx(null);
+  };
 
   const [newForm, setNewForm] = useState({
     facility_id: 1,
@@ -245,6 +347,12 @@ export function FacilitiesModule() {
             Manage Civic Centers, Multipurpose Gymnasiums, Conference Halls, and evaluate bookings.
           </p>
         </div>
+        <button
+          onClick={openAddFacility}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-colors shrink-0"
+        >
+          <Plus className="w-4 h-4" /> Add New Facility
+        </button>
       </div>
 
       {/* Facilities Cards Overview */}
@@ -260,8 +368,111 @@ export function FacilitiesModule() {
             <h3 className="text-sm font-bold text-slate-900 leading-tight">{fac.name}</h3>
             <p className="text-[11px] text-slate-500">{fac.location}</p>
             <p className="text-[10px] text-slate-400 border-t border-slate-100 pt-2 truncate">{fac.amenities}</p>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => openEditFacility(fac)}
+                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors"
+              >
+                <Pencil className="w-3 h-3" /> Edit
+              </button>
+              <button
+                onClick={() => handleDeleteFacility(fac)}
+                className="flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
+              >
+                <Trash2 className="w-3 h-3" /> Delete
+              </button>
+            </div>
           </Card>
         ))}
+      </div>
+
+      {/* Equipment Manager Section */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-soft overflow-hidden">
+        <div
+          className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 transition-colors"
+          onClick={() => setIsEquipManagerOpen(v => !v)}
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-purple-100 text-purple-700 rounded-lg">
+              <Package className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Special Equipment List Manager</h3>
+              <p className="text-[10px] text-slate-500">{equipmentList.length} items • Citizens see these options when booking</p>
+            </div>
+          </div>
+          <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-3 py-1 rounded-full border border-purple-200">
+            {isEquipManagerOpen ? '▲ Collapse' : '▼ Manage Equipment'}
+          </span>
+        </div>
+
+        {isEquipManagerOpen && (
+          <div className="border-t border-slate-200 p-4 space-y-3">
+            {/* Add new item */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Add new equipment item..."
+                value={newEquipItem}
+                onChange={e => setNewEquipItem(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addEquipItem()}
+                className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-purple-500 bg-slate-50"
+              />
+              <button
+                onClick={addEquipItem}
+                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add
+              </button>
+            </div>
+
+            {/* Existing items */}
+            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              {equipmentList.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                  {editingEquipIdx === idx ? (
+                    <>
+                      <input
+                        autoFocus
+                        className="flex-1 px-2 py-1 text-xs rounded-lg border border-purple-400 focus:outline-none"
+                        value={editingEquipVal}
+                        onChange={e => setEditingEquipVal(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && saveEditEquipItem(idx)}
+                      />
+                      <button onClick={() => saveEditEquipItem(idx)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
+                        <Save className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => setEditingEquipIdx(null)} className="p-1 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-xs font-medium text-slate-700">{item}</span>
+                      <button
+                        onClick={() => { setEditingEquipIdx(idx); setEditingEquipVal(item); }}
+                        className="p-1 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Edit"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deleteEquipItem(idx)}
+                        className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+              {equipmentList.length === 0 && (
+                <p className="text-[11px] text-slate-400 italic text-center py-4">No equipment items. Add one above.</p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -610,6 +821,83 @@ export function FacilitiesModule() {
         message={animModal.message}
         onClose={() => setAnimModal({ ...animModal, isOpen: false })}
       />
+
+      {/* Modal: Add / Edit Government Facility */}
+      <Modal
+        isOpen={isFacilityFormOpen}
+        onClose={() => setIsFacilityFormOpen(false)}
+        title={editingFacility ? `Edit Facility: ${editingFacility.name}` : 'Add New Government Facility'}
+        description="Fill in the details for the Government Facility venue."
+        maxWidth="lg"
+      >
+        <form onSubmit={handleSaveFacility} className="space-y-3 text-xs">
+          <Input
+            label="Facility Name *"
+            required
+            value={facilityForm.name}
+            onChange={e => setFacilityForm({ ...facilityForm, name: e.target.value })}
+            placeholder="e.g. Barangay 178 Multi-Purpose Civic Center"
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Maximum Capacity (Pax) *</label>
+              <input type="number" required min="1" value={facilityForm.capacity}
+                onChange={e => setFacilityForm({ ...facilityForm, capacity: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-blue-600"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Hourly Rate (₱) *</label>
+              <input type="number" required min="0" step="0.01" value={facilityForm.hourly_rate}
+                onChange={e => setFacilityForm({ ...facilityForm, hourly_rate: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-blue-600"
+              />
+            </div>
+          </div>
+          <Input
+            label="Location / Address *"
+            required
+            value={facilityForm.location}
+            onChange={e => setFacilityForm({ ...facilityForm, location: e.target.value })}
+            placeholder="e.g. Civic Complex, Mindanao Ave., Zone 4"
+          />
+          <div>
+            <label className="block text-xs font-semibold text-[#334155] mb-1">Amenities & Features</label>
+            <textarea rows={2} value={facilityForm.amenities}
+              onChange={e => setFacilityForm({ ...facilityForm, amenities: e.target.value })}
+              placeholder="e.g. Central Aircon, Sound System, Stage, 300 Chairs, Generator"
+              className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-blue-600"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Status</label>
+              <select value={facilityForm.status}
+                onChange={e => setFacilityForm({ ...facilityForm, status: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-blue-600"
+              >
+                <option value="Available">Available</option>
+                <option value="Under Maintenance">Under Maintenance</option>
+                <option value="Closed">Closed</option>
+              </select>
+            </div>
+            <Input
+              label="Image URL (optional)"
+              value={facilityForm.image_url}
+              onChange={e => setFacilityForm({ ...facilityForm, image_url: e.target.value })}
+              placeholder="https://..."
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+            <button type="button" onClick={() => setIsFacilityFormOpen(false)}
+              className="px-4 py-1.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            >Cancel</button>
+            <button type="submit"
+              className="px-5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-colors"
+            >{editingFacility ? 'Save Changes' : 'Add Facility'}</button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

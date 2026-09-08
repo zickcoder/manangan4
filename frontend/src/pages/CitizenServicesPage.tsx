@@ -108,16 +108,46 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     'Other Government / Civic Activity'
   ];
 
-  const EQUIPMENT_OPTIONS = [
+  const DEFAULT_FACILITY_EQUIPMENT = [
     'Sound System & 2 Wireless Microphones',
     'Monoblock Chairs (100 - 300 units)',
     'Foldable Tables & Canopies',
-    'Heavy-Duty Outdoor Tents (3x3m)',
     'Stage Lighting & Spotlights',
     'Basketball Electronic Scoreboard',
     'Standby Diesel Generator (15kVA)',
-    'High-Definition Projector & Screen'
+    'High-Definition Projector & Screen',
+    'Video Streaming Setup',
   ];
+
+  const DEFAULT_PARKS_EQUIPMENT = [
+    'Heavy-Duty Outdoor Tents (3x3m)',
+    'Portable Sound System',
+    'Foldable Tables & Canopies',
+    'Portable Stage Platform',
+    'Mobile Generator (5kVA)',
+    'Safety Barricades & Crowd Control',
+    'Trash Bins & Sanitation Supplies',
+    'Sports Equipment Set (Basketball / Volleyball)',
+  ];
+
+  // Load equipment lists from localStorage (admin can manage these)
+  const getEquipmentList = (key: string, fallback: string[]) => {
+    try {
+      const stored = localStorage.getItem(`govserve_equipment_${key}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return fallback;
+  };
+
+  const FACILITY_EQUIPMENT_OPTIONS = getEquipmentList('facility', DEFAULT_FACILITY_EQUIPMENT);
+  const PARKS_EQUIPMENT_OPTIONS = getEquipmentList('parks', DEFAULT_PARKS_EQUIPMENT);
+
+  // Separate selected equipment per tab
+  const [facilityEquipment, setFacilityEquipment] = useState<string[]>([]);
+  const [parksEquipment, setParksEquipment] = useState<string[]>([]);
 
   const [reserveForm, setReserveForm] = useState({
     applicant_name: currentUser?.name || '',
@@ -129,7 +159,6 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     start_time: '08:00 AM',
     end_time: '12:00 PM',
     attendees: '50',
-    special_equipment: [] as string[],
     remarks: '',
   });
 
@@ -242,7 +271,6 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
   const [burialSubmitting, setBurialSubmitting] = useState(false);
 
   // Restore ticket details when citizen clicks "Resubmit" from MyTicketsPage
-  // Restore ticket details when citizen clicks "Resubmit" from MyTicketsPage
   useEffect(() => {
     try {
       const stateItem = (location.state as any)?.resubmitItem;
@@ -260,6 +288,17 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
             if (parts[0]) sTime = parts[0];
             if (parts[1]) eTime = parts[1];
           }
+          const resubmitEquip = Array.isArray(stateItem.special_equipment)
+            ? stateItem.special_equipment
+            : (stateItem.special_equipment ? String(stateItem.special_equipment).split(',').map((s: string) => s.trim()) : []);
+          const resubmitIsPark = (stateItem.facility_category || '').toLowerCase().includes('park') ||
+            (stateItem.title || '').toLowerCase().includes('park') ||
+            (stateItem.title || '').toLowerCase().includes('amphitheater');
+          if (resubmitIsPark) {
+            setParksEquipment(resubmitEquip);
+          } else {
+            setFacilityEquipment(resubmitEquip);
+          }
           setReserveForm(prev => ({
             ...prev,
             applicant_name: stateItem.applicant || prev.applicant_name,
@@ -268,9 +307,6 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
             event_date: stateItem.date && !stateItem.date.includes('N/A') ? stateItem.date : prev.event_date,
             start_time: sTime,
             end_time: eTime,
-            special_equipment: Array.isArray(stateItem.special_equipment)
-              ? stateItem.special_equipment
-              : (stateItem.special_equipment ? String(stateItem.special_equipment).split(',').map((s: string) => s.trim()) : prev.special_equipment)
           }));
         } else if (stateItem.category === 'utility') {
           setUtilityForm(prev => ({
@@ -350,9 +386,6 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
 
   const isParksMode = activeTab === 'parks';
 
-  // Whether the resubmit ticket matches the currently active tab (Parks vs Gov Facility)
-  // A Government Facility ticket should ONLY show the resubmit banner on the Facility tab,
-  // and a Parks ticket should ONLY show it on the Parks tab.
   const resubmitTicketIsPark = resubmittingTicket
     ? (resubmittingTicket.facility_category || '').toLowerCase().includes('park') ||
       (resubmittingTicket.title || '').toLowerCase().includes('park') ||
@@ -398,16 +431,14 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
   const currentAttendees = parseInt(reserveForm.attendees, 10) || 0;
   const isPaxExceeded = selectedFacilityObj ? currentAttendees > selectedFacilityObj.capacity : false;
 
-  // Toggle Special Equipment Requirement Checklist
+  const activeSelectedEquipment = isParksMode ? parksEquipment : facilityEquipment;
+  const setActiveSelectedEquipment = isParksMode ? setParksEquipment : setFacilityEquipment;
+  const activeEquipmentList = isParksMode ? PARKS_EQUIPMENT_OPTIONS : FACILITY_EQUIPMENT_OPTIONS;
+
   const toggleEquipment = (item: string) => {
-    setReserveForm(prev => {
-      const exists = prev.special_equipment.includes(item);
-      return {
-        ...prev,
-        special_equipment: exists
-          ? prev.special_equipment.filter(e => e !== item)
-          : [...prev.special_equipment, item]
-      };
+    setActiveSelectedEquipment(prev => {
+      const exists = prev.includes(item);
+      return exists ? prev.filter(e => e !== item) : [...prev, item];
     });
   };
 
@@ -509,6 +540,7 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
         facility_location: selectedFacilityObj.location,
         hourly_rate: selectedFacilityObj.hourly_rate,
         attendees: currentAttendees,
+        special_equipment: activeSelectedEquipment,
         ...(activeResubmit ? { resubmitId: resubmittingTicket.originalId, reference_no: resubmittingTicket.ref_no } : {})
       };
       const res = await createReservation(payload);
@@ -918,21 +950,21 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                         </div>
                       </div>
 
-                      {/* PREDEFINED SPECIAL EQUIPMENT */}
+                      {/* SPECIAL EQUIPMENT — Separate per tab (Facility vs Parks) */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <label className="block text-xs font-semibold text-[#334155]">
-                            Special Equipment Requirements:
+                            {isParksMode ? '🌿 Parks Equipment Requirements:' : '🏛️ Facility Equipment Requirements:'}
                           </label>
-                          {reserveForm.special_equipment.length > 0 && (
-                            <span className="text-[11px] font-bold text-blue-600">
-                              {reserveForm.special_equipment.length} selected
+                          {activeSelectedEquipment.length > 0 && (
+                            <span className={`text-[11px] font-bold ${isParksMode ? 'text-emerald-600' : 'text-blue-600'}`}>
+                              {activeSelectedEquipment.length} selected
                             </span>
                           )}
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {EQUIPMENT_OPTIONS.map((item, idx) => {
-                            const isChecked = reserveForm.special_equipment.includes(item);
+                          {activeEquipmentList.map((item, idx) => {
+                            const isChecked = activeSelectedEquipment.includes(item);
                             return (
                               <button
                                 key={idx}
@@ -940,12 +972,14 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                                 onClick={() => toggleEquipment(item)}
                                 className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all flex items-center gap-2.5 text-xs font-medium ${
                                   isChecked
-                                    ? 'bg-blue-50 border-blue-500 text-blue-900 shadow-sm ring-1 ring-blue-500/30'
+                                    ? isParksMode
+                                      ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm ring-1 ring-emerald-500/30'
+                                      : 'bg-blue-50 border-blue-500 text-blue-900 shadow-sm ring-1 ring-blue-500/30'
                                     : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                                 }`}
                               >
                                 {isChecked ? (
-                                  <CheckSquare className="w-4 h-4 text-blue-600 shrink-0" />
+                                  <CheckSquare className={`w-4 h-4 shrink-0 ${isParksMode ? 'text-emerald-600' : 'text-blue-600'}`} />
                                 ) : (
                                   <Square className="w-4 h-4 text-slate-400 shrink-0" />
                                 )}
@@ -954,6 +988,9 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                             );
                           })}
                         </div>
+                        {activeEquipmentList.length === 0 && (
+                          <p className="text-[11px] text-slate-400 italic text-center py-3">No equipment options configured. Contact admin to add equipment items.</p>
+                        )}
                       </div>
 
                       {/* AI Slot Check Box */}
@@ -1153,8 +1190,8 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                 <Button size="md" onClick={() => setUtilitySuccess(null)}>
                   Report Another Incident
                 </Button>
-                <Button size="md" variant="outline" onClick={() => navigate('/dashboard')}>
-                  View in Dashboard
+                <Button size="md" variant="outline" onClick={() => navigate('/my-tickets')}>
+                  View My Tickets
                 </Button>
               </div>
             </Card>
@@ -1342,8 +1379,8 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                 <Button size="md" onClick={() => setBurialSuccess(null)}>
                   File Another Application
                 </Button>
-                <Button size="md" variant="outline" onClick={() => navigate('/dashboard')}>
-                  View in Dashboard
+                <Button size="md" variant="outline" onClick={() => navigate('/my-tickets')}>
+                  View My Tickets
                 </Button>
               </div>
             </Card>

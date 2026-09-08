@@ -10,7 +10,12 @@ import {
   Calendar, 
   User, 
   Eye,
-  Sun
+  Sun,
+  Pencil,
+  Trash2,
+  Package,
+  Save,
+  X
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -21,7 +26,10 @@ import {
   fetchFacilities, 
   fetchReservations, 
   updateReservationStatus, 
-  createReservation 
+  createReservation,
+  createFacility,
+  updateFacility,
+  deleteFacility
 } from '../lib/api';
 import { Facility, FacilityReservation } from '../types';
 
@@ -37,6 +45,49 @@ export function ParksModule() {
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [reviewRemarks, setReviewRemarks] = useState('');
 
+  // Park CRUD
+  const [isParkFormOpen, setIsParkFormOpen] = useState(false);
+  const [editingPark, setEditingPark] = useState<Facility | null>(null);
+  const [parkForm, setParkForm] = useState({
+    name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0',
+    location: '', amenities: '', status: 'Available', image_url: ''
+  });
+
+  const openAddPark = () => {
+    setEditingPark(null);
+    setParkForm({ name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', location: '', amenities: '', status: 'Available', image_url: '' });
+    setIsParkFormOpen(true);
+  };
+
+  const openEditPark = (p: Facility) => {
+    setEditingPark(p);
+    setParkForm({
+      name: p.name, category: p.category, capacity: String(p.capacity),
+      hourly_rate: String(p.hourly_rate), location: p.location,
+      amenities: p.amenities || '', status: (p as any).status || 'Available',
+      image_url: (p as any).image_url || ''
+    });
+    setIsParkFormOpen(true);
+  };
+
+  const handleSavePark = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = { ...parkForm, capacity: parseInt(parkForm.capacity), hourly_rate: parseFloat(parkForm.hourly_rate) };
+    if (editingPark) {
+      await updateFacility(editingPark.id, payload);
+    } else {
+      await createFacility(payload);
+    }
+    setIsParkFormOpen(false);
+    loadData();
+  };
+
+  const handleDeletePark = async (p: Facility) => {
+    if (!window.confirm(`Delete "${p.name}"? This cannot be undone.`)) return;
+    await deleteFacility(p.id);
+    loadData();
+  };
+
   // Status Animation Modal
   const [animModal, setAnimModal] = useState<{
     isOpen: boolean;
@@ -49,6 +100,57 @@ export function ParksModule() {
     title: '',
     message: ''
   });
+
+  const DEFAULT_PARKS_EQUIPMENT = [
+    'Heavy-Duty Outdoor Tents (3x3m)',
+    'Portable Sound System',
+    'Foldable Tables & Canopies',
+    'Portable Stage Platform',
+    'Mobile Generator (5kVA)',
+    'Safety Barricades & Crowd Control',
+    'Trash Bins & Sanitation Supplies',
+    'Sports Equipment Set (Basketball / Volleyball)',
+  ];
+
+  const loadEquipment = () => {
+    try {
+      const stored = localStorage.getItem('govserve_equipment_parks');
+      if (stored) { const p = JSON.parse(stored); if (Array.isArray(p) && p.length > 0) return p; }
+    } catch {}
+    return DEFAULT_PARKS_EQUIPMENT;
+  };
+
+  const [equipmentList, setEquipmentList] = useState<string[]>(loadEquipment);
+  const [newEquipItem, setNewEquipItem] = useState('');
+  const [editingEquipIdx, setEditingEquipIdx] = useState<number | null>(null);
+  const [editingEquipVal, setEditingEquipVal] = useState('');
+  const [isEquipManagerOpen, setIsEquipManagerOpen] = useState(false);
+
+  const saveEquipment = (list: string[]) => {
+    setEquipmentList(list);
+    localStorage.setItem('govserve_equipment_parks', JSON.stringify(list));
+    window.dispatchEvent(new Event('govserve_data_updated'));
+  };
+
+  const addEquipItem = () => {
+    const val = newEquipItem.trim();
+    if (!val || equipmentList.includes(val)) return;
+    saveEquipment([...equipmentList, val]);
+    setNewEquipItem('');
+  };
+
+  const deleteEquipItem = (idx: number) => {
+    saveEquipment(equipmentList.filter((_, i) => i !== idx));
+  };
+
+  const saveEditEquipItem = (idx: number) => {
+    const val = editingEquipVal.trim();
+    if (!val) return;
+    const updated = [...equipmentList];
+    updated[idx] = val;
+    saveEquipment(updated);
+    setEditingEquipIdx(null);
+  };
 
   const [newForm, setNewForm] = useState({
     facility_id: 4,
@@ -220,6 +322,12 @@ export function ParksModule() {
             Community plazas, outdoor amphitheaters, children playgrounds, and open green recreation areas.
           </p>
         </div>
+        <button
+          onClick={openAddPark}
+          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-colors shrink-0"
+        >
+          <Plus className="w-4 h-4" /> Add New Park / Ground
+        </button>
       </div>
 
       {/* Parks Overview Cards */}
@@ -235,8 +343,109 @@ export function ParksModule() {
             <h3 className="text-base font-bold text-slate-900 leading-tight">{p.name}</h3>
             <p className="text-xs text-slate-600">{p.location}</p>
             <p className="text-[11px] text-slate-500 border-t border-slate-100 pt-2">{p.amenities}</p>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => openEditPark(p)}
+                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+              >
+                <Pencil className="w-3 h-3" /> Edit
+              </button>
+              <button
+                onClick={() => handleDeletePark(p)}
+                className="flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
+              >
+                <Trash2 className="w-3 h-3" /> Delete
+              </button>
+            </div>
           </Card>
         ))}
+      </div>
+
+      {/* Parks Equipment Manager Section */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-soft overflow-hidden">
+        <div
+          className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 transition-colors"
+          onClick={() => setIsEquipManagerOpen(v => !v)}
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg">
+              <Package className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Parks Equipment List Manager</h3>
+              <p className="text-[10px] text-slate-500">{equipmentList.length} items • Citizens see these when scheduling parks</p>
+            </div>
+          </div>
+          <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+            {isEquipManagerOpen ? '▲ Collapse' : '▼ Manage Equipment'}
+          </span>
+        </div>
+
+        {isEquipManagerOpen && (
+          <div className="border-t border-slate-200 p-4 space-y-3">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Add new park equipment item..."
+                value={newEquipItem}
+                onChange={e => setNewEquipItem(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addEquipItem()}
+                className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-500 bg-slate-50"
+              />
+              <button
+                onClick={addEquipItem}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add
+              </button>
+            </div>
+
+            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              {equipmentList.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                  {editingEquipIdx === idx ? (
+                    <>
+                      <input
+                        autoFocus
+                        className="flex-1 px-2 py-1 text-xs rounded-lg border border-emerald-400 focus:outline-none"
+                        value={editingEquipVal}
+                        onChange={e => setEditingEquipVal(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && saveEditEquipItem(idx)}
+                      />
+                      <button onClick={() => saveEditEquipItem(idx)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
+                        <Save className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => setEditingEquipIdx(null)} className="p-1 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-xs font-medium text-slate-700">{item}</span>
+                      <button
+                        onClick={() => { setEditingEquipIdx(idx); setEditingEquipVal(item); }}
+                        className="p-1 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Edit"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deleteEquipItem(idx)}
+                        className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+              {equipmentList.length === 0 && (
+                <p className="text-[11px] text-slate-400 italic text-center py-4">No equipment items. Add one above.</p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -540,6 +749,83 @@ export function ParksModule() {
         message={animModal.message}
         onClose={() => setAnimModal({ ...animModal, isOpen: false })}
       />
+
+      {/* Modal: Add / Edit Park / Ground */}
+      <Modal
+        isOpen={isParkFormOpen}
+        onClose={() => setIsParkFormOpen(false)}
+        title={editingPark ? `Edit Park: ${editingPark.name}` : 'Add New Park / Recreation Ground'}
+        description="Fill in the details for the public park or recreation area."
+        maxWidth="lg"
+      >
+        <form onSubmit={handleSavePark} className="space-y-3 text-xs">
+          <Input
+            label="Park / Ground Name *"
+            required
+            value={parkForm.name}
+            onChange={e => setParkForm({ ...parkForm, name: e.target.value })}
+            placeholder="e.g. Camarin Green Urban Recreation Park"
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Maximum Capacity (Pax) *</label>
+              <input type="number" required min="1" value={parkForm.capacity}
+                onChange={e => setParkForm({ ...parkForm, capacity: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-emerald-600"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Permit / Maintenance Fee (₱)</label>
+              <input type="number" min="0" step="0.01" value={parkForm.hourly_rate}
+                onChange={e => setParkForm({ ...parkForm, hourly_rate: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-emerald-600"
+              />
+            </div>
+          </div>
+          <Input
+            label="Location / Address *"
+            required
+            value={parkForm.location}
+            onChange={e => setParkForm({ ...parkForm, location: e.target.value })}
+            placeholder="e.g. Camarin Road Sector 3, Caloocan City"
+          />
+          <div>
+            <label className="block text-xs font-semibold text-[#334155] mb-1">Amenities & Features</label>
+            <textarea rows={2} value={parkForm.amenities}
+              onChange={e => setParkForm({ ...parkForm, amenities: e.target.value })}
+              placeholder="e.g. Jogging Trail, Children Playground, Gazebo, Picnic Sheds"
+              className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-emerald-600"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Status</label>
+              <select value={parkForm.status}
+                onChange={e => setParkForm({ ...parkForm, status: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-emerald-600"
+              >
+                <option value="Available">Open / Available</option>
+                <option value="Under Maintenance">Under Maintenance</option>
+                <option value="Closed">Temporarily Closed</option>
+              </select>
+            </div>
+            <Input
+              label="Image URL (optional)"
+              value={parkForm.image_url}
+              onChange={e => setParkForm({ ...parkForm, image_url: e.target.value })}
+              placeholder="https://..."
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+            <button type="button" onClick={() => setIsParkFormOpen(false)}
+              className="px-4 py-1.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            >Cancel</button>
+            <button type="submit"
+              className="px-5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition-colors"
+            >{editingPark ? 'Save Changes' : 'Add Park / Ground'}</button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

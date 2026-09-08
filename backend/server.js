@@ -97,7 +97,54 @@ app.get('/api/facilities', async (req, res) => {
   }
 });
 
+// Create a new Facility or Park (Admin)
+app.post('/api/facilities', async (req, res) => {
+  try {
+    const { name, category, capacity, hourly_rate, location, amenities, status, image_url } = req.body;
+    const result = await pool.query(`
+      INSERT INTO facilities (name, category, capacity, hourly_rate, location, amenities, status, image_url)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *
+    `, [name, category, parseInt(capacity) || 50, parseFloat(hourly_rate) || 0, location, amenities || '', status || 'Available', image_url || null]);
+    await pool.query(
+      'INSERT INTO activity_logs (user_name, action, module, details) VALUES ($1, $2, $3, $4)',
+      ['Admin', 'Facility Added', 'FACILITIES', `New ${category}: ${name}`]
+    );
+    res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update a Facility or Park (Admin)
+app.put('/api/facilities/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, category, capacity, hourly_rate, location, amenities, status, image_url } = req.body;
+    const result = await pool.query(`
+      UPDATE facilities SET name=$1, category=$2, capacity=$3, hourly_rate=$4, location=$5, amenities=$6, status=$7, image_url=COALESCE($8, image_url)
+      WHERE id=$9 RETURNING *
+    `, [name, category, parseInt(capacity) || 50, parseFloat(hourly_rate) || 0, location, amenities || '', status || 'Available', image_url || null, id]);
+    if (result.rowCount === 0) return res.status(404).json({ success: false, message: 'Facility not found' });
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete a Facility or Park (Admin)
+app.delete('/api/facilities/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM facilities WHERE id = $1', [id]);
+    res.json({ success: true, message: 'Facility deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // List facility & park reservations
+
 app.get('/api/facilities/reservations', async (req, res) => {
   try {
     const { status, category } = req.query;
