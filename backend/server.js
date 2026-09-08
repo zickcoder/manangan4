@@ -147,9 +147,23 @@ app.delete('/api/facilities/:id', async (req, res) => {
 
 // List facility & park reservations
 
+// Helper: convert "08:00 AM" -> decimal hours since midnight
+function parse12HToHours(timeStr) {
+  if (!timeStr) return 0;
+  const match = timeStr.trim().match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!match) return 0;
+  let h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const isPm = /pm/i.test(match[3]);
+  const isAm = /am/i.test(match[3]);
+  if (isPm && h < 12) h += 12;
+  if (isAm && h === 12) h = 0;
+  return h + m / 60;
+}
+
 app.get('/api/facilities/reservations', async (req, res) => {
   try {
-    const { status, category } = req.query;
+    const { status, category, exclude_cancelled } = req.query;
     let query = `
       SELECT r.*, f.name as facility_name, f.category as facility_category, f.location as facility_location, f.hourly_rate
       FROM facility_reservations r
@@ -166,6 +180,9 @@ app.get('/api/facilities/reservations', async (req, res) => {
       params.push(`%${category}%`);
       conditions.push(`f.category ILIKE $${params.length}`);
     }
+    if (exclude_cancelled === 'true') {
+      conditions.push(`r.status NOT IN ('Cancelled', 'Canceled')`);
+    }
 
     if (conditions.length > 0) {
       query += ' WHERE ' + conditions.join(' AND ');
@@ -173,7 +190,22 @@ app.get('/api/facilities/reservations', async (req, res) => {
     query += ' ORDER BY r.event_date ASC, r.start_time ASC';
 
     const result = await pool.query(query, params);
-    res.json({ success: true, data: result.rows });
+
+    // Auto-compute fee_amount = hours * hourly_rate when stored fee is 0 or null
+    const rows = result.rows.map(r => {
+      const rate = parseFloat(r.hourly_rate) || 0;
+      const storedFee = parseFloat(r.fee_amount) || 0;
+      if (storedFee === 0 && rate > 0 && r.start_time && r.end_time) {
+        const startH = parse12HToHours(r.start_time);
+        const endH = parse12HToHours(r.end_time);
+        const diffHours = endH > startH ? endH - startH : 1;
+        r.fee_amount = Math.round(diffHours * rate);
+        r.hours = diffHours;
+      }
+      return r;
+    });
+
+    res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -182,16 +214,38 @@ app.get('/api/facilities/reservations', async (req, res) => {
 // Book a Reservation (Public or Staff)
 app.post('/api/facilities/reservations', async (req, res) => {
   try {
-    const { reference_no, facility_id, applicant_name, applicant_email, applicant_phone, purpose, event_date, start_time, end_time, attendees, remarks } = req.body;
+    const {
+      reference_no, facility_id, applicant_name, applicant_email, applicant_phone,
+      purpose, event_date, start_time, end_time, attendees, remarks,
+      fee_amount, hours, citizen_id, citizen_email, special_equipment
+    } = req.body;
     const refCode = reference_no || `RES-2026-${Math.floor(100 + Math.random() * 900)}`;
+    const equipStr = Array.isArray(special_equipment) ? special_equipment.join(', ') : special_equipment;
+
+    // Compute hours from times if not provided
+    let bookingHours = parseFloat(hours) || 0;
+    if (!bookingHours && start_time && end_time) {
+      const startH = parse12HToHours(start_time);
+      const endH = parse12HToHours(end_time);
+      bookingHours = endH > startH ? endH - startH : 1;
+    }
+
+    // fee_amount should already be hours * hourly_rate from frontend
+    // but if 0, leave it 0 — admin will see it auto-computed from hourly_rate on GET
+    const savedFee = parseFloat(fee_amount) || 0;
 
     const result = await pool.query(`
       INSERT INTO facility_reservations (
         reference_no, facility_id, applicant_name, applicant_email, applicant_phone,
-        purpose, event_date, start_time, end_time, attendees, status, remarks
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Pending', $11)
+        purpose, event_date, start_time, end_time, attendees, status, remarks,
+        fee_amount, hours, citizen_id, citizen_email, special_equipment
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Pending Review', $11, $12, $13, $14, $15, $16)
       RETURNING *
-    `, [refCode, facility_id, applicant_name, applicant_email, applicant_phone, purpose, event_date, start_time, end_time, parseInt(attendees || 20), remarks]);
+    `, [
+      refCode, facility_id, applicant_name, applicant_email, applicant_phone,
+      purpose, event_date, start_time, end_time, parseInt(attendees || 20), remarks,
+      savedFee, bookingHours, citizen_id || null, citizen_email || applicant_email, equipStr || null
+    ]);
 
     await pool.query(
       'INSERT INTO activity_logs (user_name, action, module, details) VALUES ($1, $2, $3, $4)',
@@ -205,18 +259,32 @@ app.post('/api/facilities/reservations', async (req, res) => {
   }
 });
 
-// Update Reservation Status (Approve / Reject)
+// Update Reservation Status (Approve / Reject / Grant Payment / Pay)
 app.patch('/api/facilities/reservations/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, remarks, reviewer_name } = req.body;
+    const { status, remarks, reviewer_name, fee_amount, payment_due_date, paid_at, payment_method } = req.body;
 
     const result = await pool.query(`
       UPDATE facility_reservations
-      SET status = $1, remarks = COALESCE($2, remarks)
+      SET 
+        status = $1, 
+        remarks = COALESCE($2, remarks),
+        fee_amount = COALESCE($4, fee_amount),
+        payment_due_date = COALESCE($5, payment_due_date),
+        paid_at = COALESCE($6, paid_at),
+        payment_method = COALESCE($7, payment_method)
       WHERE id = $3
       RETURNING *
-    `, [status, remarks, id]);
+    `, [
+      status,
+      remarks,
+      id,
+      fee_amount !== undefined && fee_amount !== null ? parseFloat(fee_amount) : null,
+      payment_due_date || null,
+      paid_at ? new Date(paid_at) : null,
+      payment_method || null
+    ]);
 
     if (result.rowCount === 0) return res.status(404).json({ success: false, message: 'Reservation not found' });
 

@@ -545,13 +545,14 @@ export async function deleteFacility(id: number) {
   return { success: true };
 }
 
-export async function fetchReservations(status = 'all', category = 'all') {
+export async function fetchReservations(status = 'all', category = 'all', excludeCancelled = false) {
   let list: any[] = [];
   let serverList: any[] = [];
   let fetched = false;
 
   if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/facilities/reservations?status=${encodeURIComponent(status)}&category=${encodeURIComponent(category)}`);
+    const cancelParam = excludeCancelled ? '&exclude_cancelled=true' : '';
+    const res = await fetch(`${API_BASE}/facilities/reservations?status=${encodeURIComponent(status)}&category=${encodeURIComponent(category)}${cancelParam}`);
     if (res.ok) { 
       const data = await res.json(); 
       if (Array.isArray(data?.data)) {
@@ -605,6 +606,13 @@ export async function fetchReservations(status = 'all', category = 'all') {
   // Filter by status if not all
   if (status !== 'all') {
     list = list.filter((r: any) => (r.status || '').toLowerCase() === status.toLowerCase());
+  }
+
+  if (excludeCancelled) {
+    list = list.filter((r: any) => {
+      const s = (r.status || '').toLowerCase();
+      return s !== 'cancelled' && s !== 'canceled';
+    });
   }
 
   // Strictly filter by category if not all
@@ -844,6 +852,24 @@ function parse12HToMinutes(timeStr: string): number {
   return hours * 60 + minutes;
 }
 
+export function calculateBookingHours(startTime: string, endTime: string): number {
+  if (!startTime || !endTime) return 1;
+  const startMin = parse12HToMinutes(startTime);
+  const endMin = parse12HToMinutes(endTime);
+  const diffMinutes = endMin - startMin;
+  if (diffMinutes > 0) {
+    const hrs = diffMinutes / 60;
+    return Math.round(hrs * 100) / 100;
+  }
+  return 1;
+}
+
+export function calculateFacilityFee(startTime: string, endTime: string, hourlyRate: number): number {
+  const hours = calculateBookingHours(startTime, endTime);
+  const rate = Number(hourlyRate) || 0;
+  return Math.round(hours * rate);
+}
+
 function areTimeSlotsConflicting(startA: string, endA: string, startB: string, endB: string): boolean {
   const minStartA = parse12HToMinutes(startA);
   const minEndA = parse12HToMinutes(endA);
@@ -983,10 +1009,14 @@ export async function checkDoubleBooking(
     );
 
     if (isOwnBooking) {
+      const isApproved = conflict.status === 'Approved' || conflict.status === 'Paid';
+      const statusLabel = conflict.status || 'Active';
       return {
         hasConflict: false,
         isOwnSchedule: true,
-        message: `This schedule slot matches your existing booking (${conflict.reference_no}). You can view your ticket or go to My Tickets to resubmit or cancel.`,
+        message: isApproved
+          ? `You already booked this date (${conflict.reference_no} • Status: ${statusLabel}). Your reservation is already confirmed by admin. Please select another date if you wish to book another schedule, or view your existing ticket.`
+          : `You already have an active booking on this date (${conflict.reference_no} • Status: ${statusLabel}). Please select another date if you wish to book another schedule, or view your existing ticket.`,
         existingBooking: {
           reference_no: conflict.reference_no,
           facility_name: conflict.facility_name,

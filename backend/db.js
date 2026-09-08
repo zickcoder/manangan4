@@ -202,6 +202,10 @@ export async function initDatabase() {
       ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS citizen_id INT;
       ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS special_equipment TEXT;
       ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS fee_amount NUMERIC(10, 2) DEFAULT 0;
+      ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS hours NUMERIC(5, 2) DEFAULT 0;
+      ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS payment_due_date DATE;
+      ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP;
+      ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
 
       ALTER TABLE utility_requests ADD COLUMN IF NOT EXISTS citizen_email VARCHAR(100);
       ALTER TABLE utility_requests ADD COLUMN IF NOT EXISTS citizen_id INT;

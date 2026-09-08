@@ -30,7 +30,9 @@ import {
   updateBurialStatus,
   updateReservationStatus,
   cancelUtilityRequest,
-  format12HourDateTime
+  format12HourDateTime,
+  calculateBookingHours,
+  calculateFacilityFee
 } from "../lib/api";
 import { FacilityReservation, UtilityRequest, BurialRecord } from "../types";
 
@@ -292,7 +294,7 @@ export function MyTicketsPage() {
         date: formatDateSafely(r.event_date),
         time: `${r.start_time || ''} - ${r.end_time || ''}`,
         status: r.status || 'Pending',
-        fee_amount: (r as any).fee_amount || (r.hourly_rate ? r.hourly_rate * 4 : 2000),
+        fee_amount: (r as any).fee_amount || calculateFacilityFee(r.start_time, r.end_time, r.hourly_rate || 0) || 0,
         payment_method: (r as any).payment_method,
         paid_at: (r as any).paid_at,
         payment_due_date: (r as any).payment_due_date,

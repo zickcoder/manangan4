@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { 
   Search, 
   Building, 
@@ -50,12 +50,15 @@ import {
   createBurial, 
   createUtilityRequest, 
   trackUniversalReference,
-  fetchAssets
+  fetchAssets,
+  calculateBookingHours,
+  calculateFacilityFee
 } from '../lib/api';
 import { Facility, CemeteryPlot, Asset } from '../types';
 
 export function PublicPortal() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'status' | 'reserve' | 'utility' | 'cemetery' | 'assets'>('status');
 
   // 1. Tracking State
@@ -238,15 +241,50 @@ export function PublicPortal() {
   };
 
   const selectedFacilityObj = facilities.find(f => f.id === selectedFacilityId) || facilities[0];
+  const bookingHours = calculateBookingHours(reserveForm.start_time, reserveForm.end_time);
+  const bookingTotalFee = calculateFacilityFee(reserveForm.start_time, reserveForm.end_time, selectedFacilityObj?.hourly_rate || 0);
 
   // Pax Limit Check
   const currentAttendees = parseInt(reserveForm.attendees, 10) || 0;
   const isPaxExceeded = selectedFacilityObj ? currentAttendees > selectedFacilityObj.capacity : false;
 
-  // Clear conflict notification when selecting a different facility
+  // Automatic real-time check when date or time or facility changes
   useEffect(() => {
-    setAiConflict(null);
-  }, [selectedFacilityId]);
+    if (!selectedFacilityObj || !reserveForm.event_date) {
+      setAiConflict(null);
+      return;
+    }
+    checkDoubleBooking(
+      selectedFacilityId,
+      selectedFacilityObj?.name || 'Civic Center',
+      reserveForm.event_date,
+      reserveForm.start_time,
+      reserveForm.end_time,
+      reserveForm.applicant_email,
+      reserveForm.applicant_name,
+      undefined,
+      selectedFacilityObj?.category
+    ).then((bookingCheck) => {
+      if (bookingCheck.hasConflict) {
+        setAiConflict({
+          hasConflict: true,
+          isOwnSchedule: false,
+          aiAnalysis: bookingCheck.message,
+          alternativeSlots: bookingCheck.suggestedSlots || [`${reserveForm.event_date} (02:00 PM - 06:00 PM)`]
+        });
+      } else if ((bookingCheck as any).isOwnSchedule) {
+        setAiConflict({
+          hasConflict: false,
+          isOwnSchedule: true,
+          aiAnalysis: bookingCheck.message,
+          existingBooking: (bookingCheck as any).existingBooking,
+          alternativeSlots: []
+        });
+      } else {
+        setAiConflict(null);
+      }
+    }).catch(console.error);
+  }, [selectedFacilityId, reserveForm.event_date, reserveForm.start_time, reserveForm.end_time, reserveForm.applicant_email, reserveForm.applicant_name]);
 
   const handleCheckAIConflict = async () => {
     setAiChecking(true);
@@ -266,8 +304,17 @@ export function PublicPortal() {
       if (bookingCheck.hasConflict) {
         setAiConflict({
           hasConflict: true,
+          isOwnSchedule: false,
           aiAnalysis: bookingCheck.message,
           alternativeSlots: bookingCheck.suggestedSlots || [`${reserveForm.event_date} (02:00 PM - 06:00 PM)`]
+        });
+      } else if ((bookingCheck as any).isOwnSchedule) {
+        setAiConflict({
+          hasConflict: false,
+          isOwnSchedule: true,
+          aiAnalysis: bookingCheck.message,
+          existingBooking: (bookingCheck as any).existingBooking,
+          alternativeSlots: []
         });
       } else {
         const res = await checkFacilityAI(
@@ -331,6 +378,16 @@ export function PublicPortal() {
       return;
     }
 
+    if (aiConflict?.isOwnSchedule) {
+      alert('You already booked this date and time. Please click "Book Another Date" to select a different schedule.');
+      return;
+    }
+
+    if (aiConflict?.hasConflict) {
+      alert('Cannot submit reservation: ' + (aiConflict.aiAnalysis || 'Schedule slot conflict detected. Please select an alternative slot.'));
+      return;
+    }
+
     const finalPurpose = reserveForm.purpose === 'Other Government / Civic Activity' && reserveForm.custom_purpose
       ? reserveForm.custom_purpose
       : reserveForm.purpose;
@@ -343,6 +400,11 @@ export function PublicPortal() {
         applicant_phone: reserveForm.applicant_phone.trim(),
         purpose: finalPurpose.trim(),
         facility_id: selectedFacilityId,
+        facility_name: selectedFacilityObj?.name,
+        facility_category: selectedFacilityObj?.category,
+        hourly_rate: selectedFacilityObj?.hourly_rate || 0,
+        hours: bookingHours,
+        fee_amount: bookingTotalFee,
         attendees: currentAttendees
       });
       if (res.success) {
@@ -808,11 +870,21 @@ export function PublicPortal() {
                               onChange={(e) => setReserveForm({ ...reserveForm, start_time: e.target.value })}
                               className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm"
                             >
+                              <option value="06:00 AM">06:00 AM</option>
+                              <option value="07:00 AM">07:00 AM</option>
                               <option value="08:00 AM">08:00 AM</option>
                               <option value="09:00 AM">09:00 AM</option>
+                              <option value="10:00 AM">10:00 AM</option>
+                              <option value="11:00 AM">11:00 AM</option>
+                              <option value="12:00 PM">12:00 PM</option>
                               <option value="01:00 PM">01:00 PM</option>
                               <option value="02:00 PM">02:00 PM</option>
+                              <option value="03:00 PM">03:00 PM</option>
+                              <option value="04:00 PM">04:00 PM</option>
+                              <option value="05:00 PM">05:00 PM</option>
                               <option value="06:00 PM">06:00 PM</option>
+                              <option value="07:00 PM">07:00 PM</option>
+                              <option value="08:00 PM">08:00 PM</option>
                             </select>
                           </div>
                           <div>
@@ -822,12 +894,42 @@ export function PublicPortal() {
                               onChange={(e) => setReserveForm({ ...reserveForm, end_time: e.target.value })}
                               className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm"
                             >
+                              <option value="08:00 AM">08:00 AM</option>
+                              <option value="09:00 AM">09:00 AM</option>
+                              <option value="10:00 AM">10:00 AM</option>
+                              <option value="11:00 AM">11:00 AM</option>
                               <option value="12:00 PM">12:00 PM</option>
                               <option value="01:00 PM">01:00 PM</option>
+                              <option value="02:00 PM">02:00 PM</option>
+                              <option value="03:00 PM">03:00 PM</option>
+                              <option value="04:00 PM">04:00 PM</option>
                               <option value="05:00 PM">05:00 PM</option>
                               <option value="06:00 PM">06:00 PM</option>
+                              <option value="07:00 PM">07:00 PM</option>
+                              <option value="08:00 PM">08:00 PM</option>
                               <option value="09:00 PM">09:00 PM</option>
+                              <option value="10:00 PM">10:00 PM</option>
                             </select>
+                          </div>
+                        </div>
+
+                        {/* Live Calculated Fee & Duration Banner */}
+                        <div className="p-3.5 rounded-2xl border bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 text-blue-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider block text-blue-700">
+                              ⏱️ Computed Duration & Rate:
+                            </span>
+                            <p className="font-semibold text-slate-800">
+                              <strong>{bookingHours} {bookingHours === 1 ? 'Hour' : 'Hours'}</strong> ({reserveForm.start_time} – {reserveForm.end_time}) • <span className="text-slate-600">Rate: ₱{(selectedFacilityObj?.hourly_rate || 0).toLocaleString()}.00 / hr</span>
+                            </p>
+                          </div>
+                          <div className="sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 border-blue-200/60">
+                            <span className="text-[10px] font-bold uppercase tracking-wider block text-blue-700">
+                              Total Calculated Fee:
+                            </span>
+                            <span className="text-base font-extrabold font-mono text-blue-900">
+                              {bookingTotalFee > 0 ? `₱${bookingTotalFee.toLocaleString()}.00` : 'Free / No Fee (₱0.00)'}
+                            </span>
                           </div>
                         </div>
 
@@ -863,17 +965,59 @@ export function PublicPortal() {
 
                         {/* AI Slot Recommendation & Conflict Resolution Box */}
                         {aiConflict && (
-                          <div className="p-4 bg-gradient-to-br from-indigo-950 to-slate-900 rounded-2xl text-white border border-indigo-500/30 space-y-2.5 animate-fade-in shadow-medium">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
-                                <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
-                                <span>AI Slot & Conflict Intelligence</span>
+                          <div className={`p-4 rounded-2xl text-white space-y-3 animate-fade-in shadow-medium border ${
+                            aiConflict.isOwnSchedule
+                              ? 'bg-gradient-to-br from-amber-950 via-slate-900 to-slate-950 border-amber-500/50 ring-1 ring-amber-500/20'
+                              : 'bg-gradient-to-br from-indigo-950 to-slate-900 border-indigo-500/30'
+                          }`}>
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <span className={`text-xs font-bold flex items-center gap-2 ${aiConflict.isOwnSchedule ? 'text-amber-300' : 'text-indigo-300'}`}>
+                                <Sparkles className={`w-4 h-4 animate-pulse ${aiConflict.isOwnSchedule ? 'text-amber-400' : 'text-indigo-400'}`} />
+                                <span className="text-sm font-extrabold tracking-wide">{aiConflict.isOwnSchedule ? 'You Already Booked This Date' : 'AI Slot Intelligence'}</span>
                               </span>
-                              <Badge variant={aiConflict.hasConflict ? 'destructive' : 'success'}>
-                                {aiConflict.hasConflict ? '⚠️ Schedule Conflict Detected' : '✅ Optimal Slot Verified'}
+                              <Badge
+                                variant={aiConflict.hasConflict ? 'destructive' : 'warning'}
+                                className={aiConflict.isOwnSchedule ? 'bg-amber-500/20 text-amber-200 border-amber-400/50 text-xs py-1 px-3 font-bold shadow-sm' : ''}
+                              >
+                                {aiConflict.hasConflict ? '⚠️ Schedule Conflict Detected' : aiConflict.isOwnSchedule ? '⚠️ Your Existing Booking Detected' : '✅ Optimal Slot Verified'}
                               </Badge>
                             </div>
-                            <p className="text-xs text-slate-200 leading-relaxed font-medium">{aiConflict.aiAnalysis}</p>
+                            <p className="text-xs text-slate-200 leading-relaxed font-medium">
+                              {aiConflict.isOwnSchedule
+                                ? `⚠️ You already have an active booking on this date and time at ${selectedFacilityObj?.name || 'this venue'}. To book another date, please select a different date or time slot below. Or click "Book Another Date" to clear this slot.`
+                                : aiConflict.aiAnalysis}
+                            </p>
+
+                            {aiConflict.isOwnSchedule && (
+                              <div className="pt-2 flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReserveForm(prev => ({ ...prev, event_date: '', start_time: '08:00 AM', end_time: '12:00 PM' }));
+                                    setAiConflict(null);
+                                  }}
+                                  className="px-3.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/40 text-amber-200 border border-amber-400/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+                                >
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  Book Another Date
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const ref = aiConflict.existingBooking?.reference_no;
+                                    if (ref) {
+                                      navigate(`/my-tickets?ticket=${encodeURIComponent(ref)}`);
+                                    } else {
+                                      navigate('/my-tickets');
+                                    }
+                                  }}
+                                  className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+                                >
+                                  <FileCheck className="w-3.5 h-3.5 text-emerald-400" />
+                                  View Your Existing Ticket
+                                </button>
+                              </div>
+                            )}
                             {aiConflict.alternativeSlots && aiConflict.alternativeSlots.filter((s: string) => !s.toLowerCase().includes('next available') && !s.toLowerCase().includes('next day') && !s.toLowerCase().includes('next saturday')).length > 0 && (
                               <div className="pt-2 space-y-1.5">
                                 <p className="text-[11px] font-bold text-indigo-300">💡 Suggested Alternative Slots (Click to Apply):</p>

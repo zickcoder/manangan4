@@ -29,7 +29,9 @@ import {
   createReservation,
   createFacility,
   updateFacility,
-  deleteFacility
+  deleteFacility,
+  calculateBookingHours,
+  calculateFacilityFee
 } from '../lib/api';
 import { Facility, FacilityReservation } from '../types';
 
@@ -49,12 +51,12 @@ export function ParksModule() {
   const [isParkFormOpen, setIsParkFormOpen] = useState(false);
   const [editingPark, setEditingPark] = useState<Facility | null>(null);
   const [parkForm, setParkForm] = useState({
-    name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', status: 'Available'
+    name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', status: 'Available', amenities: ''
   });
 
   const openAddPark = () => {
     setEditingPark(null);
-    setParkForm({ name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', status: 'Available' });
+    setParkForm({ name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', status: 'Available', amenities: '' });
     setIsParkFormOpen(true);
   };
 
@@ -65,7 +67,8 @@ export function ParksModule() {
       category: p.category,
       capacity: String(p.capacity),
       hourly_rate: String(p.hourly_rate),
-      status: (p as any).status === 'Not Available' ? 'Not Available' : 'Available'
+      status: (p as any).status === 'Not Available' ? 'Not Available' : 'Available',
+      amenities: p.amenities || ''
     });
     setIsParkFormOpen(true);
   };
@@ -75,7 +78,7 @@ export function ParksModule() {
     const payload = {
       ...parkForm,
       location: editingPark?.location || 'Public Recreation Ground Sector',
-      amenities: editingPark?.amenities || 'Standard Park & Recreation Amenities',
+      amenities: parkForm.amenities.trim() || 'Standard Park & Recreation Amenities',
       image_url: editingPark?.image_url || null,
       capacity: parseInt(parkForm.capacity) || 100,
       hourly_rate: parseFloat(parkForm.hourly_rate) || 0
@@ -176,7 +179,7 @@ export function ParksModule() {
     try {
       const [parkList, resList] = await Promise.all([
         fetchFacilities('Park & Recreation'),
-        fetchReservations(statusFilter, 'Park & Recreation'),
+        fetchReservations(statusFilter, 'Park & Recreation', true),
       ]);
       setParks(parkList);
       setReservations(resList);
@@ -208,7 +211,8 @@ export function ParksModule() {
         message: 'Updating park scheduling status.'
       });
 
-      const fee = (selectedRes as any).fee_amount || (selectedRes.hourly_rate ? selectedRes.hourly_rate * 4 : 1500);
+      const computedFee = calculateFacilityFee(selectedRes.start_time, selectedRes.end_time, selectedRes.hourly_rate || 0);
+      const fee = (selectedRes as any).fee_amount || computedFee || (selectedRes.hourly_rate ? selectedRes.hourly_rate * 4 : 1500);
       const dueDate = new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0];
 
       await updateReservationStatus(
@@ -580,36 +584,40 @@ export function ParksModule() {
               </div>
             )}
 
-            {/* SET PAYMENT DUE DATE & FEE - shown when Approved */}
-            {selectedRes.status === 'Approved' && (
-              <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 space-y-2">
-                <p className="font-bold text-amber-900 text-[11px]">🗓️ Set Payment Due Date & Fee:</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Input
-                    label="Payment Due Date *"
-                    type="date"
-                    required
-                    min={new Date().toISOString().split('T')[0]}
-                    defaultValue={new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]}
-                  />
-                  <div>
-                    <label className="block text-xs font-semibold text-[#334155] mb-1">Park Standard Permit & Maintenance Fee</label>
-                    <input
-                      type="text"
-                      disabled
-                      readOnly
-                      value={`₱${((selectedRes as any).fee_amount || 1500).toLocaleString()}.00`}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-100 p-2 text-xs font-mono font-bold text-slate-700 cursor-not-allowed"
-                    />
+            {/* Computed Fee Breakdown — always visible for park tickets */}
+            {(selectedRes.hourly_rate > 0 || (selectedRes as any).fee_amount > 0) && (
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+                <p className="font-bold text-slate-700 text-[11px] uppercase tracking-wider">💰 Booking Fee Computation:</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-white border border-slate-200 rounded-lg p-2">
+                    <span className="text-[10px] text-slate-500 block">Duration</span>
+                    <span className="font-bold text-slate-900">{calculateBookingHours(selectedRes.start_time, selectedRes.end_time)} hrs</span>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-lg p-2">
+                    <span className="text-[10px] text-slate-500 block">Rate / hr</span>
+                    <span className="font-bold text-slate-900">₱{Number(selectedRes.hourly_rate || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-300 rounded-lg p-2">
+                    <span className="text-[10px] text-emerald-600 block font-semibold">Total Fee</span>
+                    <span className="font-extrabold text-emerald-900 font-mono">
+                      ₱{((selectedRes as any).fee_amount || calculateFacilityFee(selectedRes.start_time, selectedRes.end_time, selectedRes.hourly_rate || 0)).toLocaleString()}.00
+                    </span>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Approved — grant notice */}
+            {selectedRes.status === 'Approved' && (
+              <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 space-y-1">
+                <p className="font-bold text-amber-900 text-[11px]">🗓️ Grant Payment Notice — Computed fee will be charged to citizen. Payment due in 3 days.</p>
               </div>
             )}
 
             {selectedRes.status === 'Pending Payment' && (
               <div className="p-3.5 bg-blue-50 rounded-xl border border-blue-200 text-blue-900 space-y-1">
                 <p className="font-bold text-xs">⏳ Awaiting Treasury Cash Settlement:</p>
-                <p className="text-[11px]">Notice issued to citizen. Assessed Fee: <strong>₱{((selectedRes as any).fee_amount || 1500).toLocaleString()}.00</strong>. When resident settles at LGU Treasury Desk, click "Approve Payment (Cash Received)" below.</p>
+                <p className="text-[11px]">Notice issued to citizen. Assessed Fee: <strong>₱{((selectedRes as any).fee_amount || calculateFacilityFee(selectedRes.start_time, selectedRes.end_time, selectedRes.hourly_rate || 0)).toLocaleString()}.00</strong>. When resident settles at LGU Treasury Desk, click "Approve Payment (Cash Received)" below.</p>
               </div>
             )}
 
@@ -797,6 +805,20 @@ export function ParksModule() {
                 className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-emerald-600"
               />
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#334155] mb-1">
+              Park Specifications & Features (Specs) *
+            </label>
+            <textarea
+              rows={2}
+              required
+              value={parkForm.amenities}
+              onChange={e => setParkForm({ ...parkForm, amenities: e.target.value })}
+              placeholder="e.g. Covered basketball court, jogging perimeter path, open picnic lawn, gazebo, public restrooms"
+              className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-emerald-600"
+            />
+            <p className="text-[10px] text-slate-400 mt-0.5">Citizens will see these exact specifications under "Selected Venue Specs" when reserving.</p>
           </div>
           <div>
             <label className="block text-xs font-semibold text-[#334155] mb-1">Status</label>

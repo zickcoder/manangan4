@@ -29,7 +29,9 @@ import {
   checkFacilityAI,
   createFacility,
   updateFacility,
-  deleteFacility
+  deleteFacility,
+  calculateBookingHours,
+  calculateFacilityFee
 } from '../lib/api';
 import { Facility, FacilityReservation } from '../types';
 
@@ -49,12 +51,12 @@ export function FacilitiesModule() {
   const [isFacilityFormOpen, setIsFacilityFormOpen] = useState(false);
   const [editingFacility, setEditingFacility] = useState<Facility | null>(null);
   const [facilityForm, setFacilityForm] = useState({
-    name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500', status: 'Available'
+    name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500', status: 'Available', amenities: ''
   });
 
   const openAddFacility = () => {
     setEditingFacility(null);
-    setFacilityForm({ name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500', status: 'Available' });
+    setFacilityForm({ name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500', status: 'Available', amenities: '' });
     setIsFacilityFormOpen(true);
   };
 
@@ -65,7 +67,8 @@ export function FacilitiesModule() {
       category: fac.category,
       capacity: String(fac.capacity),
       hourly_rate: String(fac.hourly_rate),
-      status: (fac as any).status === 'Not Available' ? 'Not Available' : 'Available'
+      status: (fac as any).status === 'Not Available' ? 'Not Available' : 'Available',
+      amenities: fac.amenities || ''
     });
     setIsFacilityFormOpen(true);
   };
@@ -75,7 +78,7 @@ export function FacilitiesModule() {
     const payload = {
       ...facilityForm,
       location: editingFacility?.location || 'Civic Complex, Mindanao Ave.',
-      amenities: editingFacility?.amenities || 'Standard Facility Amenities',
+      amenities: facilityForm.amenities.trim() || 'Standard Facility Amenities',
       image_url: editingFacility?.image_url || null,
       capacity: parseInt(facilityForm.capacity) || 50,
       hourly_rate: parseFloat(facilityForm.hourly_rate) || 0
@@ -180,7 +183,7 @@ export function FacilitiesModule() {
     try {
       const [facs, resList] = await Promise.all([
         fetchFacilities('Government Facility'),
-        fetchReservations(statusFilter, 'Government Facility'),
+        fetchReservations(statusFilter, 'Government Facility', true),
       ]);
       setFacilities(facs);
       setReservations(resList);
@@ -213,7 +216,8 @@ export function FacilitiesModule() {
         message: 'Updating facility reservation status.'
       });
 
-      const fee = (selectedRes as any).fee_amount || (selectedRes.hourly_rate ? selectedRes.hourly_rate * 4 : 2000);
+      const computedFee = calculateFacilityFee(selectedRes.start_time, selectedRes.end_time, selectedRes.hourly_rate || 0);
+      const fee = (selectedRes as any).fee_amount || computedFee || (selectedRes.hourly_rate ? selectedRes.hourly_rate * 4 : 2000);
       const dueDate = new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0];
 
       await updateReservationStatus(
@@ -628,36 +632,40 @@ export function FacilitiesModule() {
               </div>
             )}
 
-            {/* SET PAYMENT DUE DATE & FEE - shown when Approved, before issuing payment notice */}
-            {selectedRes.status === 'Approved' && (
-              <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 space-y-2">
-                <p className="font-bold text-amber-900 text-[11px]">🗓️ Set Payment Due Date & Fee:</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Input
-                    label="Payment Due Date *"
-                    type="date"
-                    required
-                    min={new Date().toISOString().split('T')[0]}
-                    defaultValue={new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]}
-                  />
-                  <div>
-                    <label className="block text-xs font-semibold text-[#334155] mb-1">Facility Standard Hourly / Rental Fee</label>
-                    <input
-                      type="text"
-                      disabled
-                      readOnly
-                      value={`₱${((selectedRes as any).fee_amount || 2000).toLocaleString()}.00`}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-100 p-2 text-xs font-mono font-bold text-slate-700 cursor-not-allowed"
-                    />
+            {/* Computed Fee Breakdown — always visible for facility tickets */}
+            {(selectedRes.hourly_rate > 0 || (selectedRes as any).fee_amount > 0) && (
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+                <p className="font-bold text-slate-700 text-[11px] uppercase tracking-wider">💰 Booking Fee Computation:</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-white border border-slate-200 rounded-lg p-2">
+                    <span className="text-[10px] text-slate-500 block">Duration</span>
+                    <span className="font-bold text-slate-900">{calculateBookingHours(selectedRes.start_time, selectedRes.end_time)} hrs</span>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-lg p-2">
+                    <span className="text-[10px] text-slate-500 block">Rate / hr</span>
+                    <span className="font-bold text-slate-900">₱{Number(selectedRes.hourly_rate || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-300 rounded-lg p-2">
+                    <span className="text-[10px] text-blue-600 block font-semibold">Total Fee</span>
+                    <span className="font-extrabold text-blue-900 font-mono">
+                      ₱{((selectedRes as any).fee_amount || calculateFacilityFee(selectedRes.start_time, selectedRes.end_time, selectedRes.hourly_rate || 0)).toLocaleString()}.00
+                    </span>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* SET PAYMENT DUE DATE & FEE - shown when Approved, before issuing payment notice */}
+            {selectedRes.status === 'Approved' && (
+              <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 space-y-1">
+                <p className="font-bold text-amber-900 text-[11px]">🗓️ Grant Payment Notice — Computed fee will be charged to citizen. Payment due in 3 days.</p>
               </div>
             )}
 
             {selectedRes.status === 'Pending Payment' && (
               <div className="p-3.5 bg-blue-50 rounded-xl border border-blue-200 text-blue-900 space-y-1">
                 <p className="font-bold text-xs">⏳ Awaiting Treasury Cash Settlement:</p>
-                <p className="text-[11px]">Notice issued to citizen. Assessed Fee: <strong>₱{((selectedRes as any).fee_amount || 2000).toLocaleString()}.00</strong>. When resident settles at LGU Treasury Desk, click "Approve Payment (Cash Received)" below.</p>
+                <p className="text-[11px]">Notice issued to citizen. Assessed Fee: <strong>₱{((selectedRes as any).fee_amount || calculateFacilityFee(selectedRes.start_time, selectedRes.end_time, selectedRes.hourly_rate || 0)).toLocaleString()}.00</strong>. When resident settles at LGU Treasury Desk, click "Approve Payment (Cash Received)" below.</p>
               </div>
             )}
 
@@ -869,6 +877,20 @@ export function FacilitiesModule() {
                 className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-blue-600"
               />
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#334155] mb-1">
+              Venue Specifications & Features (Specs) *
+            </label>
+            <textarea
+              rows={2}
+              required
+              value={facilityForm.amenities}
+              onChange={e => setFacilityForm({ ...facilityForm, amenities: e.target.value })}
+              placeholder="e.g. Fully air-conditioned, elevated stage, 300 cushioned monoblock chairs, high-lumen LED projector"
+              className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-blue-600"
+            />
+            <p className="text-[10px] text-slate-400 mt-0.5">Citizens will see these exact specifications under "Selected Venue Specs" when reserving.</p>
           </div>
           <div>
             <label className="block text-xs font-semibold text-[#334155] mb-1">Status</label>

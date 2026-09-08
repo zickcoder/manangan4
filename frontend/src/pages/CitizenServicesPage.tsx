@@ -43,7 +43,9 @@ import {
   fetchCemeteryPlots, 
   createBurial, 
   createUtilityRequest, 
-  fetchAssets 
+  fetchAssets,
+  calculateBookingHours,
+  calculateFacilityFee
 } from '../lib/api';
 import { Facility, CemeteryPlot, Asset } from '../types';
 
@@ -436,6 +438,8 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     location: 'Civic Complex, Mindanao Ave.',
     amenities: 'Central Aircon, Full PA Sound System, Stage, Chairs'
   });
+  const bookingHours = calculateBookingHours(reserveForm.start_time, reserveForm.end_time);
+  const bookingTotalFee = calculateFacilityFee(reserveForm.start_time, reserveForm.end_time, selectedFacilityObj?.hourly_rate || 0);
   const currentAttendees = parseInt(reserveForm.attendees, 10) || 0;
   const isPaxExceeded = selectedFacilityObj ? currentAttendees > selectedFacilityObj.capacity : false;
 
@@ -533,6 +537,11 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
       return;
     }
 
+    if (aiConflict?.isOwnSchedule && !activeResubmit) {
+      setReserveError('You already booked this date and time. Please click "Book Another Date" to select a different schedule.');
+      return;
+    }
+
     if (isPaxExceeded) {
       setReserveError(`Number of attendees (${currentAttendees}) exceeds maximum venue capacity (${selectedFacilityObj?.capacity}).`);
       return;
@@ -553,6 +562,8 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
         facility_category: isParksMode ? 'Park & Recreation' : 'Government Facility',
         facility_location: selectedFacilityObj.location,
         hourly_rate: selectedFacilityObj.hourly_rate,
+        hours: bookingHours,
+        fee_amount: bookingTotalFee,
         attendees: currentAttendees,
         special_equipment: activeSelectedEquipment,
         ...(activeResubmit ? { resubmitId: resubmittingTicket.originalId, reference_no: resubmittingTicket.ref_no } : {})
@@ -941,11 +952,21 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                             onChange={(e) => setReserveForm({ ...reserveForm, start_time: e.target.value })}
                             className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm"
                           >
+                            <option value="06:00 AM">06:00 AM</option>
+                            <option value="07:00 AM">07:00 AM</option>
                             <option value="08:00 AM">08:00 AM</option>
                             <option value="09:00 AM">09:00 AM</option>
+                            <option value="10:00 AM">10:00 AM</option>
+                            <option value="11:00 AM">11:00 AM</option>
+                            <option value="12:00 PM">12:00 PM</option>
                             <option value="01:00 PM">01:00 PM</option>
                             <option value="02:00 PM">02:00 PM</option>
+                            <option value="03:00 PM">03:00 PM</option>
+                            <option value="04:00 PM">04:00 PM</option>
+                            <option value="05:00 PM">05:00 PM</option>
                             <option value="06:00 PM">06:00 PM</option>
+                            <option value="07:00 PM">07:00 PM</option>
+                            <option value="08:00 PM">08:00 PM</option>
                           </select>
                         </div>
                         <div>
@@ -955,12 +976,46 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                             onChange={(e) => setReserveForm({ ...reserveForm, end_time: e.target.value })}
                             className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm"
                           >
+                            <option value="08:00 AM">08:00 AM</option>
+                            <option value="09:00 AM">09:00 AM</option>
+                            <option value="10:00 AM">10:00 AM</option>
+                            <option value="11:00 AM">11:00 AM</option>
                             <option value="12:00 PM">12:00 PM</option>
                             <option value="01:00 PM">01:00 PM</option>
+                            <option value="02:00 PM">02:00 PM</option>
+                            <option value="03:00 PM">03:00 PM</option>
+                            <option value="04:00 PM">04:00 PM</option>
                             <option value="05:00 PM">05:00 PM</option>
                             <option value="06:00 PM">06:00 PM</option>
+                            <option value="07:00 PM">07:00 PM</option>
+                            <option value="08:00 PM">08:00 PM</option>
                             <option value="09:00 PM">09:00 PM</option>
+                            <option value="10:00 PM">10:00 PM</option>
                           </select>
+                        </div>
+                      </div>
+
+                      {/* Live Calculated Fee & Duration Banner */}
+                      <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
+                        isParksMode 
+                          ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950' 
+                          : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 text-blue-950'
+                      }`}>
+                        <div className="space-y-0.5">
+                          <span className={`text-[10px] font-bold uppercase tracking-wider block ${isParksMode ? 'text-emerald-700' : 'text-blue-700'}`}>
+                            ⏱️ Computed Duration & Rate:
+                          </span>
+                          <p className="font-semibold text-slate-800">
+                            <strong>{bookingHours} {bookingHours === 1 ? 'Hour' : 'Hours'}</strong> ({reserveForm.start_time} – {reserveForm.end_time}) • <span className="text-slate-600">Rate: ₱{(selectedFacilityObj?.hourly_rate || 0).toLocaleString()}.00 / hr</span>
+                          </p>
+                        </div>
+                        <div className={`sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 ${isParksMode ? 'border-emerald-200/60' : 'border-blue-200/60'}`}>
+                          <span className={`text-[10px] font-bold uppercase tracking-wider block ${isParksMode ? 'text-emerald-700' : 'text-blue-700'}`}>
+                            Total Calculated Fee:
+                          </span>
+                          <span className={`text-base font-extrabold font-mono ${isParksMode ? 'text-emerald-800' : 'text-blue-900'}`}>
+                            {bookingTotalFee > 0 ? `₱${bookingTotalFee.toLocaleString()}.00` : 'Free / No Fee (₱0.00)'}
+                          </span>
                         </div>
                       </div>
 
@@ -1011,25 +1066,25 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                       {aiConflict && (
                         <div className={`p-4 rounded-2xl text-white space-y-3 animate-fade-in shadow-medium border ${
                           aiConflict.isOwnSchedule
-                            ? 'bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-950 border-emerald-500/50 ring-1 ring-emerald-500/20'
+                            ? 'bg-gradient-to-br from-amber-950 via-slate-900 to-slate-950 border-amber-500/50 ring-1 ring-amber-500/20'
                             : 'bg-gradient-to-br from-indigo-950 to-slate-900 border-indigo-500/30'
                         }`}>
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <span className={`text-xs font-bold flex items-center gap-2 ${aiConflict.isOwnSchedule ? 'text-emerald-300' : 'text-indigo-300'}`}>
-                              <Sparkles className={`w-4 h-4 animate-pulse ${aiConflict.isOwnSchedule ? 'text-emerald-400' : 'text-indigo-400'}`} />
-                              <span className="text-sm font-extrabold tracking-wide">{aiConflict.isOwnSchedule ? 'Your Booking Recognized' : 'AI Slot Intelligence'}</span>
+                            <span className={`text-xs font-bold flex items-center gap-2 ${aiConflict.isOwnSchedule ? 'text-amber-300' : 'text-indigo-300'}`}>
+                              <Sparkles className={`w-4 h-4 animate-pulse ${aiConflict.isOwnSchedule ? 'text-amber-400' : 'text-indigo-400'}`} />
+                              <span className="text-sm font-extrabold tracking-wide">{aiConflict.isOwnSchedule ? 'You Already Booked This Date' : 'AI Slot Intelligence'}</span>
                             </span>
                             <Badge 
-                              variant={aiConflict.hasConflict ? 'destructive' : 'success'} 
-                              className={aiConflict.isOwnSchedule ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50 text-xs py-1 px-3 font-bold shadow-sm' : ''}
+                              variant={aiConflict.hasConflict ? 'destructive' : 'warning'} 
+                              className={aiConflict.isOwnSchedule ? 'bg-amber-500/20 text-amber-200 border-amber-400/50 text-xs py-1 px-3 font-bold shadow-sm' : ''}
                             >
-                              {aiConflict.hasConflict ? '⚠️ Schedule Conflict Detected' : aiConflict.isOwnSchedule ? '✓ Your Existing Schedule (Resubmit Ready)' : '✅ Optimal Slot Verified'}
+                              {aiConflict.hasConflict ? '⚠️ Schedule Conflict Detected' : aiConflict.isOwnSchedule ? '⚠️ Your Existing Booking Detected' : '✅ Optimal Slot Verified'}
                             </Badge>
                           </div>
                           <p className="text-xs text-slate-200 leading-relaxed">
                             {aiConflict.isOwnSchedule
-                              ? 'This schedule slot matches your existing booking. You can view your ticket or go to My Tickets to resubmit with updated details.'
-                              : 'This time slot is already reserved. Please choose a different date or time.'}
+                              ? `⚠️ You already have an active booking on this date and time at ${selectedFacilityObj?.name || 'this venue'}. To book another date, select a different date or time slot below. Or view your existing ticket.`
+                              : 'This time slot is already reserved by another party. Please choose a different date or time.'}
                           </p>
 
                           {/* Recognized Booking Ticket Card - Clickable to see ticket */}
@@ -1075,6 +1130,19 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
+                                        // Clear the date/time so citizen picks a new slot
+                                        setReserveForm(prev => ({ ...prev, event_date: '', start_time: '08:00 AM', end_time: '12:00 PM' }));
+                                        setAiConflict(null);
+                                      }}
+                                      className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/40 text-amber-200 border border-amber-400/40 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors"
+                                    >
+                                      <Calendar className="w-3.5 h-3.5" />
+                                      Book Another Date
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
                                         setViewingRecognizedTicket(aiConflict.existingBooking || resubmittingTicket || {
                                           reference_no: aiConflict.existingBooking?.reference_no || 'RES-SCHEDULE',
                                           facility_name: selectedFacilityObj.name,
@@ -1087,10 +1155,10 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                                           applicant_phone: reserveForm.applicant_phone
                                         });
                                       }}
-                                      className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-emerald-200 border border-emerald-400/30 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                                      className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-amber-200 border border-amber-400/30 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
                                     >
                                       <Eye className="w-3.5 h-3.5" />
-                                      Quick View
+                                      View Ticket
                                     </button>
                                     <button
                                       type="button"
@@ -1105,7 +1173,7 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                                       }}
                                       className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm group-hover:scale-105 transition-all"
                                     >
-                                      <span>Go to My Ticket</span>
+                                      <span>My Tickets</span>
                                       <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                                     </button>
                                   </div>
