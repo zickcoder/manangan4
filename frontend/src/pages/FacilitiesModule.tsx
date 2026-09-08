@@ -49,30 +49,37 @@ export function FacilitiesModule() {
   const [isFacilityFormOpen, setIsFacilityFormOpen] = useState(false);
   const [editingFacility, setEditingFacility] = useState<Facility | null>(null);
   const [facilityForm, setFacilityForm] = useState({
-    name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500',
-    location: '', amenities: '', status: 'Available', image_url: ''
+    name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500', status: 'Available'
   });
 
   const openAddFacility = () => {
     setEditingFacility(null);
-    setFacilityForm({ name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500', location: '', amenities: '', status: 'Available', image_url: '' });
+    setFacilityForm({ name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500', status: 'Available' });
     setIsFacilityFormOpen(true);
   };
 
   const openEditFacility = (fac: Facility) => {
     setEditingFacility(fac);
     setFacilityForm({
-      name: fac.name, category: fac.category, capacity: String(fac.capacity),
-      hourly_rate: String(fac.hourly_rate), location: fac.location,
-      amenities: fac.amenities || '', status: (fac as any).status || 'Available',
-      image_url: (fac as any).image_url || ''
+      name: fac.name,
+      category: fac.category,
+      capacity: String(fac.capacity),
+      hourly_rate: String(fac.hourly_rate),
+      status: (fac as any).status === 'Not Available' ? 'Not Available' : 'Available'
     });
     setIsFacilityFormOpen(true);
   };
 
   const handleSaveFacility = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { ...facilityForm, capacity: parseInt(facilityForm.capacity), hourly_rate: parseFloat(facilityForm.hourly_rate) };
+    const payload = {
+      ...facilityForm,
+      location: editingFacility?.location || 'Civic Complex, Mindanao Ave.',
+      amenities: editingFacility?.amenities || 'Standard Facility Amenities',
+      image_url: editingFacility?.image_url || null,
+      capacity: parseInt(facilityForm.capacity) || 50,
+      hourly_rate: parseFloat(facilityForm.hourly_rate) || 0
+    };
     if (editingFacility) {
       await updateFacility(editingFacility.id, payload);
     } else {
@@ -361,9 +368,18 @@ export function FacilitiesModule() {
           <Card key={fac.id} hoverEffect className="border-[#cbd5e1] p-5 space-y-2">
             <div className="flex justify-between items-start">
               <span className="text-[10px] font-bold text-blue-700 uppercase bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                Cap: {fac.capacity}
+                Cap: {fac.capacity} Pax
               </span>
-              <span className="text-xs font-bold text-slate-900">₱{fac.hourly_rate} / hr</span>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                  ((fac as any).status || 'Available') === 'Available'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-rose-50 text-rose-700 border-rose-200'
+                }`}>
+                  {((fac as any).status || 'Available') === 'Available' ? '● Available' : '○ Not Available'}
+                </span>
+                <span className="text-xs font-bold text-slate-900">₱{fac.hourly_rate} / hr</span>
+              </div>
             </div>
             <h3 className="text-sm font-bold text-slate-900 leading-tight">{fac.name}</h3>
             <p className="text-[11px] text-slate-500">{fac.location}</p>
@@ -847,46 +863,22 @@ export function FacilitiesModule() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-[#334155] mb-1">Hourly Rate (₱) *</label>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Price Per Hour (₱/hr) *</label>
               <input type="number" required min="0" step="0.01" value={facilityForm.hourly_rate}
                 onChange={e => setFacilityForm({ ...facilityForm, hourly_rate: e.target.value })}
                 className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-blue-600"
               />
             </div>
           </div>
-          <Input
-            label="Location / Address *"
-            required
-            value={facilityForm.location}
-            onChange={e => setFacilityForm({ ...facilityForm, location: e.target.value })}
-            placeholder="e.g. Civic Complex, Mindanao Ave., Zone 4"
-          />
           <div>
-            <label className="block text-xs font-semibold text-[#334155] mb-1">Amenities & Features</label>
-            <textarea rows={2} value={facilityForm.amenities}
-              onChange={e => setFacilityForm({ ...facilityForm, amenities: e.target.value })}
-              placeholder="e.g. Central Aircon, Sound System, Stage, 300 Chairs, Generator"
-              className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-blue-600"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-[#334155] mb-1">Status</label>
-              <select value={facilityForm.status}
-                onChange={e => setFacilityForm({ ...facilityForm, status: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-blue-600"
-              >
-                <option value="Available">Available</option>
-                <option value="Under Maintenance">Under Maintenance</option>
-                <option value="Closed">Closed</option>
-              </select>
-            </div>
-            <Input
-              label="Image URL (optional)"
-              value={facilityForm.image_url}
-              onChange={e => setFacilityForm({ ...facilityForm, image_url: e.target.value })}
-              placeholder="https://..."
-            />
+            <label className="block text-xs font-semibold text-[#334155] mb-1">Status</label>
+            <select value={facilityForm.status}
+              onChange={e => setFacilityForm({ ...facilityForm, status: e.target.value })}
+              className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-blue-600 font-medium"
+            >
+              <option value="Available">Available (Visible & Bookable by Citizens)</option>
+              <option value="Not Available">Not Available (Hidden from Citizens)</option>
+            </select>
           </div>
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
             <button type="button" onClick={() => setIsFacilityFormOpen(false)}

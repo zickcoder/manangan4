@@ -366,14 +366,14 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
   const [selectedAssetDetail, setSelectedAssetDetail] = useState<Asset | null>(null);
 
   useEffect(() => {
-    fetchFacilities().then(setFacilities).catch(console.error);
+    fetchFacilities().then(list => setFacilities(list.filter((f: any) => (f.status || 'Available').toLowerCase() === 'available'))).catch(console.error);
     fetchAssets().then(setPublicAssets).catch(console.error);
     fetchCemeteries().then((list) => {
       if (list.length > 0) setCemeteries(Array.from(new Set(['Barangay 178 Municipal Cemetery', ...list])));
     }).catch(console.error);
 
     const handleDataUpdate = () => {
-      fetchFacilities().then(setFacilities).catch(console.error);
+      fetchFacilities().then(list => setFacilities(list.filter((f: any) => (f.status || 'Available').toLowerCase() === 'available'))).catch(console.error);
     };
     window.addEventListener('govserve_data_updated', handleDataUpdate);
     return () => window.removeEventListener('govserve_data_updated', handleDataUpdate);
@@ -405,7 +405,9 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
 
   const availableVenues = facilities.filter(f => {
     const cat = (f.category || '').toLowerCase();
-    return isParksMode ? (cat.includes('park') || cat.includes('recreation')) : (!cat.includes('park') && !cat.includes('recreation'));
+    const isCatMatch = isParksMode ? (cat.includes('park') || cat.includes('recreation')) : (!cat.includes('park') && !cat.includes('recreation'));
+    const isAvailable = (f.status || 'Available').toLowerCase() === 'available';
+    return isCatMatch && isAvailable;
   });
 
   useEffect(() => {

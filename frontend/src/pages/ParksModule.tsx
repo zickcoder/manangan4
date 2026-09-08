@@ -49,30 +49,37 @@ export function ParksModule() {
   const [isParkFormOpen, setIsParkFormOpen] = useState(false);
   const [editingPark, setEditingPark] = useState<Facility | null>(null);
   const [parkForm, setParkForm] = useState({
-    name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0',
-    location: '', amenities: '', status: 'Available', image_url: ''
+    name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', status: 'Available'
   });
 
   const openAddPark = () => {
     setEditingPark(null);
-    setParkForm({ name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', location: '', amenities: '', status: 'Available', image_url: '' });
+    setParkForm({ name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', status: 'Available' });
     setIsParkFormOpen(true);
   };
 
   const openEditPark = (p: Facility) => {
     setEditingPark(p);
     setParkForm({
-      name: p.name, category: p.category, capacity: String(p.capacity),
-      hourly_rate: String(p.hourly_rate), location: p.location,
-      amenities: p.amenities || '', status: (p as any).status || 'Available',
-      image_url: (p as any).image_url || ''
+      name: p.name,
+      category: p.category,
+      capacity: String(p.capacity),
+      hourly_rate: String(p.hourly_rate),
+      status: (p as any).status === 'Not Available' ? 'Not Available' : 'Available'
     });
     setIsParkFormOpen(true);
   };
 
   const handleSavePark = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { ...parkForm, capacity: parseInt(parkForm.capacity), hourly_rate: parseFloat(parkForm.hourly_rate) };
+    const payload = {
+      ...parkForm,
+      location: editingPark?.location || 'Public Recreation Ground Sector',
+      amenities: editingPark?.amenities || 'Standard Park & Recreation Amenities',
+      image_url: editingPark?.image_url || null,
+      capacity: parseInt(parkForm.capacity) || 100,
+      hourly_rate: parseFloat(parkForm.hourly_rate) || 0
+    };
     if (editingPark) {
       await updateFacility(editingPark.id, payload);
     } else {
@@ -338,7 +345,16 @@ export function ParksModule() {
               <span className="text-[10px] font-bold text-emerald-700 uppercase bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
                 Capacity: {p.capacity} Pax
               </span>
-              <Badge variant="success">Open Public Ground</Badge>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                  ((p as any).status || 'Available') === 'Available'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-rose-50 text-rose-700 border-rose-200'
+                }`}>
+                  {((p as any).status || 'Available') === 'Available' ? '● Available' : '○ Not Available'}
+                </span>
+                <span className="text-xs font-bold text-slate-900">₱{p.hourly_rate} / hr</span>
+              </div>
             </div>
             <h3 className="text-base font-bold text-slate-900 leading-tight">{p.name}</h3>
             <p className="text-xs text-slate-600">{p.location}</p>
@@ -775,46 +791,22 @@ export function ParksModule() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-[#334155] mb-1">Permit / Maintenance Fee (₱)</label>
-              <input type="number" min="0" step="0.01" value={parkForm.hourly_rate}
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Price Per Hour (₱/hr) *</label>
+              <input type="number" required min="0" step="0.01" value={parkForm.hourly_rate}
                 onChange={e => setParkForm({ ...parkForm, hourly_rate: e.target.value })}
                 className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-emerald-600"
               />
             </div>
           </div>
-          <Input
-            label="Location / Address *"
-            required
-            value={parkForm.location}
-            onChange={e => setParkForm({ ...parkForm, location: e.target.value })}
-            placeholder="e.g. Camarin Road Sector 3, Caloocan City"
-          />
           <div>
-            <label className="block text-xs font-semibold text-[#334155] mb-1">Amenities & Features</label>
-            <textarea rows={2} value={parkForm.amenities}
-              onChange={e => setParkForm({ ...parkForm, amenities: e.target.value })}
-              placeholder="e.g. Jogging Trail, Children Playground, Gazebo, Picnic Sheds"
-              className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-emerald-600"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-[#334155] mb-1">Status</label>
-              <select value={parkForm.status}
-                onChange={e => setParkForm({ ...parkForm, status: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-emerald-600"
-              >
-                <option value="Available">Open / Available</option>
-                <option value="Under Maintenance">Under Maintenance</option>
-                <option value="Closed">Temporarily Closed</option>
-              </select>
-            </div>
-            <Input
-              label="Image URL (optional)"
-              value={parkForm.image_url}
-              onChange={e => setParkForm({ ...parkForm, image_url: e.target.value })}
-              placeholder="https://..."
-            />
+            <label className="block text-xs font-semibold text-[#334155] mb-1">Status</label>
+            <select value={parkForm.status}
+              onChange={e => setParkForm({ ...parkForm, status: e.target.value })}
+              className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-emerald-600 font-medium"
+            >
+              <option value="Available">Available (Visible & Bookable by Citizens)</option>
+              <option value="Not Available">Not Available (Hidden from Citizens)</option>
+            </select>
           </div>
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
             <button type="button" onClick={() => setIsParkFormOpen(false)}

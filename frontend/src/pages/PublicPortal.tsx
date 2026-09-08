@@ -185,7 +185,7 @@ export function PublicPortal() {
   const [selectedAssetDetail, setSelectedAssetDetail] = useState<Asset | null>(null);
 
   useEffect(() => {
-    fetchFacilities().then(setFacilities).catch(console.error);
+    fetchFacilities().then(list => setFacilities(list.filter((f: any) => (f.status || 'Available').toLowerCase() === 'available'))).catch(console.error);
     fetchAssets().then(setPublicAssets).catch(console.error);
     fetchCemeteries().then((list) => {
       if (list.length > 0) {
