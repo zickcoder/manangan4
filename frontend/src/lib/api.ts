@@ -1,9 +1,9 @@
 import { addNotification } from './notifications';
 
 // Smart Hybrid API Client — supports eProvider Cloud DB, custom backend, or browser localStorage fallback
-const rawBase = (import.meta as any).env?.VITE_API_URL || '';
-const API_BASE = rawBase ? `${rawBase.replace(/\/$/, '')}/api` : '/api';
-const HAS_BACKEND = Boolean(rawBase);
+const rawBase = (import.meta as any).env?.VITE_API_URL || 'https://govserve-backend.onrender.com';
+const API_BASE = `${rawBase.replace(/\/$/, '')}/api`;
+const HAS_BACKEND = true;
 
 // eProvider (Supabase-compatible) Cloud Database - robust detection with fallbacks
 const env = (import.meta as any).env || {};
