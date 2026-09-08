@@ -1,7 +1,15 @@
 import { addNotification } from './notifications';
 
-// Smart Hybrid API Client — supports eProvider Cloud DB, custom backend, or browser localStorage fallback
-const rawBase = (import.meta as any).env?.VITE_API_URL || 'https://govserve-backend.onrender.com';
+// Live Render Cloud Backend API (Node.js Express + PostgreSQL)
+const RENDER_BACKEND_URL = 'https://govserve-backend.onrender.com';
+
+// In eProvider builds, VITE_API_URL is auto-injected with supa.eprovider.site (which is a database, not an express backend).
+// We strictly ignore any eprovider/supabase URLs for the Express API and always route to Render.
+const envApiUrl = (import.meta as any).env?.VITE_API_URL || '';
+const rawBase = (envApiUrl && !envApiUrl.includes('eprovider.site') && !envApiUrl.includes('supabase'))
+  ? envApiUrl
+  : RENDER_BACKEND_URL;
+
 const API_BASE = `${rawBase.replace(/\/$/, '')}/api`;
 const HAS_BACKEND = true;
 
