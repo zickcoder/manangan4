@@ -210,6 +210,15 @@ export async function initDatabase() {
     `);
 
     console.log('✅ Schema verified with Columbarium Wall Grid, Asset Specs/Image & Multi-Cemetery support.');
+    
+    // Purge removed facility and its linked reservations
+    try {
+      await pool.query(`
+        DELETE FROM facility_reservations WHERE facility_id IN (SELECT id FROM facilities WHERE name ILIKE '%Mindanao Community Sports Gymnasium%');
+        DELETE FROM facilities WHERE name ILIKE '%Mindanao Community Sports Gymnasium%';
+      `);
+    } catch {}
+
     await seedDemoData();
 
   } catch (err) {
@@ -237,7 +246,6 @@ async function seedDemoData() {
   await pool.query(`
     INSERT INTO facilities (name, category, capacity, hourly_rate, location, amenities, status, image_url) VALUES
     ('Barangay 178 Multi-Purpose Civic Center', 'Government Facility', 350, 500.00, 'Civic Complex, Mindanao Ave.', 'Central Aircon, Full PA Sound System, Stage, 300 Chairs, Generator Backup', 'Available', 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=500&auto=format&fit=crop&q=80'),
-    ('Mindanao Community Sports Gymnasium', 'Government Facility', 600, 750.00, 'Zone 4 Sports Arena', 'Hardwood Basketball Court, Electronic Scoreboard, Bleachers, Shower Rooms', 'Available', 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=500&auto=format&fit=crop&q=80'),
     ('Camarin Green Urban Recreation Park', 'Park & Recreation', 500, 0.00, 'Camarin Road Sector 3', 'Jogging Trail, Children Playground, Gazebo, Covered Picnic Sheds, Solar Lights', 'Available', 'https://images.unsplash.com/photo-1519331379826-f10be5486c6f?w=500&auto=format&fit=crop&q=80'),
     ('Purok 7 Community Amphitheater & Plaza', 'Park & Recreation', 400, 250.00, 'Purok 7 Hillsview', 'Open-Air Stage, Tiered Seating, Ambient Garden Lighting, Perimeter Fence', 'Available', 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=500&auto=format&fit=crop&q=80')
     ON CONFLICT DO NOTHING;

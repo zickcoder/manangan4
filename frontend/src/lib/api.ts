@@ -79,17 +79,6 @@ const DEFAULT_FACILITIES = [
     image_url: 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=500&auto=format&fit=crop&q=80'
   },
   {
-    id: 2,
-    name: 'Mindanao Community Sports Gymnasium',
-    category: 'Government Facility',
-    capacity: 600,
-    hourly_rate: 750.00,
-    location: 'Zone 4 Sports Arena',
-    amenities: 'Hardwood Basketball Court, Electronic Scoreboard, Bleachers, Shower Rooms',
-    status: 'Available',
-    image_url: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=500&auto=format&fit=crop&q=80'
-  },
-  {
     id: 3,
     name: 'Camarin Green Urban Recreation Park',
     category: 'Park & Recreation',
@@ -543,6 +532,11 @@ export async function updateFacility(id: number, payload: any) {
 export async function deleteFacility(id: number) {
   const list = getStore('facilities', DEFAULT_FACILITIES);
   setStore('facilities', list.filter((f: any) => Number(f.id) !== Number(id)));
+
+  // Cleanly purge any reservations linked to this deleted facility from local store
+  const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
+  setStore('reservations', reservations.filter((r: any) => Number(r.facility_id) !== Number(id)));
+
   if (HAS_BACKEND) try { await fetch(`${API_BASE}/facilities/${id}`, { method: 'DELETE' }); } catch {}
   if (HAS_EPROVIDER) try {
     await fetch(`${EP_REST}/facilities?id=eq.${id}`, { method: 'DELETE', headers: EP_HEADERS });

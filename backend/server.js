@@ -136,6 +136,8 @@ app.put('/api/facilities/:id', async (req, res) => {
 app.delete('/api/facilities/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    // Cascade delete linked reservations first to prevent foreign key constraint violations
+    await pool.query('DELETE FROM facility_reservations WHERE facility_id = $1', [id]);
     await pool.query('DELETE FROM facilities WHERE id = $1', [id]);
     res.json({ success: true, message: 'Facility deleted' });
   } catch (error) {
