@@ -308,6 +308,11 @@ export function PublicPortal() {
       return;
     }
 
+    if (!/^09\d{9}$/.test(reserveForm.applicant_phone.trim())) {
+      alert('Contact number must be exactly 11 digits and start with 09 (e.g. 09171234567).');
+      return;
+    }
+
     const finalPurpose = reserveForm.purpose === 'Other Government / Civic Activity' && reserveForm.custom_purpose
       ? reserveForm.custom_purpose
       : reserveForm.purpose;
@@ -337,9 +342,14 @@ export function PublicPortal() {
       !utilityForm.citizen_phone?.trim() ||
       !utilityForm.location?.trim() ||
       !utilityForm.description?.trim() ||
-      !utilityForm.incident_type?.trim()
+      !utilityForm.service_type?.trim()
     ) {
       alert('Please complete all required fields: Citizen Name, Phone, Location, Incident Type, and Description.');
+      return;
+    }
+
+    if (!/^09\d{9}$/.test(utilityForm.citizen_phone.trim())) {
+      alert('Contact number must be exactly 11 digits and start with 09 (e.g. 09171234567).');
       return;
     }
 
@@ -395,6 +405,11 @@ export function PublicPortal() {
       !burialForm.applicant_address?.trim()
     ) {
       setBurialError('SECTION C: Please fill out all applicant / next of kin contact information.');
+      return;
+    }
+
+    if (!/^09\d{9}$/.test(burialForm.contact_phone.trim())) {
+      setBurialError('SECTION C: Contact number must be exactly 11 digits and start with 09 (e.g. 09171234567).');
       return;
     }
 
@@ -709,9 +724,10 @@ export function PublicPortal() {
                           <Input
                             label="Contact Phone Number *"
                             required
-                            placeholder="+63 917 000 0000"
+                            placeholder="09171234567"
+                            maxLength={11}
                             value={reserveForm.applicant_phone}
-                            onChange={(e) => setReserveForm({ ...reserveForm, applicant_phone: e.target.value })}
+                            onChange={(e) => setReserveForm({ ...reserveForm, applicant_phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
                           />
                           <div>
                             <Input
@@ -982,9 +998,10 @@ export function PublicPortal() {
                           <Input
                             label="Contact Phone Number *"
                             required
-                            placeholder="+63 917 888 1234"
+                            placeholder="09171234567"
+                            maxLength={11}
                             value={utilityForm.citizen_phone}
-                            onChange={(e) => setUtilityForm({ ...utilityForm, citizen_phone: e.target.value })}
+                            onChange={(e) => setUtilityForm({ ...utilityForm, citizen_phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
                           />
                         </div>
 
@@ -1371,9 +1388,10 @@ export function PublicPortal() {
                             <Input
                               label="Contact Number *"
                               required
-                              placeholder="+63 917 222 8891"
+                              placeholder="09171234567"
+                              maxLength={11}
                               value={burialForm.contact_phone}
-                              onChange={(e) => setBurialForm({ ...burialForm, contact_phone: e.target.value })}
+                              onChange={(e) => setBurialForm({ ...burialForm, contact_phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
                             />
                             <Input
                               label="Email Address (Optional)"

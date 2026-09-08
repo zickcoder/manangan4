@@ -330,29 +330,93 @@ app.get('/api/cemetery/burials', async (req, res) => {
 // File Burial Application (Public or Staff)
 app.post('/api/cemetery/burials', async (req, res) => {
   try {
-    const { deceased_name, date_of_birth, date_of_death, burial_date, plot_id, contact_person, contact_phone } = req.body;
-    const refCode = `BUR-2026-${Math.floor(100 + Math.random() * 900)}`;
-    const permitNo = `BP-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    const { 
+      reference_no, permit_no, deceased_name, date_of_birth, date_of_death, burial_date, burial_time,
+      plot_id, plot_code, section, cemetery_name,
+      contact_person, contact_phone, applicant_email, citizen_email, citizen_id,
+      cause_of_death, deceased_address, attending_physician, applicant_relationship, applicant_address,
+      status, fee_amount, remarks
+    } = req.body;
+    
+    const refCode = reference_no || `BUR-2026-${Math.floor(100 + Math.random() * 900)}`;
+    const permNo = permit_no || `BP-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    const finalStatus = status || 'Pending Review';
+    const emailVal = (applicant_email || citizen_email || '').toLowerCase().trim();
 
     const result = await pool.query(`
       INSERT INTO burial_records (
-        reference_no, deceased_name, date_of_birth, date_of_death, burial_date,
-        plot_id, contact_person, contact_phone, status, permit_no
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Approved', $9)
+        reference_no, permit_no, deceased_name, date_of_birth, date_of_death, burial_date, burial_time,
+        plot_id, plot_code, section, cemetery_name,
+        contact_person, contact_phone, applicant_email, citizen_email, citizen_id,
+        cause_of_death, deceased_address, attending_physician, applicant_relationship, applicant_address,
+        status, fee_amount, remarks
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+      ON CONFLICT (reference_no) DO UPDATE SET
+        status = EXCLUDED.status,
+        remarks = EXCLUDED.remarks,
+        burial_date = EXCLUDED.burial_date,
+        burial_time = EXCLUDED.burial_time
       RETURNING *
-    `, [refCode, deceased_name, date_of_birth || null, date_of_death, burial_date, plot_id || null, contact_person, contact_phone, permitNo]);
+    `, [
+      refCode, permNo, deceased_name, date_of_birth || null, date_of_death, burial_date, burial_time || '10:00 AM',
+      plot_id || null, plot_code || null, section || null, cemetery_name || 'Barangay 178 Municipal Cemetery',
+      contact_person, contact_phone, emailVal, emailVal, citizen_id || null,
+      cause_of_death || null, deceased_address || null, attending_physician || null, applicant_relationship || null, applicant_address || null,
+      finalStatus, parseFloat(fee_amount || 0), remarks || null
+    ]);
 
-    // Mark plot as RESERVED (not Occupied) — becomes Occupied only after actual interment is completed
+    // Mark plot as RESERVED
     if (plot_id) {
       await pool.query("UPDATE cemetery_plots SET status = 'Reserved' WHERE id = $1", [plot_id]);
     }
 
     await pool.query(
       'INSERT INTO activity_logs (user_name, action, module, details) VALUES ($1, $2, $3, $4)',
-      [contact_person, 'Burial Registered', 'CEMETERY', `Permit ${permitNo} for ${deceased_name}`]
+      [contact_person, 'Burial Registered', 'CEMETERY', `Permit ${permNo} for ${deceased_name}`]
     );
 
     res.status(201).json({ success: true, message: 'Burial permit registered!', data: result.rows[0] });
+  } catch (error) {
+    console.error('Error saving burial:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update Burial Status (Approve / Reject / Mark Paid)
+app.patch('/api/cemetery/burials/:id/status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, remarks, fee_amount, permit_no, payment_method, paid_at, payment_due_date } = req.body;
+
+    const result = await pool.query(`
+      UPDATE burial_records
+      SET status = COALESCE($1, status),
+          remarks = COALESCE($2, remarks),
+          fee_amount = COALESCE($3, fee_amount),
+          permit_no = COALESCE($4, permit_no),
+          payment_method = COALESCE($5, payment_method),
+          paid_at = COALESCE($6, paid_at),
+          payment_due_date = COALESCE($7, payment_due_date)
+      WHERE id = $8 OR reference_no = $8
+      RETURNING *
+    `, [status, remarks, fee_amount, permit_no, payment_method, paid_at, payment_due_date, id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Burial record not found' });
+    }
+
+    const updated = result.rows[0];
+    if (status === 'Cancelled' || status === 'Rejected') {
+      if (updated.plot_id) {
+        await pool.query("UPDATE cemetery_plots SET status = 'Available' WHERE id = $1", [updated.plot_id]);
+      }
+    } else if (status === 'Paid' || status === 'Approved') {
+      if (updated.plot_id) {
+        await pool.query("UPDATE cemetery_plots SET status = 'Reserved' WHERE id = $1", [updated.plot_id]);
+      }
+    }
+
+    res.json({ success: true, data: updated });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -484,7 +548,7 @@ app.get('/api/assets', async (req, res) => {
 // Add New Asset
 app.post('/api/assets', async (req, res) => {
   try {
-    const { name, category, serial_no, purchase_date, purchase_cost, current_condition, assigned_department, next_maintenance_due } = req.body;
+    const { name, category, serial_no, purchase_date, purchase_cost, current_condition, assigned_department, next_maintenance_due, image_url, specs } = req.body;
     const prefix = category.includes('Vehicle') ? 'AST-VEH' : category.includes('Heavy') ? 'AST-EQP' : 'AST-PMP';
     const asset_tag = `${prefix}-${Math.floor(100 + Math.random() * 900)}`;
 
@@ -493,10 +557,11 @@ app.post('/api/assets', async (req, res) => {
     const result = await pool.query(`
       INSERT INTO assets (
         asset_tag, name, category, serial_no, purchase_date, purchase_cost,
-        current_condition, assigned_department, last_maintenance_date, next_maintenance_due, ai_maintenance_alert
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE, $9, $10)
+        current_condition, assigned_department, last_maintenance_date, next_maintenance_due, ai_maintenance_alert,
+        image_url, specs
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE, $9, $10, $11, $12)
       RETURNING *
-    `, [asset_tag, name, category, serial_no, purchase_date, parseFloat(purchase_cost || 0), current_condition || 'Operational', assigned_department, next_maintenance_due, alertText]);
+    `, [asset_tag, name, category, serial_no, purchase_date, parseFloat(purchase_cost || 0), current_condition || 'Operational', assigned_department, next_maintenance_due, alertText, image_url || null, specs || null]);
 
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (error) {

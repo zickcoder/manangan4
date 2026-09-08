@@ -136,22 +136,23 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
   // Keep form fields synced if user switches account or state loads
   useEffect(() => {
     if (currentUser?.email) {
+      const cleanPhone = (currentUser.phone || '').replace(/\D/g, '').slice(0, 11);
       setReserveForm(prev => ({
         ...prev,
         applicant_name: prev.applicant_name || currentUser.name || '',
         applicant_email: prev.applicant_email || currentUser.email || '',
-        applicant_phone: prev.applicant_phone || currentUser.phone || ''
+        applicant_phone: prev.applicant_phone || cleanPhone || ''
       }));
       setUtilityForm(prev => ({
         ...prev,
         citizen_name: prev.citizen_name || currentUser.name || '',
-        citizen_phone: prev.citizen_phone || currentUser.phone || ''
+        citizen_phone: prev.citizen_phone || cleanPhone || '09171234567'
       }));
       setBurialForm(prev => ({
         ...prev,
         contact_person: prev.contact_person || currentUser.name || '',
         applicant_email: prev.applicant_email || currentUser.email || '',
-        contact_phone: prev.contact_phone || currentUser.phone || ''
+        contact_phone: prev.contact_phone || cleanPhone || '09171234567'
       }));
     }
   }, [currentUser?.email]);
@@ -172,7 +173,7 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
 
   const [utilityForm, setUtilityForm] = useState({
     citizen_name: currentUser?.name || 'Juan M. Dela Cruz',
-    citizen_phone: currentUser?.phone || '+63 917 123 4567',
+    citizen_phone: currentUser?.phone ? currentUser.phone.replace(/\D/g, '').slice(0, 11) : '09171234567',
     service_type: 'Water Main Leak',
     location: '',
     affected_households: HOUSEHOLD_OPTIONS[1],
@@ -224,7 +225,7 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     // Section C
     contact_person: currentUser?.name || 'Juan M. Dela Cruz',
     applicant_relationship: 'Spouse',
-    contact_phone: currentUser?.phone || '+63 917 123 4567',
+    contact_phone: currentUser?.phone ? currentUser.phone.replace(/\D/g, '').slice(0, 11) : '09171234567',
     applicant_email: currentUser?.email || 'juan.delacruz@citizen.gov.ph',
     applicant_address: 'Barangay 178, Purok 3',
     // Section D (Real Upload)
@@ -477,6 +478,16 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
       return;
     }
 
+    if (!/^09\d{9}$/.test(reserveForm.applicant_phone.trim())) {
+      setReserveError('Contact number must be exactly 11 digits and start with 09 (e.g. 09171234567).');
+      return;
+    }
+
+    if (aiConflict?.hasConflict && !activeResubmit) {
+      setReserveError('Cannot submit reservation: ' + (aiConflict.aiAnalysis || 'Schedule slot conflict detected. Please select an alternative slot.'));
+      return;
+    }
+
     if (isPaxExceeded) {
       setReserveError(`Number of attendees (${currentAttendees}) exceeds maximum venue capacity (${selectedFacilityObj?.capacity}).`);
       return;
@@ -525,9 +536,14 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
       !utilityForm.citizen_phone?.trim() ||
       !utilityForm.location?.trim() ||
       !utilityForm.description?.trim() ||
-      !utilityForm.incident_type?.trim()
+      !utilityForm.service_type?.trim()
     ) {
       setUtilityError('Please fill out all required incident fields: Citizen Name, Phone, Location, Incident Type, and Detailed Description.');
+      return;
+    }
+
+    if (!/^09\d{9}$/.test(utilityForm.citizen_phone.trim())) {
+      setUtilityError('Contact number must be exactly 11 digits and start with 09 (e.g. 09171234567).');
       return;
     }
 
@@ -589,6 +605,11 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
       !burialForm.applicant_address?.trim()
     ) {
       setBurialError('SECTION C: Please fill out all applicant / next of kin contact information.');
+      return;
+    }
+
+    if (!/^09\d{9}$/.test(burialForm.contact_phone.trim())) {
+      setBurialError('SECTION C: Contact number must be exactly 11 digits and start with 09 (e.g. 09171234567).');
       return;
     }
 
@@ -813,8 +834,10 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                         <Input
                           label="Contact Number *"
                           required
+                          placeholder="09171234567"
+                          maxLength={11}
                           value={reserveForm.applicant_phone}
-                          onChange={(e) => setReserveForm({ ...reserveForm, applicant_phone: e.target.value })}
+                          onChange={(e) => setReserveForm({ ...reserveForm, applicant_phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
                         />
                         <div>
                           <Input
@@ -1153,8 +1176,10 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                     <Input
                       label="Contact Number *"
                       required
+                      placeholder="09171234567"
+                      maxLength={11}
                       value={utilityForm.citizen_phone}
-                      onChange={(e) => setUtilityForm({ ...utilityForm, citizen_phone: e.target.value })}
+                      onChange={(e) => setUtilityForm({ ...utilityForm, citizen_phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
                     />
                   </div>
 
@@ -1482,8 +1507,10 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                       <Input
                         label="Contact Number *"
                         required
+                        placeholder="09171234567"
+                        maxLength={11}
                         value={burialForm.contact_phone}
-                        onChange={(e) => setBurialForm({ ...burialForm, contact_phone: e.target.value })}
+                        onChange={(e) => setBurialForm({ ...burialForm, contact_phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
                       />
                       <Input
                         label="Email Address (Optional)"

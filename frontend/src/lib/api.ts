@@ -512,30 +512,36 @@ export async function fetchFacilities(category = 'all') {
 
 export async function fetchReservations(status = 'all', category = 'all') {
   let list: any[] = [];
+  let serverList: any[] = [];
   let fetched = false;
 
-  if (HAS_EPROVIDER) try {
-    const q = status !== 'all' ? `status=eq.${encodeURIComponent(status)}&order=id.desc` : 'order=id.desc';
-    const data = await epGet('facility_reservations', q);
-    if (Array.isArray(data) && data.length > 0) {
-      list = data;
-      fetched = true;
-    }
-  } catch {}
-
-  if (!fetched && HAS_BACKEND) try {
+  if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/facilities/reservations?status=${encodeURIComponent(status)}&category=${encodeURIComponent(category)}`);
     if (res.ok) { 
       const data = await res.json(); 
-      if (data?.data) {
-        list = data.data;
+      if (Array.isArray(data?.data)) {
+        serverList = data.data;
         fetched = true;
       }
     }
   } catch {}
 
-  if (!fetched) {
-    list = getStore('reservations', DEFAULT_RESERVATIONS);
+  if (!fetched && HAS_EPROVIDER) try {
+    const q = status !== 'all' ? `status=eq.${encodeURIComponent(status)}&order=id.desc` : 'order=id.desc';
+    const data = await epGet('facility_reservations', q);
+    if (Array.isArray(data) && data.length > 0) {
+      serverList = data;
+      fetched = true;
+    }
+  } catch {}
+
+  const localList = getStore('reservations', DEFAULT_RESERVATIONS);
+  if (fetched && serverList.length > 0) {
+    const serverRefs = new Set(serverList.map((r: any) => (r.reference_no || '').toLowerCase()));
+    const unmerged = localList.filter((r: any) => r.reference_no && !serverRefs.has((r.reference_no || '').toLowerCase()));
+    list = [...unmerged, ...serverList];
+  } else {
+    list = localList;
   }
 
   // Filter by status if not all
@@ -620,18 +626,29 @@ export async function createReservation(payload: any) {
       remarks: 'Resubmitted with updated schedule/details'
     };
 
-    if (HAS_EPROVIDER) try {
-      await epPatch('facility_reservations', `id=eq.${resubmitId}`, updateData);
-      return { success: true, reference_no: existingRef, data: { id: resubmitId, ...updateData } };
-    } catch {}
-
     const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
     const existingIdx = reservations.findIndex((r: any) => r.id === resubmitId || String(r.id) === String(resubmitId));
     if (existingIdx !== -1) {
       reservations[existingIdx] = { ...reservations[existingIdx], ...updateData };
       setStore('reservations', reservations);
-      return { success: true, reference_no: reservations[existingIdx].reference_no || existingRef, data: reservations[existingIdx] };
     }
+
+    if (HAS_BACKEND) try {
+      await fetch(`${API_BASE}/facilities/reservations/${resubmitId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData)
+      });
+    } catch {}
+
+    if (HAS_EPROVIDER) try {
+      await epPatch('facility_reservations', `id=eq.${resubmitId}`, updateData);
+    } catch {}
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('govserve_data_updated'));
+    }
+    return { success: true, reference_no: existingRef, data: { id: resubmitId, ...updateData } };
   }
 
   const refNo = `RES-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
@@ -671,22 +688,32 @@ export async function createReservation(payload: any) {
     created_at: new Date().toISOString()
   };
 
-  if (HAS_EPROVIDER) try {
-    const result = await epPost('facility_reservations', newReservation);
-    const created = Array.isArray(result) ? result[0] : result;
-    return { success: true, reference_no: refNo, data: created || newReservation };
-  } catch {}
+  // Always save to local store
+  const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
+  reservations.unshift(newReservation);
+  setStore('reservations', reservations);
 
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/facilities/reservations`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newReservation)
     });
-    if (res.ok) return await res.json();
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.data) {
+        newReservation.id = data.data.id || newReservation.id;
+        setStore('reservations', reservations);
+      }
+    }
   } catch {}
 
-  const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
-  reservations.unshift(newReservation);
-  setStore('reservations', reservations);
+  if (HAS_EPROVIDER) try {
+    await epPost('facility_reservations', newReservation);
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('govserve_data_updated'));
+  }
+
   return { success: true, reference_no: refNo, data: newReservation };
 }
 
@@ -698,19 +725,32 @@ export async function updateReservationStatus(
   extraData?: { fee_amount?: number; payment_due_date?: string; paid_at?: string; payment_method?: string }
 ) {
   let targetEmail = '';
-  if (HAS_EPROVIDER) try {
-    const res = await epGet('facility_reservations', `id=eq.${id}&select=applicant_email,citizen_email`);
-    if (Array.isArray(res) && res[0]) {
-      targetEmail = res[0].applicant_email || res[0].citizen_email || '';
+  if (HAS_BACKEND) try {
+    const res = await fetch(`${API_BASE}/facilities/reservations/${id}/status`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, remarks, reviewer_name, ...extraData })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.data) {
+        targetEmail = data.data.applicant_email || data.data.citizen_email || '';
+      }
     }
   } catch {}
-  if (!targetEmail) {
-    const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
-    const item = reservations.find((r: any) => r.id === id || String(r.id) === String(id));
-    if (item) targetEmail = item.applicant_email || item.citizen_email || '';
+
+  if (HAS_EPROVIDER) try {
+    await epPatch('facility_reservations', `id=eq.${id}`, { status, remarks, reviewer_name, ...extraData });
+  } catch {}
+
+  const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
+  const item = reservations.find((r: any) => r.id === id || String(r.id) === String(id));
+  if (item) { 
+    item.status = status; 
+    if (remarks) item.remarks = remarks;
+    if (extraData) Object.assign(item, extraData);
+    if (!targetEmail) targetEmail = item.applicant_email || item.citizen_email || '';
+    setStore('reservations', reservations); 
   }
 
-  // Trigger real-time notification to Citizen only when we have a valid email
   if (targetEmail && targetEmail.includes('@')) {
     addNotification({
       title: `Reservation ${status}`,
@@ -721,25 +761,42 @@ export async function updateReservationStatus(
     });
   }
 
-  if (HAS_EPROVIDER) try {
-    await epPatch('facility_reservations', `id=eq.${id}`, { status, remarks, reviewer_name, ...extraData });
-    return { success: true };
-  } catch {}
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/facilities/reservations/${id}/status`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, remarks, reviewer_name, ...extraData })
-    });
-    if (res.ok) return await res.json();
-  } catch {}
-  const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
-  const item = reservations.find((r: any) => r.id === id || String(r.id) === String(id));
-  if (item) { 
-    item.status = status; 
-    if (remarks) item.remarks = remarks;
-    if (extraData) Object.assign(item, extraData);
-    setStore('reservations', reservations); 
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('govserve_data_updated'));
   }
   return { success: true };
+}
+
+// Time range overlap helper for accurate schedule conflict detection
+function parse12HToMinutes(timeStr: string): number {
+  if (!timeStr) return 0;
+  const cleaned = timeStr.trim().toLowerCase();
+  const match = cleaned.match(/(\d+)(?::(\d+))?\s*(am|pm)?/);
+  if (!match) return 0;
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2] ? parseInt(match[2], 10) : 0;
+  const isPm = match[3] === 'pm';
+  const isAm = match[3] === 'am';
+  if (isPm && hours < 12) hours += 12;
+  if (isAm && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+}
+
+function areTimeSlotsConflicting(startA: string, endA: string, startB: string, endB: string): boolean {
+  const minStartA = parse12HToMinutes(startA);
+  const minEndA = parse12HToMinutes(endA);
+  const minStartB = parse12HToMinutes(startB);
+  const minEndB = parse12HToMinutes(endB);
+
+  // If time parsing produced valid ranges, check interval overlap: startA < endB && startB < endA
+  if (minStartA < minEndA && minStartB < minEndB) {
+    return minStartA < minEndB && minStartB < minEndA;
+  }
+  // Fallback: direct equality
+  return (
+    startA.trim().toLowerCase() === startB.trim().toLowerCase() ||
+    endA.trim().toLowerCase() === endB.trim().toLowerCase()
+  );
 }
 
 // Strict Double Booking Conflict Prevention (with self-resubmission conflict bypass)
@@ -770,7 +827,13 @@ export async function checkDoubleBooking(
     } catch {}
   }
 
-  const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
+  // Fetch live reservations from backend + local store
+  let reservations: any[] = [];
+  try {
+    reservations = await fetchReservations('all', 'all');
+  } catch {
+    reservations = getStore('reservations', DEFAULT_RESERVATIONS);
+  }
 
   // Determine if we're checking a Park or a Gov Facility
   const isCheckingPark = facilityCategory
@@ -778,6 +841,9 @@ export async function checkDoubleBooking(
     : (facilityName.toLowerCase().includes('park') || facilityName.toLowerCase().includes('amphitheater') ||
        facilityName.toLowerCase().includes('plaza') || facilityName.toLowerCase().includes('grounds') ||
        facilityName.toLowerCase().includes('recreation'));
+
+  // Target event date normalized (YYYY-MM-DD)
+  const targetDateStr = (eventDate || '').split('T')[0].trim();
 
   // Find any active reservation for the EXACT same facility, date, and overlapping time
   const conflict = reservations.find((r: any) => {
@@ -788,7 +854,6 @@ export async function checkDoubleBooking(
     const rCatRaw = (r.facility_category || r.category || r.facility_name || '').toLowerCase();
     const rIsPark = rCatRaw.includes('park') || rCatRaw.includes('amphitheater') ||
                     rCatRaw.includes('plaza') || rCatRaw.includes('recreation') || rCatRaw.includes('grounds');
-    // A Parks booking CANNOT conflict with a Gov Facility booking and vice-versa
     if (isCheckingPark !== rIsPark) return false;
     // ───────────────────────────────────────────────────────────────────────
 
@@ -801,9 +866,12 @@ export async function checkDoubleBooking(
     const sameFacility = idMatches || nameMatches;
     if (!sameFacility) return false;
 
-    const sameDate = r.event_date === eventDate;
-    const sameTime = r.start_time === startTime || r.end_time === endTime;
-    return sameDate && sameTime;
+    // Date comparison (robust to ISO strings or YYYY-MM-DD)
+    const rDateStr = (r.event_date || '').split('T')[0].trim();
+    if (rDateStr !== targetDateStr) return false;
+
+    // Time slot conflict check
+    return areTimeSlotsConflicting(r.start_time || '', r.end_time || '', startTime, endTime);
   });
 
   if (conflict) {
@@ -813,7 +881,7 @@ export async function checkDoubleBooking(
     const cId = conflict.citizen_id;
     const uId = currentUserId;
 
-    // Strict identity match: EXACT citizen_id OR EXACT email. NEVER match by loose name!
+    // Strict identity match: EXACT citizen_id OR EXACT email
     const isOwnBooking = Boolean(
       (uId && cId && String(uId) === String(cId)) ||
       (uEmail && cEmail && uEmail.includes('@') && uEmail === cEmail)
@@ -840,10 +908,10 @@ export async function checkDoubleBooking(
     return {
       hasConflict: true,
       isOwnSchedule: false,
-      message: `This time slot is already reserved for this venue on ${eventDate} (${conflict.start_time} - ${conflict.end_time}). Please select another available schedule.`,
+      message: `This time slot is already reserved for this venue on ${targetDateStr} (${conflict.start_time} - ${conflict.end_time}). Please select another available schedule.`,
       existingBooking: null, // Protected: do not leak applicant identity
       suggestedSlots: [
-        `${eventDate} (02:00 PM - 06:00 PM)`
+        `${targetDateStr} (02:00 PM - 06:00 PM)`
       ]
     };
   }
@@ -851,7 +919,7 @@ export async function checkDoubleBooking(
   return {
     hasConflict: false,
     isOwnSchedule: false,
-    message: `Slot is available for ${facilityName} on ${eventDate}.`,
+    message: `Slot is available for ${facilityName} on ${targetDateStr}.`,
     existingBooking: null,
     suggestedSlots: []
   };
@@ -1012,20 +1080,44 @@ function processAutoOccupancy() {
 
 export async function fetchBurials() {
   processAutoOccupancy();
+  let serverList: any[] = [];
+  let fetched = false;
+
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/cemetery/burials`);
     if (res.ok) {
       const data = await res.json();
-      if (data?.data) return data.data;
+      if (Array.isArray(data?.data)) {
+        serverList = data.data;
+        fetched = true;
+      }
     }
   } catch {}
 
-  return getStore('burials', DEFAULT_BURIALS);
+  const localList = getStore('burials', DEFAULT_BURIALS);
+  if (fetched && serverList.length > 0) {
+    const serverRefs = new Set(serverList.map((b: any) => (b.reference_no || '').toLowerCase()));
+    const unmerged = localList.filter((b: any) => b.reference_no && !serverRefs.has((b.reference_no || '').toLowerCase()));
+    return [...unmerged, ...serverList];
+  }
+  return localList;
 }
 
-export async function updateBurialStatus(id: number, status: string, extraData?: { fee_amount?: number; permit_no?: string; remarks?: string; payment_due_date?: string; paid_at?: string; payment_method?: string }) {
+export async function updateBurialStatus(id: number | string, status: string, extraData?: { fee_amount?: number; permit_no?: string; remarks?: string; payment_due_date?: string; paid_at?: string; payment_method?: string }) {
+  if (HAS_BACKEND) try {
+    await fetch(`${API_BASE}/cemetery/burials/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, ...extraData }),
+    });
+  } catch {}
+
+  if (HAS_EPROVIDER) try {
+    await epPatch('burial_records', `id=eq.${id}`, { status, ...extraData });
+  } catch {}
+
   const burials = getStore('burials', DEFAULT_BURIALS);
-  const index = burials.findIndex((b: any) => b.id === id || String(b.id) === String(id));
+  const index = burials.findIndex((b: any) => b.id === id || String(b.id) === String(id) || b.reference_no === id);
   if (index !== -1) {
     const burial = burials[index];
     burial.status = status;
@@ -1042,7 +1134,7 @@ export async function updateBurialStatus(id: number, status: string, extraData?:
           setStore('plots', plots);
         }
       }
-    } else if (status === 'Pending Payment' || status === 'Paid') {
+    } else if (status === 'Pending Payment' || status === 'Paid' || status === 'Approved') {
       if (burial.plot_id || burial.plot_code) {
         const plots = getStore('plots', generateInitialPlots());
         const plot = plots.find((p: any) => p.id === Number(burial.plot_id) || p.plot_code === burial.plot_code);
@@ -1067,9 +1159,13 @@ export async function updateBurialStatus(id: number, status: string, extraData?:
       });
     }
 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('govserve_data_updated'));
+    }
+
     return { success: true, data: burial };
   }
-  return { success: false, message: 'Burial record not found' };
+  return { success: true };
 }
 
 export async function createBurial(payload: any) {
@@ -1109,23 +1205,6 @@ export async function createBurial(payload: any) {
     }
   }
 
-  if (HAS_EPROVIDER) try {
-    const row = { ...citizenMeta, ...payload, reference_no: refNo, permit_no: permitNo, status: 'Pending Review' };
-    const result = await epPost('burial_records', row);
-    const created = Array.isArray(result) ? result[0] : result;
-    if (payload.plot_id) updatePlotStatus(Number(payload.plot_id), 'Reserved');
-    return { success: true, reference_no: refNo, permit_no: permitNo, data: created };
-  } catch {}
-
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/cemetery/burials`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) return await res.json();
-  } catch {}
-
   const newBurial = {
     id: Date.now(),
     reference_no: refNo,
@@ -1135,6 +1214,8 @@ export async function createBurial(payload: any) {
     ...payload,
     created_at: new Date().toISOString()
   };
+
+  // Always save to local store
   burials.unshift(newBurial);
   setStore('burials', burials);
 
@@ -1142,26 +1223,69 @@ export async function createBurial(payload: any) {
     updatePlotStatus(Number(payload.plot_id), 'Reserved');
   }
 
+  // Save to Render backend
+  if (HAS_BACKEND) try {
+    const res = await fetch(`${API_BASE}/cemetery/burials`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newBurial),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.data) {
+        newBurial.id = data.data.id || newBurial.id;
+        setStore('burials', burials);
+      }
+    }
+  } catch (err) {
+    console.warn('Backend burial post failed:', err);
+  }
+
+  if (HAS_EPROVIDER) try {
+    await epPost('burial_records', newBurial);
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('govserve_data_updated'));
+  }
+
   return { success: true, reference_no: refNo, permit_no: permitNo, data: newBurial };
 }
 
 export async function fetchUtilities(status = 'all', service_type = 'all') {
-  if (HAS_EPROVIDER) try {
-    const q = status !== 'all' ? `status=eq.${encodeURIComponent(status)}&order=id.desc` : 'order=id.desc';
-    const data = await epGet('utility_requests', q);
-    return Array.isArray(data) ? data : [];
-  } catch {}
+  let serverList: any[] = [];
+  let fetched = false;
+
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/utilities?status=${encodeURIComponent(status)}&service_type=${encodeURIComponent(service_type)}`);
     if (res.ok) {
       const data = await res.json();
-      if (data?.data) return data.data;
+      if (Array.isArray(data?.data)) {
+        serverList = data.data;
+        fetched = true;
+      }
     }
   } catch {}
 
-  let list = getStore('utilities', DEFAULT_UTILITIES);
+  if (!fetched && HAS_EPROVIDER) try {
+    const q = status !== 'all' ? `status=eq.${encodeURIComponent(status)}&order=id.desc` : 'order=id.desc';
+    const data = await epGet('utility_requests', q);
+    if (Array.isArray(data)) {
+      serverList = data;
+      fetched = true;
+    }
+  } catch {}
+
+  const localList = getStore('utilities', DEFAULT_UTILITIES);
+  let list = localList;
+  if (fetched && serverList.length > 0) {
+    const serverTickets = new Set(serverList.map((u: any) => (u.ticket_no || '').toLowerCase()));
+    const unmerged = localList.filter((u: any) => u.ticket_no && !serverTickets.has((u.ticket_no || '').toLowerCase()));
+    list = [...unmerged, ...serverList];
+  }
+
   if (status !== 'all') {
-    list = list.filter((u: any) => u.status.toLowerCase() === status.toLowerCase());
+    list = list.filter((u: any) => (u.status || '').toLowerCase() === status.toLowerCase());
   }
   if (service_type !== 'all') {
     list = list.filter((u: any) => u.service_type === service_type);
@@ -1184,13 +1308,14 @@ export async function createUtilityRequest(payload: any) {
   const isStaffBooking = callerRole !== 'Citizen';
 
   const utilities = getStore('utilities', DEFAULT_UTILITIES);
-  const ticketNo = `UTL-${new Date().getFullYear()}-${String(utilities.length + 1).padStart(3, '0')}`;
-  const aiScore = payload.service_type === 'Flash Flooding' ? 95 : payload.urgency === 'Urgent' ? 85 : 65;
+  const ticketNo = `REQ-${new Date().getFullYear()}-${String(utilities.length + 1).padStart(3, '0')}`;
+
+  const aiScore = payload.urgency === 'Urgent' ? 95 : payload.urgency === 'High' ? 80 : 60;
 
   if (!isStaffBooking) {
     addNotification({
-      title: 'New Water/Drainage Ticket Logged',
-      text: `Incident report (${ticketNo}) filed for ${payload.service_type || 'Hazard'} at ${payload.location || 'Municipal Area'}.`,
+      title: 'New Utility Incident Filed',
+      text: `${payload.service_type || 'Utility incident'} reported at ${payload.location || 'site'}. Priority Score: ${aiScore}.`,
       targetRole: 'Admin',
       category: 'utility'
     });
@@ -1206,22 +1331,6 @@ export async function createUtilityRequest(payload: any) {
     }
   }
 
-  if (HAS_EPROVIDER) try {
-    const row = { ...citizenMeta, ...payload, ticket_no: ticketNo, urgency: payload.urgency || 'Normal', ai_priority_score: aiScore, status: 'Pending' };
-    const result = await epPost('utility_requests', row);
-    const created = Array.isArray(result) ? result[0] : result;
-    return { success: true, ticket_no: ticketNo, data: created };
-  } catch {}
-
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/utilities`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) return await res.json();
-  } catch {}
-
   const newReq = {
     id: Date.now(),
     ticket_no: ticketNo,
@@ -1233,21 +1342,63 @@ export async function createUtilityRequest(payload: any) {
     status: 'Pending',
     created_at: new Date().toISOString()
   };
+
+  // Always save to local store
   utilities.unshift(newReq);
   setStore('utilities', utilities);
+
+  if (HAS_BACKEND) try {
+    const res = await fetch(`${API_BASE}/utilities`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newReq),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.data) {
+        newReq.id = data.data.id || newReq.id;
+        setStore('utilities', utilities);
+      }
+    }
+  } catch {}
+
+  if (HAS_EPROVIDER) try {
+    await epPost('utility_requests', newReq);
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('govserve_data_updated'));
+  }
+
   return { success: true, ticket_no: ticketNo, data: newReq };
 }
 
 export async function updateUtilityStatus(id: number, status: string, assigned_team?: string, resolution_notes?: string) {
   let targetEmail = '';
-  if (HAS_EPROVIDER) try {
-    const res = await epGet('utility_requests', `id=eq.${id}&select=citizen_email`);
-    if (Array.isArray(res) && res[0]) targetEmail = res[0].citizen_email || '';
+  if (HAS_BACKEND) try {
+    const res = await fetch(`${API_BASE}/utilities/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, assigned_team, resolution_notes }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.data) targetEmail = data.data.citizen_email || '';
+    }
   } catch {}
-  if (!targetEmail) {
-    const utilities = getStore('utilities', DEFAULT_UTILITIES);
-    const item = utilities.find((u: any) => u.id === id || String(u.id) === String(id));
-    if (item) targetEmail = item.citizen_email || '';
+
+  if (HAS_EPROVIDER) try {
+    await epPatch('utility_requests', `id=eq.${id}`, { status, assigned_team, resolution_notes });
+  } catch {}
+
+  const utilities = getStore('utilities', DEFAULT_UTILITIES);
+  const item = utilities.find((u: any) => u.id === id || String(u.id) === String(id));
+  if (item) {
+    item.status = status;
+    if (assigned_team) item.assigned_team = assigned_team;
+    if (resolution_notes) item.resolution_notes = resolution_notes;
+    if (!targetEmail) targetEmail = item.citizen_email || '';
+    setStore('utilities', utilities);
   }
 
   if (targetEmail && targetEmail.includes('@')) {
@@ -1260,40 +1411,35 @@ export async function updateUtilityStatus(id: number, status: string, assigned_t
     });
   }
 
-  if (HAS_EPROVIDER) try {
-    await epPatch('utility_requests', `id=eq.${id}`, { status, assigned_team, resolution_notes });
-    return { success: true };
-  } catch {}
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/utilities/${id}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, assigned_team, resolution_notes }),
-    });
-    if (res.ok) return await res.json();
-  } catch {}
-
-  const utilities = getStore('utilities', DEFAULT_UTILITIES);
-  const item = utilities.find((u: any) => u.id === id);
-  if (item) {
-    item.status = status;
-    if (assigned_team) item.assigned_team = assigned_team;
-    if (resolution_notes) item.resolution_notes = resolution_notes;
-    setStore('utilities', utilities);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('govserve_data_updated'));
   }
   return { success: true };
 }
 
 export async function fetchAssets(category = 'all', condition = 'all') {
+  let serverList: any[] = [];
+  let fetched = false;
+
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/assets?category=${encodeURIComponent(category)}&condition=${encodeURIComponent(condition)}`);
     if (res.ok) {
       const data = await res.json();
-      if (data?.data) return data.data;
+      if (Array.isArray(data?.data)) {
+        serverList = data.data;
+        fetched = true;
+      }
     }
   } catch {}
 
-  let list = getStore('assets', DEFAULT_ASSETS);
+  const localList = getStore('assets', DEFAULT_ASSETS);
+  let list = localList;
+  if (fetched && serverList.length > 0) {
+    const serverTags = new Set(serverList.map((a: any) => (a.asset_tag || '').toLowerCase()));
+    const unmerged = localList.filter((a: any) => a.asset_tag && !serverTags.has((a.asset_tag || '').toLowerCase()));
+    list = [...unmerged, ...serverList];
+  }
+
   if (category !== 'all') {
     list = list.filter((a: any) => a.category === category);
   }
@@ -1304,15 +1450,6 @@ export async function fetchAssets(category = 'all', condition = 'all') {
 }
 
 export async function createAsset(payload: any) {
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/assets`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) return await res.json();
-  } catch {}
-
   const assets = getStore('assets', DEFAULT_ASSETS);
   const assetTag = `AST-${new Date().getFullYear()}-${String(assets.length + 1).padStart(3, '0')}`;
   const newAsset = {
@@ -1324,7 +1461,27 @@ export async function createAsset(payload: any) {
   };
   assets.unshift(newAsset);
   setStore('assets', assets);
-  return { success: true, asset_tag: assetTag, data: newAsset };
+
+  if (HAS_BACKEND) try {
+    const res = await fetch(`${API_BASE}/assets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newAsset),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.data) {
+        newAsset.id = data.data.id || newAsset.id;
+        newAsset.asset_tag = data.data.asset_tag || newAsset.asset_tag;
+        setStore('assets', assets);
+      }
+    }
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('govserve_data_updated'));
+  }
+  return { success: true, asset_tag: newAsset.asset_tag, data: newAsset };
 }
 
 export async function updateAssetCondition(id: number, current_condition: string, next_maintenance_due?: string, ai_maintenance_alert?: string) {

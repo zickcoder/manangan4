@@ -262,7 +262,7 @@ export function MyTicketsPage() {
   );
 
   const myBurials = allBurials.filter((b) =>
-    matchesCitizen((b as any).applicant_email || '', b.contact_person || '', (b as any).citizen_id)
+    matchesCitizen((b as any).applicant_email || (b as any).citizen_email || '', b.contact_person || '', (b as any).citizen_id)
   );
 
   const formatDateSafely = (dateStr: any) => {

@@ -86,6 +86,12 @@ export function LoginPage() {
           return;
         }
 
+        if (!/^09\d{9}$/.test(phone.trim())) {
+          setError('Mobile phone number must be exactly 11 digits and start with 09 (e.g. 09171234567).');
+          setLoading(false);
+          return;
+        }
+
         const res = await registerCitizen({ name, email, phone, password });
         if (res.success) {
           recordSuccessfulLogin(authMode);
@@ -277,9 +283,10 @@ export function LoginPage() {
                     <input
                       type="text"
                       required
+                      maxLength={11}
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="+63 917 123 4567"
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                      placeholder="09171234567"
                       className="w-full pl-10 pr-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white text-slate-900"
                     />
                   </div>

@@ -166,16 +166,50 @@ export async function initDatabase() {
       );
     `);
 
-    // Ensure column migrations on cemetery_plots and users
+    // Ensure column migrations on cemetery_plots, users, burial_records, assets, and reservations
     await pool.query(`
       ALTER TABLE cemetery_plots ADD COLUMN IF NOT EXISTS cemetery_name VARCHAR(150) DEFAULT 'Barangay 178 Municipal Cemetery';
       ALTER TABLE cemetery_plots ADD COLUMN IF NOT EXISTS row_no INT;
       ALTER TABLE cemetery_plots ADD COLUMN IF NOT EXISTS col_no INT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'Active';
+
+      -- Burial records citizen tracking and full application fields
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS applicant_email VARCHAR(100);
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS citizen_email VARCHAR(100);
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS citizen_id INT;
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS cause_of_death VARCHAR(200);
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS deceased_address VARCHAR(255);
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS attending_physician VARCHAR(150);
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS applicant_relationship VARCHAR(100);
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS applicant_address VARCHAR(255);
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS burial_time VARCHAR(20);
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS cemetery_name VARCHAR(150);
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS plot_code VARCHAR(50);
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS section VARCHAR(50);
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS fee_amount NUMERIC(10, 2) DEFAULT 0;
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS remarks TEXT;
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP;
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS payment_due_date DATE;
+
+      -- Asset images and specifications
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS image_url TEXT;
+      ALTER TABLE assets ADD COLUMN IF NOT EXISTS specs TEXT;
+
+      -- Reservations and Utility citizen tracking
+      ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS citizen_email VARCHAR(100);
+      ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS citizen_id INT;
+      ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS special_equipment TEXT;
+      ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS fee_amount NUMERIC(10, 2) DEFAULT 0;
+
+      ALTER TABLE utility_requests ADD COLUMN IF NOT EXISTS citizen_email VARCHAR(100);
+      ALTER TABLE utility_requests ADD COLUMN IF NOT EXISTS citizen_id INT;
+      ALTER TABLE utility_requests ADD COLUMN IF NOT EXISTS photo_url TEXT;
+      ALTER TABLE utility_requests ADD COLUMN IF NOT EXISTS affected_households VARCHAR(100);
     `);
 
-    console.log('✅ Schema verified with Columbarium Wall Grid & Multi-Cemetery support.');
+    console.log('✅ Schema verified with Columbarium Wall Grid, Asset Specs/Image & Multi-Cemetery support.');
     await seedDemoData();
 
   } catch (err) {

@@ -10,7 +10,10 @@ import {
   Truck, 
   ShieldCheck, 
   Eye,
-  Trash2
+  Trash2,
+  Upload,
+  FileText,
+  Image as ImageIcon
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -41,6 +44,8 @@ export function AssetsModule() {
     current_condition: 'Operational',
     assigned_department: 'Disaster & Utility Response',
     next_maintenance_due: new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0],
+    image_url: '',
+    specs: '',
   });
 
   const loadData = async () => {
@@ -150,19 +155,45 @@ export function AssetsModule() {
       {/* Assets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filtered.map((asset) => (
-          <Card key={asset.id} hoverEffect className="border-[#cbd5e1] p-5 space-y-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="font-mono text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                  {asset.asset_tag}
-                </span>
-                <h3 className="text-base font-bold text-slate-900 mt-1">{asset.name}</h3>
-                <p className="text-[11px] text-slate-500">{asset.category} • {asset.assigned_department}</p>
+          <Card key={asset.id} hoverEffect className="border-[#cbd5e1] overflow-hidden p-0 space-y-0">
+            {asset.image_url ? (
+              <div className="w-full h-40 bg-slate-100 relative overflow-hidden border-b border-slate-200">
+                <img src={asset.image_url} alt={asset.name} className="w-full h-full object-cover" />
+                <div className="absolute top-2.5 left-2.5">
+                  <span className="font-mono text-[11px] font-bold text-amber-900 bg-white/95 px-2 py-0.5 rounded shadow-sm border border-amber-200">
+                    {asset.asset_tag}
+                  </span>
+                </div>
+                <div className="absolute top-2.5 right-2.5">
+                  <Badge variant={asset.current_condition === 'Operational' ? 'success' : 'warning'}>
+                    {asset.current_condition}
+                  </Badge>
+                </div>
               </div>
-              <Badge variant={asset.current_condition === 'Operational' ? 'success' : 'warning'}>
-                {asset.current_condition}
-              </Badge>
-            </div>
+            ) : null}
+
+            <div className="p-5 space-y-3">
+              {!asset.image_url && (
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span className="font-mono text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      {asset.asset_tag}
+                    </span>
+                    <h3 className="text-base font-bold text-slate-900 mt-1">{asset.name}</h3>
+                    <p className="text-[11px] text-slate-500">{asset.category} • {asset.assigned_department}</p>
+                  </div>
+                  <Badge variant={asset.current_condition === 'Operational' ? 'success' : 'warning'}>
+                    {asset.current_condition}
+                  </Badge>
+                </div>
+              )}
+
+              {asset.image_url && (
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">{asset.name}</h3>
+                  <p className="text-[11px] text-slate-500">{asset.category} • {asset.assigned_department}</p>
+                </div>
+              )}
 
             <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-200">
               <div>
@@ -175,6 +206,17 @@ export function AssetsModule() {
               </div>
             </div>
 
+            {/* Specs Information */}
+            {asset.specs && (
+              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 text-slate-700 font-bold">
+                  <FileText className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Technical Specifications:</span>
+                </div>
+                <p className="text-[11px] text-slate-600 whitespace-pre-line leading-relaxed">{asset.specs}</p>
+              </div>
+            )}
+
             {/* AI Maintenance Alert */}
             {asset.ai_maintenance_alert && (
               <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 text-xs space-y-1">
@@ -186,29 +228,30 @@ export function AssetsModule() {
               </div>
             )}
 
-            <div className="pt-2 flex items-center justify-end gap-2">
-              <Button
-                size="sm"
-                variant="destructive"
-                leftIcon={<Trash2 className="w-3.5 h-3.5" />}
-                onClick={() => handleDeleteAsset(asset.id)}
-              >
-                Delete Unit
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                leftIcon={<Wrench className="w-3.5 h-3.5" />}
-                onClick={() => {
-                  setSelectedAsset(asset);
-                  setNewCondition(asset.current_condition);
-                  setNextDue(asset.next_maintenance_due || '');
-                  setMaintenanceAlert(asset.ai_maintenance_alert || '');
-                  setIsUpdateModalOpen(true);
-                }}
-              >
-                Log Maintenance
-              </Button>
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                  onClick={() => handleDeleteAsset(asset.id)}
+                >
+                  Delete Unit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  leftIcon={<Wrench className="w-3.5 h-3.5" />}
+                  onClick={() => {
+                    setSelectedAsset(asset);
+                    setNewCondition(asset.current_condition);
+                    setNextDue(asset.next_maintenance_due || '');
+                    setMaintenanceAlert(asset.ai_maintenance_alert || '');
+                    setIsUpdateModalOpen(true);
+                  }}
+                >
+                  Log Maintenance
+                </Button>
+              </div>
             </div>
           </Card>
         ))}
@@ -324,6 +367,58 @@ export function AssetsModule() {
               value={newForm.assigned_department}
               onChange={(e) => setNewForm({ ...newForm, assigned_department: e.target.value })}
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#334155] mb-1">Technical Specifications & Details</label>
+            <textarea
+              rows={2}
+              placeholder="e.g. 5,000L Stainless Water Tank, 4x4 Diesel Turbo Engine, High-Pressure Fire/Water Pump 150 PSI"
+              value={newForm.specs}
+              onChange={(e) => setNewForm({ ...newForm, specs: e.target.value })}
+              className="w-full rounded-xl border border-slate-300 p-2.5 text-xs focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-[#334155]">Asset Unit Image (Upload or URL)</label>
+            <div className="flex gap-2 items-center">
+              <Input
+                placeholder="Paste Image URL or choose file..."
+                value={newForm.image_url}
+                onChange={(e) => setNewForm({ ...newForm, image_url: e.target.value })}
+                className="flex-1"
+              />
+              <label className="cursor-pointer px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = () => setNewForm(prev => ({ ...prev, image_url: reader.result as string }));
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            {newForm.image_url && (
+              <div className="relative w-full h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                <img src={newForm.image_url} alt="Asset preview" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setNewForm(prev => ({ ...prev, image_url: '' }))}
+                  className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center bg-black/60 hover:bg-black text-white rounded-full text-xs font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="pt-3 flex justify-end gap-2">
