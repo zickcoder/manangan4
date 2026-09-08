@@ -7,7 +7,8 @@ import {
   CheckCircle2, 
   AlertCircle,
   ExternalLink,
-  CheckCheck
+  CheckCheck,
+  User
 } from 'lucide-react';
 import { Badge } from '../ui/Badge';
 import { 
@@ -19,29 +20,86 @@ import {
 
 interface HeaderProps {
   onToggleSidebar: () => void;
+  onOpenProfile?: () => void;
   title?: string;
   subtitle?: string;
 }
 
-/** Always returns the freshest user from storage (tab-isolated session first) */
+function getInitials(name?: string) {
+  if (!name) return 'U';
+  const parts = name.split(' ');
+  return parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : parts[0].slice(0, 2).toUpperCase();
+}
+
+/** Always returns the freshest user based on active portal session */
 function getCurrentUser() {
   try {
-    const s = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
-    return s ? JSON.parse(s) : { name: 'Executive Administrator', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
+    const portal = sessionStorage.getItem('govserve_portal');
+    if (portal === 'staff') {
+      const s = sessionStorage.getItem('govserve_staff_user') || localStorage.getItem('govserve_staff_user');
+      if (s) return JSON.parse(s);
+    } else if (portal === 'citizen') {
+      const s = sessionStorage.getItem('govserve_citizen_user') || localStorage.getItem('govserve_citizen_user');
+      if (s) return JSON.parse(s);
+    }
+
+    const sess = sessionStorage.getItem('govserve_user');
+    if (sess) {
+      const parsed = JSON.parse(sess);
+      if (parsed && parsed.email) return parsed;
+    }
+
+    const path = window.location.pathname;
+    const isStaffPath = path.startsWith('/admin') || path.startsWith('/staff') || path.startsWith('/reports');
+    const staffStr = localStorage.getItem('govserve_staff_user');
+    const citStr = localStorage.getItem('govserve_citizen_user');
+
+    if (isStaffPath && staffStr) return JSON.parse(staffStr);
+    if (citStr) return JSON.parse(citStr);
+    if (staffStr) return JSON.parse(staffStr);
+
+    const s = localStorage.getItem('govserve_user');
+    return s ? JSON.parse(s) : null;
   } catch {
-    return { name: 'Executive Administrator', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
+    return null;
   }
 }
 
-export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
+export function AppHeader({ onToggleSidebar, onOpenProfile, title, subtitle }: HeaderProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [currentUser, setCurrentUser] = useState(getCurrentUser);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
 
   const isCitizen = currentUser?.role === 'Citizen';
+
+  // Close notifications popover when clicking anywhere outside or pressing Escape
+  useEffect(() => {
+    if (!notificationsOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        setNotificationsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setNotificationsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [notificationsOpen]);
 
   const syncNotifications = () => {
     // Re-read user on every sync — prevents stale role/email cross-contamination
@@ -138,7 +196,7 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
       {/* Right: Notifications & Profile */}
       <div className="flex items-center gap-2 md:gap-3">
         {/* Live Notifications Popover */}
-        <div className="relative">
+        <div className="relative" ref={popoverRef}>
           <button
             onClick={() => setNotificationsOpen(!notificationsOpen)}
             className="relative p-2 rounded-xl text-[#64748b] hover:text-[#0f172a] hover:bg-[#f1f5f9] transition-colors cursor-pointer"
@@ -208,6 +266,27 @@ export function AppHeader({ onToggleSidebar, title, subtitle }: HeaderProps) {
             </div>
           )}
         </div>
+
+        {/* Profile Button / Trigger */}
+        {onOpenProfile && (
+          <button
+            onClick={onOpenProfile}
+            className="flex items-center gap-2 p-1 sm:pl-2 sm:pr-3 py-1 rounded-xl border border-slate-200 hover:border-blue-400 bg-white hover:bg-slate-50 transition-all cursor-pointer shadow-xs group"
+            title="My Profile & Security"
+          >
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-xs ring-1 ring-blue-500/20">
+              {isCitizen ? getInitials(currentUser?.name) : <User className="w-4 h-4" />}
+            </div>
+            <div className="hidden sm:flex flex-col text-left">
+              <span className="text-xs font-bold text-slate-800 group-hover:text-blue-600 transition-colors leading-tight truncate max-w-[110px]">
+                {currentUser?.name || (isCitizen ? 'Citizen' : 'Admin')}
+              </span>
+              <span className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider leading-none">
+                {isCitizen ? 'My Profile' : 'Admin'}
+              </span>
+            </div>
+          </button>
+        )}
       </div>
     </header>
   );

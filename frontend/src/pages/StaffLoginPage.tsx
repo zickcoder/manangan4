@@ -41,6 +41,39 @@ export function StaffLoginPage() {
   const [forgotMsg, setForgotMsg] = useState('');
   const [forgotError, setForgotError] = useState('');
 
+  // If already logged in as Staff/Admin, redirect to staff dashboard
+  useEffect(() => {
+    try {
+      const savedStr = sessionStorage.getItem('govserve_staff_user') || localStorage.getItem('govserve_staff_user');
+      if (savedStr) {
+        const u = JSON.parse(savedStr);
+        // Only redirect if active user is a Staff/Admin (never redirect away if a Citizen is logged in)
+        if (u && u.email && u.role !== 'Citizen') {
+          sessionStorage.setItem('govserve_portal', 'staff');
+          sessionStorage.setItem('govserve_user', JSON.stringify(u));
+          navigate('/dashboard', { replace: true });
+        }
+      }
+    } catch {}
+
+    const handleStorage = (e: StorageEvent) => {
+      // Only react to staff account changes across tabs
+      if (e.key === 'govserve_staff_user' && e.newValue) {
+        try {
+          const u = JSON.parse(e.newValue);
+          if (u && u.email && u.role !== 'Citizen') {
+            sessionStorage.setItem('govserve_portal', 'staff');
+            sessionStorage.setItem('govserve_user', JSON.stringify(u));
+            navigate('/dashboard', { replace: true });
+          }
+        } catch {}
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [navigate]);
+
   useEffect(() => {
     const rem = getLockoutTimeRemaining('staff');
     if (rem > 0) setLockoutSeconds(rem);
@@ -78,8 +111,10 @@ export function StaffLoginPage() {
       const res = await loginStaff(email, password);
       if (res.success) {
         recordSuccessfulLogin('staff');
+        sessionStorage.setItem('govserve_portal', 'staff');
+        sessionStorage.setItem('govserve_staff_user', JSON.stringify(res.user));
         sessionStorage.setItem('govserve_user', JSON.stringify(res.user));
-        localStorage.setItem('govserve_user', JSON.stringify(res.user));
+        localStorage.setItem('govserve_staff_user', JSON.stringify(res.user));
         navigate('/dashboard');
       } else {
         const status = recordFailedAttempt('staff');

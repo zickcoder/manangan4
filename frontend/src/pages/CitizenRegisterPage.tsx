@@ -27,6 +27,37 @@ const EMAILJS_PUBLIC_KEY = '-3noUYuzaJc6YK0ej';
 export function CitizenRegisterPage() {
   const navigate = useNavigate();
 
+  // If already logged in as Citizen, redirect to citizen dashboard
+  useEffect(() => {
+    try {
+      const savedStr = sessionStorage.getItem('govserve_citizen_user') || localStorage.getItem('govserve_citizen_user');
+      if (savedStr) {
+        const u = JSON.parse(savedStr);
+        if (u && u.email && u.role === 'Citizen') {
+          sessionStorage.setItem('govserve_portal', 'citizen');
+          sessionStorage.setItem('govserve_user', JSON.stringify(u));
+          navigate('/dashboard', { replace: true });
+        }
+      }
+    } catch {}
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'govserve_citizen_user' && e.newValue) {
+        try {
+          const u = JSON.parse(e.newValue);
+          if (u && u.email && u.role === 'Citizen') {
+            sessionStorage.setItem('govserve_portal', 'citizen');
+            sessionStorage.setItem('govserve_user', JSON.stringify(u));
+            navigate('/dashboard', { replace: true });
+          }
+        } catch {}
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [navigate]);
+
   // Registration Fields
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -273,8 +304,10 @@ export function CitizenRegisterPage() {
         password 
       });
       if (res.success) {
+        sessionStorage.setItem('govserve_portal', 'citizen');
+        sessionStorage.setItem('govserve_citizen_user', JSON.stringify(res.user));
         sessionStorage.setItem('govserve_user', JSON.stringify(res.user));
-        localStorage.setItem('govserve_user', JSON.stringify(res.user));
+        localStorage.setItem('govserve_citizen_user', JSON.stringify(res.user));
         // Clear any legacy/ghost notifications so new accounts start with a clean inbox
         clearUserNotifications('Citizen', email.trim());
         navigate('/dashboard');

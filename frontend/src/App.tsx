@@ -15,11 +15,51 @@ import { AssetsModule } from './pages/AssetsModule';
 import { ReportsModule } from './pages/ReportsModule';
 import { MyTicketsPage } from './pages/MyTicketsPage';
 
-// Reads role from sessionStorage (tab-isolated) first, falling back to localStorage
-function getUser() {
+// Reads user based on active tab portal context (isolates Citizen from Staff sessions)
+export function getUser() {
   try {
-    const s = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
-    return s ? JSON.parse(s) : null;
+    const portal = sessionStorage.getItem('govserve_portal');
+    if (portal === 'staff') {
+      const s = sessionStorage.getItem('govserve_staff_user') || localStorage.getItem('govserve_staff_user');
+      if (s) return JSON.parse(s);
+    } else if (portal === 'citizen') {
+      const s = sessionStorage.getItem('govserve_citizen_user') || localStorage.getItem('govserve_citizen_user');
+      if (s) return JSON.parse(s);
+    }
+
+    const sess = sessionStorage.getItem('govserve_user');
+    if (sess) {
+      const parsed = JSON.parse(sess);
+      if (parsed && parsed.email) return parsed;
+    }
+
+    const path = window.location.pathname;
+    const isStaffPath = path.startsWith('/admin') || path.startsWith('/staff') || path.startsWith('/reports');
+    const staffStr = localStorage.getItem('govserve_staff_user');
+    const citStr = localStorage.getItem('govserve_citizen_user');
+
+    if (isStaffPath && staffStr) {
+      sessionStorage.setItem('govserve_portal', 'staff');
+      sessionStorage.setItem('govserve_user', staffStr);
+      return JSON.parse(staffStr);
+    }
+
+    if (citStr) {
+      sessionStorage.setItem('govserve_portal', 'citizen');
+      sessionStorage.setItem('govserve_user', citStr);
+      return JSON.parse(citStr);
+    }
+
+    if (staffStr) {
+      sessionStorage.setItem('govserve_portal', 'staff');
+      sessionStorage.setItem('govserve_user', staffStr);
+      return JSON.parse(staffStr);
+    }
+
+    const legacy = localStorage.getItem('govserve_user');
+    if (legacy) return JSON.parse(legacy);
+
+    return null;
   } catch {
     return null;
   }

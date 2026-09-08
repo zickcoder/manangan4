@@ -22,24 +22,59 @@ interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   onToggle: () => void;
+  onOpenProfile?: () => void;
 }
 
-export function AppSidebar({ isOpen, onClose }: SidebarProps) {
+export function AppSidebar({ isOpen, onClose, onOpenProfile }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const userStr = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
-  let user: any = { name: 'Executive Administrator', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
-  try {
-    if (userStr) user = JSON.parse(userStr);
-  } catch {}
+  const getUser = () => {
+    try {
+      const portal = sessionStorage.getItem('govserve_portal');
+      if (portal === 'staff') {
+        const s = sessionStorage.getItem('govserve_staff_user') || localStorage.getItem('govserve_staff_user');
+        if (s) return JSON.parse(s);
+      } else if (portal === 'citizen') {
+        const s = sessionStorage.getItem('govserve_citizen_user') || localStorage.getItem('govserve_citizen_user');
+        if (s) return JSON.parse(s);
+      }
+      const sess = sessionStorage.getItem('govserve_user');
+      if (sess) return JSON.parse(sess);
+      const path = window.location.pathname;
+      const isStaffPath = path.startsWith('/admin') || path.startsWith('/staff') || path.startsWith('/reports');
+      const staffStr = localStorage.getItem('govserve_staff_user');
+      const citStr = localStorage.getItem('govserve_citizen_user');
+      if (isStaffPath && staffStr) return JSON.parse(staffStr);
+      if (citStr) return JSON.parse(citStr);
+      if (staffStr) return JSON.parse(staffStr);
+      const s = localStorage.getItem('govserve_user');
+      return s ? JSON.parse(s) : null;
+    } catch {
+      return null;
+    }
+  };
 
+  const user = getUser();
   const isCitizen = user?.role === 'Citizen';
 
   const handleLogout = () => {
-    sessionStorage.removeItem('govserve_user');
-    localStorage.removeItem('govserve_user');
-    navigate(isCitizen ? '/login' : '/admin/login');
+    if (isCitizen) {
+      sessionStorage.removeItem('govserve_citizen_user');
+      localStorage.removeItem('govserve_citizen_user');
+      sessionStorage.removeItem('govserve_user');
+      sessionStorage.removeItem('govserve_portal');
+      sessionStorage.removeItem('govserve_resubmit_ticket');
+      window.dispatchEvent(new Event('govserve_data_updated'));
+      navigate('/login');
+    } else {
+      sessionStorage.removeItem('govserve_staff_user');
+      localStorage.removeItem('govserve_staff_user');
+      sessionStorage.removeItem('govserve_user');
+      sessionStorage.removeItem('govserve_portal');
+      window.dispatchEvent(new Event('govserve_data_updated'));
+      navigate('/admin/login');
+    }
   };
 
   const navGroups = isCitizen
@@ -175,34 +210,16 @@ export function AppSidebar({ isOpen, onClose }: SidebarProps) {
         </div>
       </div>
 
-      {/* User Profile & Sign Out Footer */}
+      {/* Sign Out Footer */}
       <div className="p-3 border-t border-[#1e293b]/70 bg-slate-950/40">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5 overflow-hidden">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-sm overflow-hidden p-1">
-              {isCitizen ? (
-                getInitials(user?.name)
-              ) : (
-                <AdminIcon size={20} color="#ffffff" />
-              )}
-            </div>
-            <div className="overflow-hidden">
-              <p className="text-xs font-semibold text-white truncate">
-                {isCitizen ? (user?.name || 'User') : 'Admin'}
-              </p>
-              <span className="text-[10px] text-blue-300 font-medium">
-                {isCitizen ? 'Registered Citizen' : 'Admin'}
-              </span>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
-            title="Sign Out"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center justify-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-slate-900/80 hover:bg-red-500/15 hover:border-red-500/30 border border-slate-800 transition-all cursor-pointer group shadow-sm"
+          title="Logout"
+        >
+          <LogOut className="w-4 h-4 text-slate-400 group-hover:text-red-400 group-hover:-translate-x-0.5 transition-all" />
+          <span>Logout</span>
+        </button>
       </div>
     </aside>
   );

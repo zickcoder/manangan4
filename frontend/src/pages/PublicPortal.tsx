@@ -107,6 +107,7 @@ export function PublicPortal() {
   });
   const [aiConflict, setAiConflict] = useState<any>(null);
   const [aiChecking, setAiChecking] = useState(false);
+  const [appliedAlternativeSlot, setAppliedAlternativeSlot] = useState<string | null>(null);
   const [reservationSuccess, setReservationSuccess] = useState<any>(null);
 
   // 3. Water & Drainage Request State
@@ -258,9 +259,7 @@ export function PublicPortal() {
           hasConflict: true,
           aiAnalysis: `Conflict Notice: ${selectedFacilityObj.name} has a scheduled Municipal LGU Townhall Assembly on ${reserveForm.event_date} from 08:00 AM - 01:00 PM.`,
           alternativeSlots: [
-            `${reserveForm.event_date} (02:00 PM - 06:00 PM)`,
-            `Next Day (08:00 AM - 12:00 PM)`,
-            `Next Saturday (09:00 AM - 01:00 PM)`
+            `${reserveForm.event_date} (02:00 PM - 06:00 PM)`
           ]
         });
       } else {
@@ -841,26 +840,29 @@ export function PublicPortal() {
                               </Badge>
                             </div>
                             <p className="text-xs text-slate-200 leading-relaxed font-medium">{aiConflict.aiAnalysis}</p>
-                            {aiConflict.alternativeSlots && aiConflict.alternativeSlots.length > 0 && (
+                            {aiConflict.alternativeSlots && aiConflict.alternativeSlots.filter((s: string) => !s.toLowerCase().includes('next available') && !s.toLowerCase().includes('next day') && !s.toLowerCase().includes('next saturday')).length > 0 && (
                               <div className="pt-2 space-y-1.5">
-                                <p className="text-[11px] font-bold text-indigo-300">💡 AI Recommended Alternative Schedule Windows (Click to Select):</p>
+                                <p className="text-[11px] font-bold text-indigo-300">💡 Suggested Alternative Slots (Click to Apply):</p>
                                 <div className="flex flex-wrap gap-2">
-                                  {aiConflict.alternativeSlots.map((slot: string, idx: number) => (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      onClick={() => {
-                                        if (slot.includes('02:00 PM')) {
-                                          setReserveForm(prev => ({ ...prev, start_time: '02:00 PM', end_time: '06:00 PM' }));
-                                        }
-                                        alert(`Applied suggested slot: ${slot}`);
-                                      }}
-                                      className="bg-white/10 hover:bg-white/20 text-indigo-200 px-3 py-1 rounded-xl border border-white/20 text-xs font-mono transition-all flex items-center gap-1 cursor-pointer"
-                                    >
-                                      <span>{slot}</span>
-                                      <Check className="w-3 h-3 text-emerald-400" />
-                                    </button>
-                                  ))}
+                                  {aiConflict.alternativeSlots
+                                    .filter((slot: string) => !slot.toLowerCase().includes('next available') && !slot.toLowerCase().includes('next day') && !slot.toLowerCase().includes('next saturday'))
+                                    .slice(0, 1)
+                                    .map((slot: string, idx: number) => (
+                                      <button
+                                        key={idx}
+                                        type="button"
+                                        onClick={() => {
+                                          if (slot.includes('02:00 PM')) {
+                                            setReserveForm(prev => ({ ...prev, start_time: '02:00 PM', end_time: '06:00 PM' }));
+                                          }
+                                          setAppliedAlternativeSlot(slot);
+                                        }}
+                                        className="bg-white/10 hover:bg-white/25 hover:border-emerald-400/50 hover:text-white text-indigo-200 px-3.5 py-1.5 rounded-xl border border-white/20 text-xs font-mono transition-all flex items-center gap-2 cursor-pointer shadow-sm group"
+                                      >
+                                        <span className="font-semibold">{slot}</span>
+                                        <Check className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                                      </button>
+                                    ))}
                                 </div>
                               </div>
                             )}
@@ -1738,6 +1740,66 @@ export function PublicPortal() {
             <div className="pt-2 flex justify-end">
               <Button size="sm" onClick={() => setSelectedAssetDetail(null)}>
                 Close Viewer
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Popout Modal for Applied Alternative Slot */}
+      <Modal
+        isOpen={Boolean(appliedAlternativeSlot)}
+        onClose={() => setAppliedAlternativeSlot(null)}
+        title="Alternative Slot Applied"
+        description="Schedule conflict resolved — recommended afternoon window has been selected."
+        maxWidth="md"
+      >
+        {appliedAlternativeSlot && (
+          <div className="space-y-4 text-xs">
+            <div className="p-4 bg-gradient-to-r from-indigo-950 via-slate-900 to-emerald-950 text-white rounded-xl border border-emerald-500/30 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  AI Slot Intelligence
+                </span>
+                <Badge variant="success" className="bg-emerald-500/20 text-emerald-300 border-emerald-400/40 text-[10px] py-0.5 font-bold">
+                  ✓ Slot Updated
+                </Badge>
+              </div>
+              <h4 className="text-base font-extrabold text-white">
+                {selectedFacilityObj?.name || 'Municipal Facility'}
+              </h4>
+              <p className="text-xs text-indigo-200">
+                Your reservation schedule has been successfully adjusted to the optimal available time window.
+              </p>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 text-slate-800">
+              <p className="font-bold text-xs uppercase text-slate-500 tracking-wider">Applied Reservation Schedule</p>
+              <div className="grid grid-cols-2 gap-3 text-[11px]">
+                <div className="p-2.5 bg-white rounded-lg border border-slate-200/80">
+                  <span className="text-slate-400 block text-[10px] font-medium">Event Date</span>
+                  <span className="font-bold text-slate-800">{reserveForm.event_date}</span>
+                </div>
+                <div className="p-2.5 bg-white rounded-lg border border-emerald-300 bg-emerald-50/40">
+                  <span className="text-emerald-700 block text-[10px] font-medium">New Time Window</span>
+                  <span className="font-bold text-emerald-800">02:00 PM - 06:00 PM</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] text-emerald-700 pt-1 font-medium">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>The schedule conflict is resolved. You can proceed with completing your reservation.</span>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end border-t border-slate-100">
+              <Button
+                size="sm"
+                variant="primary"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5"
+                onClick={() => setAppliedAlternativeSlot(null)}
+              >
+                Continue Reservation
               </Button>
             </div>
           </div>

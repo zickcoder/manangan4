@@ -576,7 +576,12 @@ export async function createReservation(payload: any) {
   let callerRole = 'Citizen';
   try {
     const cu = JSON.parse(sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user') || '{}');
-    citizenMeta = { applicant_name: cu.name || payload.applicant_name, applicant_email: cu.email || payload.applicant_email };
+    citizenMeta = {
+      citizen_id: payload.citizen_id || cu.id || undefined,
+      applicant_name: payload.applicant_name?.trim() || cu.name || '',
+      applicant_email: (payload.applicant_email || cu.email || '').toLowerCase().trim(),
+      citizen_email: (cu.email || payload.applicant_email || '').toLowerCase().trim()
+    };
     callerRole = cu.role || 'Citizen';
   } catch {}
   // True when booking was created by a staff/admin user (not a citizen submitting)
@@ -738,56 +743,99 @@ export async function checkDoubleBooking(
   endTime: string,
   userEmail?: string,
   userName?: string,
-  excludeReservationId?: number | string
+  excludeReservationId?: number | string,
+  facilityCategory?: string   // 'Park & Recreation' | 'Government Facility'
 ) {
-  // If userEmail or userName not passed explicitly, attempt to get from storage
-  if (!userEmail && !userName) {
+  // If userEmail not passed explicitly, attempt to get from storage
+  let currentUserId: any = undefined;
+  if (!userEmail) {
     try {
       const cu = JSON.parse(sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user') || '{}');
       userEmail = cu.email;
       userName = cu.name;
+      currentUserId = cu.id;
+    } catch {}
+  } else {
+    try {
+      const cu = JSON.parse(sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user') || '{}');
+      currentUserId = cu.id;
     } catch {}
   }
 
   const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
-  
-  // Find any active reservation for the exact facility, date, and overlapping time slot
+
+  // Determine if we're checking a Park or a Gov Facility
+  const isCheckingPark = facilityCategory
+    ? (facilityCategory.toLowerCase().includes('park') || facilityCategory.toLowerCase().includes('recreation'))
+    : (facilityName.toLowerCase().includes('park') || facilityName.toLowerCase().includes('amphitheater') ||
+       facilityName.toLowerCase().includes('plaza') || facilityName.toLowerCase().includes('grounds') ||
+       facilityName.toLowerCase().includes('recreation'));
+
+  // Find any active reservation for the EXACT same facility, date, and overlapping time
   const conflict = reservations.find((r: any) => {
     if (r.status === 'Cancelled' || r.status === 'Rejected') return false;
     if (excludeReservationId && (r.id === excludeReservationId || String(r.id) === String(excludeReservationId))) return false;
-    const sameFacility = Number(r.facility_id) === Number(facilityId) || (r.facility_name && r.facility_name.toLowerCase() === facilityName.toLowerCase());
+
+    // ── Category isolation: park vs. gov facility ──────────────────────────
+    const rCatRaw = (r.facility_category || r.category || r.facility_name || '').toLowerCase();
+    const rIsPark = rCatRaw.includes('park') || rCatRaw.includes('amphitheater') ||
+                    rCatRaw.includes('plaza') || rCatRaw.includes('recreation') || rCatRaw.includes('grounds');
+    // A Parks booking CANNOT conflict with a Gov Facility booking and vice-versa
+    if (isCheckingPark !== rIsPark) return false;
+    // ───────────────────────────────────────────────────────────────────────
+
+    // Exact facility check: both must belong to the same specific facility
+    const idMatches = (r.facility_id && facilityId) ? Number(r.facility_id) === Number(facilityId) : false;
+    const nameMatches = (r.facility_name && facilityName) 
+      ? r.facility_name.toLowerCase().trim() === facilityName.toLowerCase().trim()
+      : false;
+
+    const sameFacility = idMatches || nameMatches;
+    if (!sameFacility) return false;
+
     const sameDate = r.event_date === eventDate;
     const sameTime = r.start_time === startTime || r.end_time === endTime;
-    return sameFacility && sameDate && sameTime;
+    return sameDate && sameTime;
   });
 
   if (conflict) {
     // Check if this conflicting reservation was submitted by the current citizen (self-booking)
-    const cEmail = (conflict.applicant_email || '').toLowerCase().trim();
+    const cEmail = (conflict.applicant_email || conflict.citizen_email || '').toLowerCase().trim();
     const uEmail = (userEmail || '').toLowerCase().trim();
-    const cName = (conflict.applicant_name || '').toLowerCase().trim();
-    const uName = (userName || '').toLowerCase().trim();
+    const cId = conflict.citizen_id;
+    const uId = currentUserId;
 
-    const isOwnBooking = (uEmail && cEmail && uEmail === cEmail) || (uName && cName && (uName === cName || cName.includes(uName) || uName.includes(cName)));
+    // Strict identity match: EXACT citizen_id OR EXACT email. NEVER match by loose name!
+    const isOwnBooking = Boolean(
+      (uId && cId && String(uId) === String(cId)) ||
+      (uEmail && cEmail && uEmail.includes('@') && uEmail === cEmail)
+    );
 
     if (isOwnBooking) {
       return {
         hasConflict: false,
         isOwnSchedule: true,
-        message: `ℹ️ Existing schedule slot (${conflict.start_time} - ${conflict.end_time}) belongs to your booking (${conflict.reference_no}). You can resubmit or adjust this slot freely.`,
-        existingBooking: conflict,
+        message: `This schedule slot matches your existing booking (${conflict.reference_no}). You can view your ticket or go to My Tickets to resubmit or cancel.`,
+        existingBooking: {
+          reference_no: conflict.reference_no,
+          facility_name: conflict.facility_name,
+          event_date: conflict.event_date,
+          start_time: conflict.start_time,
+          end_time: conflict.end_time,
+          status: conflict.status
+        },
         suggestedSlots: []
       };
     }
 
+    // When someone else booked the slot - Data Privacy Compliance (do NOT expose personal names or details)
     return {
       hasConflict: true,
       isOwnSchedule: false,
-      message: `🚫 TIME SLOT CONFLICT: ${conflict.facility_name || facilityName} is ALREADY ${conflict.status.toUpperCase()} for ${conflict.applicant_name} on ${eventDate} (${conflict.start_time} - ${conflict.end_time}).`,
-      existingBooking: conflict,
+      message: `This time slot is already reserved for this venue on ${eventDate} (${conflict.start_time} - ${conflict.end_time}). Please select another available schedule.`,
+      existingBooking: null, // Protected: do not leak applicant identity
       suggestedSlots: [
-        `${eventDate} (02:00 PM - 06:00 PM)`,
-        `Next Available Window (08:00 AM - 12:00 PM)`
+        `${eventDate} (02:00 PM - 06:00 PM)`
       ]
     };
   }
@@ -795,11 +843,12 @@ export async function checkDoubleBooking(
   return {
     hasConflict: false,
     isOwnSchedule: false,
-    message: `✅ SLOT CONFIRMED FREE: ${facilityName} has no pending or approved reservations on ${eventDate}.`,
+    message: `Slot is available for ${facilityName} on ${eventDate}.`,
     existingBooking: null,
     suggestedSlots: []
   };
 }
+
 
 export async function cancelReservation(id: number, reason = 'Cancelled by Resident') {
   if (HAS_EPROVIDER) try { await epPatch('facility_reservations', `id=eq.${id}`, { status: 'Cancelled', remarks: reason }); return { success: true }; } catch {}
@@ -1020,7 +1069,11 @@ export async function createBurial(payload: any) {
   let callerRole = 'Citizen';
   try {
     const cu = JSON.parse(sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user') || '{}');
-    citizenMeta = { citizen_id: cu.id, citizen_email: cu.email };
+    citizenMeta = {
+      citizen_id: payload.citizen_id || cu.id || undefined,
+      citizen_email: (payload.applicant_email || payload.citizen_email || cu.email || '').toLowerCase().trim(),
+      applicant_email: (payload.applicant_email || payload.citizen_email || cu.email || '').toLowerCase().trim()
+    };
     callerRole = cu.role || 'Citizen';
   } catch {}
   const isStaffBooking = callerRole !== 'Citizen';
@@ -1113,7 +1166,11 @@ export async function createUtilityRequest(payload: any) {
   let callerRole = 'Citizen';
   try {
     const cu = JSON.parse(sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user') || '{}');
-    citizenMeta = { citizen_id: cu.id, citizen_email: cu.email };
+    citizenMeta = {
+      citizen_id: payload.citizen_id || cu.id || undefined,
+      citizen_email: (payload.citizen_email || cu.email || '').toLowerCase().trim(),
+      applicant_email: (payload.citizen_email || cu.email || '').toLowerCase().trim()
+    };
     callerRole = cu.role || 'Citizen';
   } catch {}
   const isStaffBooking = callerRole !== 'Citizen';

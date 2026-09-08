@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { 
   Building, 
   Droplet, 
@@ -15,7 +15,9 @@ import {
   CheckCircle2,
   CreditCard,
   Ban,
-  Printer
+  Printer,
+  RotateCcw,
+  AlertTriangle
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -34,11 +36,13 @@ import { FacilityReservation, UtilityRequest, BurialRecord } from "../types";
 
 export function MyTicketsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const catParam = searchParams.get('category') as any;
+  const ticketRefParam = searchParams.get('ticket') || searchParams.get('ref') || (location.state as any)?.openTicketRef;
 
-  const userStr = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
-  let user: any = { name: 'Juan M. Dela Cruz', role: 'Citizen', email: 'juan.delacruz@citizen.gov.ph' };
+  const userStr = sessionStorage.getItem('govserve_citizen_user') || sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_citizen_user') || localStorage.getItem('govserve_user');
+  let user: any = null;
   try {
     if (userStr) user = JSON.parse(userStr);
   } catch {}
@@ -96,28 +100,40 @@ export function MyTicketsPage() {
     };
   }, []);
 
-  const handleCancelTicket = async (item: any) => {
-    if (!confirm(`Are you sure you want to cancel application ${item.ref_no}?`)) return;
+  // Cancel & Resubmit Modal State
+  const [ticketToCancel, setTicketToCancel] = useState<any | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  const handleCancelTicket = (item: any) => {
+    setTicketToCancel(item);
+  };
+
+  const handleConfirmCancel = async () => {
+    if (!ticketToCancel) return;
+    setIsCancelling(true);
     try {
-      if (item.category === 'cemetery') {
-        await updateBurialStatus(item.originalId, 'Cancelled');
-      } else if (item.category === 'facility') {
-        await updateReservationStatus(item.originalId, 'Cancelled', 'Cancelled by citizen');
-      } else if (item.category === 'utility') {
-        await cancelUtilityRequest(item.originalId);
+      if (ticketToCancel.category === 'cemetery') {
+        await updateBurialStatus(ticketToCancel.originalId, 'Cancelled');
+      } else if (ticketToCancel.category === 'facility') {
+        await updateReservationStatus(ticketToCancel.originalId, 'Cancelled', 'Cancelled by citizen');
+      } else if (ticketToCancel.category === 'utility') {
+        await cancelUtilityRequest(ticketToCancel.originalId);
       }
-      if (selectedSubmission?.id === item.id) {
+      if (selectedSubmission?.id === ticketToCancel.id) {
         setSelectedSubmission(null);
       }
-      loadData();
-      alert(`Application ${item.ref_no} has been cancelled.`);
+      setTicketToCancel(null);
+      await loadData();
+      window.dispatchEvent(new Event('govserve_data_updated'));
     } catch (e) {
       alert('Failed to cancel application');
+    } finally {
+      setIsCancelling(false);
     }
   };
 
   const handleResubmit = (item: any) => {
-    sessionStorage.setItem('govserve_resubmit_ticket', JSON.stringify(item));
+    sessionStorage.removeItem('govserve_resubmit_ticket');
     if (item.category === 'facility') {
       const isPark = (item.facility_category || '').toLowerCase().includes('park') || 
                      (item.title || '').toLowerCase().includes('park') ||
@@ -224,14 +240,16 @@ export function MyTicketsPage() {
   };
 
   const userEmail = (user?.email || '').toLowerCase().trim();
-  const userName = (user?.name || '').toLowerCase().trim();
   const userId = user?.id;
 
   const matchesCitizen = (email: string, name: string, cId?: number | string) => {
+    // If citizen is not logged in, do not expose any user tickets
+    if (!userEmail && !userId) return false;
+    // 1. Strict match by User ID if present
     if (userId && cId && String(cId) === String(userId)) return true;
-    if (userEmail && email && email.toLowerCase().trim() === userEmail) return true;
-    const lName = (name || '').toLowerCase().trim();
-    if (lName && userName && (lName.includes(userName) || userName.includes(lName))) return true;
+    // 2. Strict match by exact Email (case-insensitive)
+    const itemEmail = (email || '').toLowerCase().trim();
+    if (userEmail && itemEmail && userEmail.includes('@') && itemEmail === userEmail) return true;
     return false;
   };
 
@@ -325,6 +343,17 @@ export function MyTicketsPage() {
       created_at: format12HourDateTime(b.created_at || new Date().toISOString())
     }))
   ];
+
+  // Auto-open ticket modal if redirected from "Your Booking Recognized" or url parameter
+  useEffect(() => {
+    if (ticketRefParam && allSubmissions.length > 0 && !selectedSubmission) {
+      const match = allSubmissions.find(s => s.ref_no?.toLowerCase() === ticketRefParam.toLowerCase());
+      if (match) {
+        setSelectedSubmission(match);
+        setSearchQuery(match.ref_no);
+      }
+    }
+  }, [ticketRefParam, allSubmissions.length]);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(7);
@@ -554,10 +583,10 @@ export function MyTicketsPage() {
                       </td>
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          {item.status === 'Cancelled' || item.status === 'Canceled' ? (
-                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 italic px-3 py-1 bg-slate-100 rounded-xl border border-slate-200">
-                              <Ban className="w-3.5 h-3.5 text-slate-400" />
-                              Cancelled
+                          {(item.status as string) === 'Cancelled' || (item.status as string) === 'Canceled' ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 italic px-3 py-1.5 bg-rose-50 rounded-xl border border-rose-200">
+                              <Ban className="w-3.5 h-3.5 text-rose-500" />
+                              Application Cancelled
                             </span>
                           ) : (
                             <>
@@ -570,21 +599,11 @@ export function MyTicketsPage() {
                               >
                                 View Ticket
                               </Button>
-                              {(item.status === 'Pending' || item.status === 'Pending Review') && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-xs text-purple-700 hover:bg-purple-50 border-purple-300 font-bold"
-                                  onClick={() => handleResubmit(item)}
-                                >
-                                  Resubmit
-                                </Button>
-                              )}
                               {(item.status === 'Pending Review' || item.status === 'Pending Payment' || item.status === 'Pending' || item.status === 'Waiting for Payment') && (
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="text-xs text-rose-600 hover:bg-rose-50 border-rose-200"
+                                  className="text-xs text-rose-600 hover:bg-rose-50 border-rose-200 font-medium"
                                   onClick={() => handleCancelTicket(item)}
                                 >
                                   Cancel
@@ -651,7 +670,7 @@ export function MyTicketsPage() {
 
       {/* Modal: View Full Application / Printable Receipt */}
       <Modal
-        isOpen={Boolean(selectedSubmission && selectedSubmission.status !== 'Cancelled' && selectedSubmission.status !== 'Canceled')}
+        isOpen={Boolean(selectedSubmission)}
         onClose={() => setSelectedSubmission(null)}
         title={`Official Order of Payment & Ticket Voucher — ${selectedSubmission?.ref_no}`}
         description="Official Municipal Ticket Copy. Present this at the LGU Treasury Desk for Face-to-Face Payment."
@@ -678,8 +697,8 @@ export function MyTicketsPage() {
                 ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
                 : selectedSubmission.status === 'Pending Payment'
                 ? 'bg-amber-50 border-amber-300 text-amber-950'
-                : selectedSubmission.status === 'Rejected'
-                ? 'bg-red-50 border-red-300 text-red-950'
+                : (selectedSubmission.status as string) === 'Cancelled' || (selectedSubmission.status as string) === 'Canceled' || selectedSubmission.status === 'Rejected'
+                ? 'bg-rose-50 border-rose-300 text-rose-950'
                 : 'bg-blue-50 border-blue-300 text-blue-950'
             }`}>
               <div>
@@ -689,6 +708,8 @@ export function MyTicketsPage() {
                     ? 'Approved — Waiting for Face-to-Face LGU Treasury Payment'
                     : selectedSubmission.status === 'Paid'
                     ? 'PAID & APPROVED — Official Receipt Issued'
+                    : (selectedSubmission.status as string) === 'Cancelled' || (selectedSubmission.status as string) === 'Canceled'
+                    ? 'CANCELLED — Slot released. Click Resubmit below to reactivate or modify.'
                     : selectedSubmission.status}
                 </h4>
               </div>
@@ -757,19 +778,7 @@ export function MyTicketsPage() {
                 >
                   Print Order of Payment / Receipt
                 </Button>
-                {(selectedSubmission.status === 'Pending Review' || selectedSubmission.status === 'Pending') && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-purple-700 border-purple-300 hover:bg-purple-50 font-bold text-xs print:hidden"
-                    onClick={() => {
-                      handleResubmit(selectedSubmission);
-                      setSelectedSubmission(null);
-                    }}
-                  >
-                    Resubmit Application
-                  </Button>
-                )}
+                {/* No Resubmit button for cancelled tickets in detail modal */}
                 {(selectedSubmission.status === 'Pending Review' || selectedSubmission.status === 'Pending Payment' || selectedSubmission.status === 'Pending' || selectedSubmission.status === 'Waiting for Payment') && (
                   <Button
                     size="sm"
@@ -777,14 +786,133 @@ export function MyTicketsPage() {
                     className="text-rose-600 border-rose-200 hover:bg-rose-50 font-bold text-xs print:hidden"
                     leftIcon={<Ban className="w-3.5 h-3.5" />}
                     onClick={() => {
-                      handleCancelTicket(selectedSubmission);
+                      const item = selectedSubmission;
                       setSelectedSubmission(null);
+                      handleCancelTicket(item);
                     }}
                   >
                     Cancel Application
                   </Button>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Popup Modal: Cancel Confirm Or Resubmit Ticket? */}
+      <Modal
+        isOpen={Boolean(ticketToCancel)}
+        onClose={() => !isCancelling && setTicketToCancel(null)}
+        title="Cancel Confirm Or Resubmit Ticket?"
+        description={`Application #${ticketToCancel?.ref_no || ''} — Choose an action below`}
+        maxWidth="md"
+      >
+        {ticketToCancel && (
+          <div className="space-y-4 text-xs">
+            {/* Attention Notice */}
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3">
+              <div className="p-2 bg-amber-100 rounded-xl text-amber-700 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-bold text-amber-950 text-sm">
+                  Cancel or Resubmit with Corrections?
+                </h4>
+                <p className="text-amber-800 text-xs leading-relaxed">
+                  You requested to cancel application <strong className="font-mono text-amber-950">{ticketToCancel.ref_no}</strong>. If you only need to adjust your schedule date, time, attendees, or details, you can choose to <strong>Resubmit Ticket</strong> instead of cancelling.
+                </p>
+              </div>
+            </div>
+
+            {/* Ticket Summary Card */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Application Summary</span>
+                <Badge variant={ticketToCancel.badgeVariant as any}>{ticketToCancel.status}</Badge>
+              </div>
+              <div>
+                <h5 className="font-bold text-slate-900 text-sm">{ticketToCancel.title}</h5>
+                <p className="text-slate-500 text-[11px] font-mono">Reference No: {ticketToCancel.ref_no}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-2 text-[11px] text-slate-700 border-t border-slate-200/70">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Schedule / Date:</span>
+                  <span className="font-semibold">{ticketToCancel.date || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Time / Details:</span>
+                  <span className="font-semibold">{ticketToCancel.time || ticketToCancel.details || 'N/A'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Cards */}
+            <div className="space-y-2.5 pt-1">
+              {/* Option 1: Resubmit Ticket */}
+              <div 
+                onClick={() => {
+                  const item = ticketToCancel;
+                  setTicketToCancel(null);
+                  handleResubmit(item);
+                }}
+                className="p-3.5 bg-purple-50/80 hover:bg-purple-100/80 border border-purple-200 rounded-2xl cursor-pointer transition-all flex items-center justify-between group shadow-sm hover:shadow"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                    <RotateCcw className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-purple-950 text-sm">Resubmit Ticket (Modify Details)</h5>
+                    <p className="text-purple-700 text-[11px]">Edit date, time, equipment, or details with existing info retained</p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="shrink-0 bg-purple-600 hover:bg-purple-700 text-white font-bold pointer-events-none"
+                >
+                  Resubmit
+                </Button>
+              </div>
+
+              {/* Option 2: Confirm Cancellation */}
+              <div 
+                onClick={handleConfirmCancel}
+                className="p-3.5 bg-rose-50/80 hover:bg-rose-100/80 border border-rose-200 rounded-2xl cursor-pointer transition-all flex items-center justify-between group shadow-sm hover:shadow"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                    <Ban className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-rose-950 text-sm">Confirm Cancellation</h5>
+                    <p className="text-rose-700 text-[11px]">Officially cancel application and release reserved schedule slot</p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 bg-white text-rose-600 border-rose-300 hover:bg-rose-50 font-bold pointer-events-none"
+                  disabled={isCancelling}
+                >
+                  {isCancelling ? 'Cancelling...' : 'Confirm Cancel'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Dismiss Footer */}
+            <div className="pt-3 flex items-center justify-between border-t border-slate-100">
+              <span className="text-[11px] text-slate-400 italic">No changes will be made if dismissed.</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setTicketToCancel(null)}
+                disabled={isCancelling}
+                className="font-bold text-slate-700"
+              >
+                Keep Application (Dismiss)
+              </Button>
             </div>
           </div>
         )}

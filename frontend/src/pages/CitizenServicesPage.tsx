@@ -23,7 +23,10 @@ import {
   ShieldCheck, 
   Search,
   X,
-  Plus
+  Plus,
+  ArrowRight,
+  ExternalLink,
+  FileText
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -52,7 +55,8 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const [resubmittingTicket, setResubmittingTicket] = useState<any>(null);
+  const [viewingRecognizedTicket, setViewingRecognizedTicket] = useState<any | null>(null);
+  const [appliedAlternativeSlot, setAppliedAlternativeSlot] = useState<string | null>(null);
 
   // Read defaultTab every render so it stays in sync with sidebar clicks
   const tabParam = searchParams.get('tab') as any;
@@ -61,15 +65,27 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     initialTab === 'reserve' ? 'facility' : initialTab
   );
 
+  // Resubmit ticket - initialized only from explicit navigation state (resets on refresh or tab switch)
+  const [resubmittingTicket, setResubmittingTicket] = useState<any>(() => {
+    return (location.state as any)?.resubmitItem || null;
+  });
+
   // Sync when defaultTab prop changes (sidebar link clicked)
   useEffect(() => {
     const incoming = tabParam || defaultTab;
     if (incoming) setActiveTab(incoming === 'reserve' ? 'facility' : incoming);
   }, [defaultTab, tabParam]);
 
+  // When switching tabs or services, clear resubmitting mode so it returns to normal submission
+  useEffect(() => {
+    setResubmittingTicket(null);
+    setAiConflict(null);
+    sessionStorage.removeItem('govserve_resubmit_ticket');
+  }, [activeTab]);
+
   // Current Logged In Citizen
-  const userStr = localStorage.getItem('govserve_user');
-  let currentUser: any = { name: 'Juan M. Dela Cruz', email: 'juan.delacruz@citizen.gov.ph', phone: '+63 917 123 4567', id: 0 };
+  const userStr = sessionStorage.getItem('govserve_citizen_user') || sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_citizen_user') || localStorage.getItem('govserve_user');
+  let currentUser: any = null;
   try {
     if (userStr) currentUser = JSON.parse(userStr);
   } catch {}
@@ -104,9 +120,9 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
   ];
 
   const [reserveForm, setReserveForm] = useState({
-    applicant_name: currentUser?.name || 'Juan M. Dela Cruz',
-    applicant_email: currentUser?.email || 'juan.delacruz@citizen.gov.ph',
-    applicant_phone: currentUser?.phone || '+63 917 123 4567',
+    applicant_name: currentUser?.name || '',
+    applicant_email: currentUser?.email || '',
+    applicant_phone: currentUser?.phone || '',
     purpose: PURPOSE_OPTIONS[0],
     custom_purpose: '',
     event_date: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
@@ -116,6 +132,29 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     special_equipment: [] as string[],
     remarks: '',
   });
+
+  // Keep form fields synced if user switches account or state loads
+  useEffect(() => {
+    if (currentUser?.email) {
+      setReserveForm(prev => ({
+        ...prev,
+        applicant_name: prev.applicant_name || currentUser.name || '',
+        applicant_email: prev.applicant_email || currentUser.email || '',
+        applicant_phone: prev.applicant_phone || currentUser.phone || ''
+      }));
+      setUtilityForm(prev => ({
+        ...prev,
+        citizen_name: prev.citizen_name || currentUser.name || '',
+        citizen_phone: prev.citizen_phone || currentUser.phone || ''
+      }));
+      setBurialForm(prev => ({
+        ...prev,
+        contact_person: prev.contact_person || currentUser.name || '',
+        applicant_email: prev.applicant_email || currentUser.email || '',
+        contact_phone: prev.contact_phone || currentUser.phone || ''
+      }));
+    }
+  }, [currentUser?.email]);
   const [aiConflict, setAiConflict] = useState<any>(null);
   const [aiChecking, setAiChecking] = useState(false);
   const [reservationSuccess, setReservationSuccess] = useState<any>(null);
@@ -202,46 +241,49 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
   const [burialSubmitting, setBurialSubmitting] = useState(false);
 
   // Restore ticket details when citizen clicks "Resubmit" from MyTicketsPage
+  // Restore ticket details when citizen clicks "Resubmit" from MyTicketsPage
   useEffect(() => {
     try {
       const stateItem = (location.state as any)?.resubmitItem;
-      const storedItemStr = sessionStorage.getItem('govserve_resubmit_ticket');
-      const item = stateItem || (storedItemStr ? JSON.parse(storedItemStr) : null);
-      if (item) {
-        setResubmittingTicket(item);
-        if (item.category === 'facility') {
+      if (stateItem) {
+        setResubmittingTicket(stateItem);
+        // Clear history state so that page refresh or browser reload returns to normal submission
+        window.history.replaceState({}, document.title);
+        sessionStorage.removeItem('govserve_resubmit_ticket');
+
+        if (stateItem.category === 'facility') {
           let sTime = '08:00 AM';
           let eTime = '12:00 PM';
-          if (item.time && item.time.includes('-')) {
-            const parts = item.time.split('-').map((s: string) => s.trim());
+          if (stateItem.time && stateItem.time.includes('-')) {
+            const parts = stateItem.time.split('-').map((s: string) => s.trim());
             if (parts[0]) sTime = parts[0];
             if (parts[1]) eTime = parts[1];
           }
           setReserveForm(prev => ({
             ...prev,
-            applicant_name: item.applicant || prev.applicant_name,
-            applicant_phone: item.contact || prev.applicant_phone,
-            purpose: item.details || prev.purpose,
-            event_date: item.date && !item.date.includes('N/A') ? item.date : prev.event_date,
+            applicant_name: stateItem.applicant || prev.applicant_name,
+            applicant_phone: stateItem.contact || prev.applicant_phone,
+            purpose: stateItem.details || prev.purpose,
+            event_date: stateItem.date && !stateItem.date.includes('N/A') ? stateItem.date : prev.event_date,
             start_time: sTime,
             end_time: eTime,
-            special_equipment: Array.isArray(item.special_equipment)
-              ? item.special_equipment
-              : (item.special_equipment ? String(item.special_equipment).split(',').map((s: string) => s.trim()) : prev.special_equipment)
+            special_equipment: Array.isArray(stateItem.special_equipment)
+              ? stateItem.special_equipment
+              : (stateItem.special_equipment ? String(stateItem.special_equipment).split(',').map((s: string) => s.trim()) : prev.special_equipment)
           }));
-        } else if (item.category === 'utility') {
+        } else if (stateItem.category === 'utility') {
           setUtilityForm(prev => ({
             ...prev,
-            citizen_name: item.applicant || prev.citizen_name,
-            citizen_phone: item.contact || prev.citizen_phone,
-            description: item.details || prev.description,
-            location: item.location || prev.location
+            citizen_name: stateItem.applicant || prev.citizen_name,
+            citizen_phone: stateItem.contact || prev.citizen_phone,
+            description: stateItem.details || prev.description,
+            location: stateItem.location || prev.location
           }));
-        } else if (item.category === 'cemetery') {
+        } else if (stateItem.category === 'cemetery') {
           setBurialForm(prev => ({
             ...prev,
-            contact_person: item.applicant || prev.contact_person,
-            contact_phone: item.contact || prev.contact_phone
+            contact_person: stateItem.applicant || prev.contact_person,
+            contact_phone: stateItem.contact || prev.contact_phone
           }));
         }
       }
@@ -307,6 +349,20 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
 
   const isParksMode = activeTab === 'parks';
 
+  // Whether the resubmit ticket matches the currently active tab (Parks vs Gov Facility)
+  // A Government Facility ticket should ONLY show the resubmit banner on the Facility tab,
+  // and a Parks ticket should ONLY show it on the Parks tab.
+  const resubmitTicketIsPark = resubmittingTicket
+    ? (resubmittingTicket.facility_category || '').toLowerCase().includes('park') ||
+      (resubmittingTicket.title || '').toLowerCase().includes('park') ||
+      (resubmittingTicket.title || '').toLowerCase().includes('amphitheater') ||
+      (resubmittingTicket.title || '').toLowerCase().includes('plaza')
+    : false;
+  // Active resubmit only when on the matching tab
+  const activeResubmit = resubmittingTicket && resubmittingTicket.category === 'facility'
+    ? (isParksMode ? resubmitTicketIsPark : !resubmitTicketIsPark)
+    : resubmittingTicket; // non-facility resubmits are always active
+
   const availableVenues = facilities.filter(f => {
     const cat = (f.category || '').toLowerCase();
     return isParksMode ? (cat.includes('park') || cat.includes('recreation')) : (!cat.includes('park') && !cat.includes('recreation'));
@@ -354,25 +410,35 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     });
   };
 
-  // Real-time automatic double booking check (detects if conflicting slot is the citizen's own schedule)
+  // Real-time automatic double booking check (only runs when NOT resubmitting)
   useEffect(() => {
     if (!selectedFacilityObj || !reserveForm.event_date) return;
 
+    // When user is resubmitting on the MATCHING tab, they already own the slot — skip conflict check
+    if (activeResubmit) {
+      setAiConflict(null);
+      return;
+    }
+
+    const category = isParksMode ? 'Park & Recreation' : 'Government Facility';
+
     checkDoubleBooking(
-      selectedFacilityId,
+      selectedFacilityObj.id,
       selectedFacilityObj.name,
       reserveForm.event_date,
       reserveForm.start_time,
       reserveForm.end_time,
       reserveForm.applicant_email || currentUser?.email,
       reserveForm.applicant_name || currentUser?.name,
-      resubmittingTicket?.originalId
+      undefined,
+      category
     ).then((res) => {
       if (res.hasConflict) {
         setAiConflict({
           hasConflict: true,
           isOwnSchedule: false,
           aiAnalysis: res.message,
+          existingBooking: null,
           alternativeSlots: res.suggestedSlots
         });
       } else if ((res as any).isOwnSchedule) {
@@ -380,13 +446,14 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
           hasConflict: false,
           isOwnSchedule: true,
           aiAnalysis: res.message,
+          existingBooking: (res as any).existingBooking,
           alternativeSlots: []
         });
       } else {
         setAiConflict(null);
       }
     }).catch(console.error);
-  }, [selectedFacilityId, reserveForm.event_date, reserveForm.start_time, reserveForm.end_time, reserveForm.applicant_email, reserveForm.applicant_name, resubmittingTicket]);
+  }, [selectedFacilityObj?.id, selectedFacilityObj?.name, isParksMode, reserveForm.event_date, reserveForm.start_time, reserveForm.end_time, reserveForm.applicant_email, reserveForm.applicant_name, activeResubmit]);
 
   const handleFacilityReserve = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -419,6 +486,8 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     try {
       const payload = {
         ...reserveForm,
+        citizen_id: currentUser?.id || undefined,
+        citizen_email: currentUser?.email || reserveForm.applicant_email.trim(),
         applicant_name: reserveForm.applicant_name.trim(),
         applicant_email: reserveForm.applicant_email.trim(),
         applicant_phone: reserveForm.applicant_phone.trim(),
@@ -429,13 +498,14 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
         facility_location: selectedFacilityObj.location,
         hourly_rate: selectedFacilityObj.hourly_rate,
         attendees: currentAttendees,
-        ...(resubmittingTicket ? { resubmitId: resubmittingTicket.originalId, reference_no: resubmittingTicket.ref_no } : {})
+        ...(activeResubmit ? { resubmitId: resubmittingTicket.originalId, reference_no: resubmittingTicket.ref_no } : {})
       };
       const res = await createReservation(payload);
       if (res.success) {
         setReservationSuccess(res.data || res);
         setResubmittingTicket(null);
         sessionStorage.removeItem('govserve_resubmit_ticket');
+        setAiConflict(null);
       } else {
         setReserveError(res.message || 'Failed to submit reservation.');
       }
@@ -471,6 +541,8 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     try {
       const res = await createUtilityRequest({
         ...utilityForm,
+        citizen_id: currentUser?.id || undefined,
+        citizen_email: currentUser?.email || undefined,
         citizen_name: utilityForm.citizen_name.trim(),
         citizen_phone: utilityForm.citizen_phone.trim(),
         location: utilityForm.location.trim(),
@@ -536,6 +608,8 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     try {
       const payload = {
         ...burialForm,
+        citizen_id: currentUser?.id || undefined,
+        citizen_email: currentUser?.email || burialForm.applicant_email.trim(),
         deceased_name: burialForm.deceased_name.trim(),
         cause_of_death: burialForm.cause_of_death.trim(),
         deceased_address: burialForm.deceased_address.trim(),
@@ -697,12 +771,12 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                     <CardDescription>{isParksMode ? 'Select recreation purpose, special equipment, and confirm park schedule' : 'Select event purpose, special equipment, and verify schedule'}</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    {resubmittingTicket && (
+                    {activeResubmit && (
                       <div className="mb-4 p-3 bg-blue-50 border border-blue-300 rounded-2xl flex items-center justify-between text-blue-950 text-xs animate-fade-in">
                         <div className="flex items-center gap-2.5">
                           <span className="p-1.5 bg-blue-200 text-blue-900 rounded-xl font-bold">🔄</span>
                           <div>
-                            <p className="font-bold">Resubmitting Application: <span className="font-mono text-blue-800">{resubmittingTicket.ref_no}</span></p>
+                            <p className="font-bold">Resubmitting Application: <span className="font-mono text-blue-800">{activeResubmit?.ref_no || resubmittingTicket?.ref_no}</span></p>
                             <p className="text-[11px] text-blue-700">You are updating your schedule. Your previous pending booking is recognized as your own and will not conflict.</p>
                           </div>
                         </div>
@@ -861,67 +935,174 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
 
                       {/* AI Slot Check Box */}
                       {aiConflict && (
-                        <div className={`p-4 rounded-2xl text-white space-y-2.5 animate-fade-in shadow-medium border ${
+                        <div className={`p-4 rounded-2xl text-white space-y-3 animate-fade-in shadow-medium border ${
                           aiConflict.isOwnSchedule
-                            ? 'bg-gradient-to-br from-emerald-950 to-slate-900 border-emerald-500/40'
+                            ? 'bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-950 border-emerald-500/50 ring-1 ring-emerald-500/20'
                             : 'bg-gradient-to-br from-indigo-950 to-slate-900 border-indigo-500/30'
                         }`}>
-                          <div className="flex items-center justify-between">
-                            <span className={`text-xs font-bold flex items-center gap-1.5 ${aiConflict.isOwnSchedule ? 'text-emerald-300' : 'text-indigo-300'}`}>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <span className={`text-xs font-bold flex items-center gap-2 ${aiConflict.isOwnSchedule ? 'text-emerald-300' : 'text-indigo-300'}`}>
                               <Sparkles className={`w-4 h-4 animate-pulse ${aiConflict.isOwnSchedule ? 'text-emerald-400' : 'text-indigo-400'}`} />
-                              <span>{aiConflict.isOwnSchedule ? 'Your Booking Recognized' : 'AI Slot Intelligence'}</span>
+                              <span className="text-sm font-extrabold tracking-wide">{aiConflict.isOwnSchedule ? 'Your Booking Recognized' : 'AI Slot Intelligence'}</span>
                             </span>
-                            <Badge variant={aiConflict.hasConflict ? 'destructive' : 'success'}>
+                            <Badge 
+                              variant={aiConflict.hasConflict ? 'destructive' : 'success'} 
+                              className={aiConflict.isOwnSchedule ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50 text-xs py-1 px-3 font-bold shadow-sm' : ''}
+                            >
                               {aiConflict.hasConflict ? '⚠️ Schedule Conflict Detected' : aiConflict.isOwnSchedule ? '✓ Your Existing Schedule (Resubmit Ready)' : '✅ Optimal Slot Verified'}
                             </Badge>
                           </div>
-                          <p className="text-xs text-slate-200 leading-relaxed">{aiConflict.aiAnalysis}</p>
-                          {aiConflict.alternativeSlots && aiConflict.alternativeSlots.length > 0 && (
+                          <p className="text-xs text-slate-200 leading-relaxed">
+                            {aiConflict.isOwnSchedule
+                              ? 'This schedule slot matches your existing booking. You can view your ticket or go to My Tickets to resubmit with updated details.'
+                              : 'This time slot is already reserved. Please choose a different date or time.'}
+                          </p>
+
+                          {/* Recognized Booking Ticket Card - Clickable to see ticket */}
+                          {aiConflict.isOwnSchedule && (
+                            <div className="pt-1">
+                              <div
+                                onClick={() => {
+                                  const targetRef = aiConflict.existingBooking?.reference_no || resubmittingTicket?.ref_no;
+                                  if (targetRef) {
+                                    navigate(`/my-tickets?ticket=${encodeURIComponent(targetRef)}`, { state: { openTicketRef: targetRef } });
+                                  } else {
+                                    navigate('/my-tickets');
+                                  }
+                                }}
+                                className="p-3.5 bg-gradient-to-r from-emerald-950/80 via-slate-900/90 to-slate-900/95 hover:from-emerald-900/70 hover:to-slate-800 border border-emerald-400/40 hover:border-emerald-300 rounded-xl cursor-pointer transition-all duration-200 shadow-md group relative overflow-hidden"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
+                                  <div className="flex items-start gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center justify-center shrink-0 group-hover:scale-105 group-hover:bg-emerald-500/30 transition-all">
+                                      <FileCheck className="w-5 h-5 text-emerald-400" />
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Matched Ticket Voucher</span>
+                                        <Badge size="sm" variant="success" className="text-[10px] py-0 px-2 bg-emerald-400/20 text-emerald-200 border-emerald-300/40">
+                                          {aiConflict.existingBooking?.status || resubmittingTicket?.status || 'Active'}
+                                        </Badge>
+                                      </div>
+                                      <h5 className="font-extrabold font-mono text-white group-hover:text-emerald-300 transition-colors text-sm flex items-center gap-1.5">
+                                        {aiConflict.existingBooking?.reference_no || resubmittingTicket?.ref_no || 'RES-SCHEDULE'}
+                                        <span className="text-xs font-sans font-medium text-emerald-200/80">
+                                          • {aiConflict.existingBooking?.facility_name || resubmittingTicket?.title || selectedFacilityObj.name}
+                                        </span>
+                                      </h5>
+                                      <p className="text-[11px] text-slate-300">
+                                        📅 <strong>Booked Slot:</strong> {aiConflict.existingBooking?.event_date || resubmittingTicket?.date || reserveForm.event_date} ({aiConflict.existingBooking?.start_time || resubmittingTicket?.time || `${reserveForm.start_time} - ${reserveForm.end_time}`})
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setViewingRecognizedTicket(aiConflict.existingBooking || resubmittingTicket || {
+                                          reference_no: aiConflict.existingBooking?.reference_no || 'RES-SCHEDULE',
+                                          facility_name: selectedFacilityObj.name,
+                                          event_date: reserveForm.event_date,
+                                          start_time: reserveForm.start_time,
+                                          end_time: reserveForm.end_time,
+                                          status: 'Pending Review',
+                                          purpose: reserveForm.purpose,
+                                          applicant_name: reserveForm.applicant_name,
+                                          applicant_phone: reserveForm.applicant_phone
+                                        });
+                                      }}
+                                      className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-emerald-200 border border-emerald-400/30 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                      Quick View
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const targetRef = aiConflict.existingBooking?.reference_no || resubmittingTicket?.ref_no;
+                                        if (targetRef) {
+                                          navigate(`/my-tickets?ticket=${encodeURIComponent(targetRef)}`, { state: { openTicketRef: targetRef } });
+                                        } else {
+                                          navigate('/my-tickets');
+                                        }
+                                      }}
+                                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm group-hover:scale-105 transition-all"
+                                    >
+                                      <span>Go to My Ticket</span>
+                                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {aiConflict.alternativeSlots && aiConflict.alternativeSlots.filter((s: string) => !s.toLowerCase().includes('next available') && !s.toLowerCase().includes('next day') && !s.toLowerCase().includes('next saturday')).length > 0 && (
                             <div className="pt-2 space-y-1.5">
                               <p className="text-[11px] font-bold text-indigo-300">💡 Suggested Alternative Slots (Click to Apply):</p>
                               <div className="flex flex-wrap gap-2">
-                                {aiConflict.alternativeSlots.map((slot: string, idx: number) => (
-                                  <button
-                                    key={idx}
-                                    type="button"
-                                    onClick={() => {
-                                      if (slot.includes('02:00 PM')) {
-                                        setReserveForm(prev => ({ ...prev, start_time: '02:00 PM', end_time: '06:00 PM' }));
-                                      }
-                                      alert(`Applied alternative window: ${slot}`);
-                                    }}
-                                    className="bg-white/10 hover:bg-white/20 text-indigo-200 px-3 py-1 rounded-xl border border-white/20 text-xs font-mono transition-all flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <span>{slot}</span>
-                                    <Check className="w-3 h-3 text-emerald-400" />
-                                  </button>
-                                ))}
+                                {aiConflict.alternativeSlots
+                                  .filter((slot: string) => !slot.toLowerCase().includes('next available') && !slot.toLowerCase().includes('next day') && !slot.toLowerCase().includes('next saturday'))
+                                  .slice(0, 1)
+                                  .map((slot: string, idx: number) => (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      onClick={() => {
+                                        if (slot.includes('02:00 PM')) {
+                                          setReserveForm(prev => ({ ...prev, start_time: '02:00 PM', end_time: '06:00 PM' }));
+                                        }
+                                        setAppliedAlternativeSlot(slot);
+                                      }}
+                                      className="bg-white/10 hover:bg-white/25 hover:border-emerald-400/50 hover:text-white text-indigo-200 px-3.5 py-1.5 rounded-xl border border-white/20 text-xs font-mono transition-all flex items-center gap-2 cursor-pointer shadow-sm group"
+                                    >
+                                      <span className="font-semibold">{slot}</span>
+                                      <Check className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                                    </button>
+                                  ))}
                               </div>
                             </div>
                           )}
                         </div>
                       )}
 
+
                       {/* Single Action Button */}
-                      <div className="pt-3 border-t border-slate-100 flex justify-end">
+                      <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                        {/* Left: AI status label */}
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          {aiConflict?.isOwnSchedule && !activeResubmit
+                            ? <span className="text-amber-700 font-semibold">⚠️ Existing booking detected — resubmit or cancel first</span>
+                            : activeResubmit
+                            ? <span className="text-blue-700 font-semibold">🔄 Resubmitting existing ticket — slot recognized as yours</span>
+                            : aiConflict?.hasConflict
+                            ? <span className="text-red-600 font-semibold">🚫 Slot unavailable — pick a different date or time</span>
+                            : <span>AI-assisted booking schedule <strong className="text-emerald-600">Active</strong></span>
+                          }
+                        </div>
                         <Button 
                           type="submit" 
                           size="md" 
-                          disabled={Boolean(aiConflict?.hasConflict) || isPaxExceeded}
-                          leftIcon={<Sparkles className="w-4 h-4 text-blue-100" />}
+                          disabled={Boolean(aiConflict?.hasConflict) || isPaxExceeded || (Boolean(aiConflict?.isOwnSchedule) && !activeResubmit)}
                           className={`w-full sm:w-auto px-8 font-bold ${
-                            isPaxExceeded || aiConflict?.hasConflict 
-                              ? 'bg-red-200 text-red-700 cursor-not-allowed border border-red-300' 
+                            isPaxExceeded || aiConflict?.hasConflict || (aiConflict?.isOwnSchedule && !activeResubmit)
+                              ? 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300' 
                               : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
                           }`}
                         >
                           {isPaxExceeded 
-                            ? `🚫 Cannot Submit (Exceeded Max Capacity of ${selectedFacilityObj.capacity} Pax)` 
+                            ? `🚫 Exceeds Max Capacity (${selectedFacilityObj.capacity} Pax)` 
                             : aiConflict?.hasConflict 
-                            ? '🚫 Cannot Submit (Slot Already Booked)' 
-                            : resubmittingTicket
-                            ? 'Confirm & Resubmit Reservation (AI Verified)'
-                            : 'Submit Reservation (AI Assisted)'}
+                            ? '🚫 Slot Already Booked' 
+                            : aiConflict?.isOwnSchedule && !activeResubmit
+                            ? '🚫 Resubmit or Cancel Existing Ticket First'
+                            : activeResubmit
+                            ? 'Confirm & Resubmit Reservation'
+                            : 'Submit Reservation'}
                         </Button>
                       </div>
                     </form>
@@ -1600,6 +1781,133 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
             </div>
             <div className="pt-2 flex justify-end">
               <Button size="sm" onClick={() => setSelectedAssetDetail(null)}>Close</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Quick View Modal for Recognized Ticket */}
+      <Modal
+        isOpen={Boolean(viewingRecognizedTicket)}
+        onClose={() => setViewingRecognizedTicket(null)}
+        title={`Your Recognized Ticket — ${viewingRecognizedTicket?.reference_no || viewingRecognizedTicket?.ref_no || ''}`}
+        description="Official Citizen Ticket Voucher Information."
+        maxWidth="md"
+      >
+        {viewingRecognizedTicket && (
+          <div className="space-y-4 text-xs">
+            {/* Header Voucher Box */}
+            <div className="p-4 bg-gradient-to-r from-emerald-950 via-slate-900 to-slate-900 text-white rounded-xl border border-emerald-500/30 space-y-1">
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest block">MUNICIPAL SERVICES — VERIFIED BOOKING</span>
+              <h4 className="text-base font-extrabold text-white">{viewingRecognizedTicket.facility_name || viewingRecognizedTicket.title || 'Government Facility'}</h4>
+              <p className="text-xs font-mono text-emerald-300">Ticket Tracking No: <strong>{viewingRecognizedTicket.reference_no || viewingRecognizedTicket.ref_no}</strong></p>
+              <div className="pt-2 flex items-center gap-2">
+                <Badge variant="success">{viewingRecognizedTicket.status || 'Active'}</Badge>
+                <span className="text-slate-300 text-[11px]">Existing slot registered under your citizen profile</span>
+              </div>
+            </div>
+
+            {/* Ticket Info Card */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-slate-800">
+              <p className="font-bold text-xs uppercase text-slate-500 tracking-wider">Booking Particulars</p>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Scheduled Date:</span>
+                  <span className="font-semibold">{viewingRecognizedTicket.event_date || viewingRecognizedTicket.date || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Time Slot:</span>
+                  <span className="font-semibold">{viewingRecognizedTicket.start_time && viewingRecognizedTicket.end_time ? `${viewingRecognizedTicket.start_time} - ${viewingRecognizedTicket.end_time}` : (viewingRecognizedTicket.time || 'N/A')}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Applicant:</span>
+                  <span className="font-semibold">{viewingRecognizedTicket.applicant_name || viewingRecognizedTicket.applicant || currentUser?.name}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Purpose:</span>
+                  <span className="font-semibold">{viewingRecognizedTicket.purpose || viewingRecognizedTicket.details || 'N/A'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="pt-3 flex items-center justify-between border-t border-slate-100">
+              <Button size="sm" variant="outline" onClick={() => setViewingRecognizedTicket(null)}>
+                Close
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                leftIcon={<ExternalLink className="w-3.5 h-3.5" />}
+                onClick={() => {
+                  const targetRef = viewingRecognizedTicket.reference_no || viewingRecognizedTicket.ref_no;
+                  setViewingRecognizedTicket(null);
+                  navigate(`/my-tickets?ticket=${encodeURIComponent(targetRef)}`, { state: { openTicketRef: targetRef } });
+                }}
+              >
+                Go to My Tickets Page
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Popout Modal for Applied Alternative Slot */}
+      <Modal
+        isOpen={Boolean(appliedAlternativeSlot)}
+        onClose={() => setAppliedAlternativeSlot(null)}
+        title="Alternative Slot Applied"
+        description="Schedule conflict resolved — recommended afternoon window has been selected."
+        maxWidth="md"
+      >
+        {appliedAlternativeSlot && (
+          <div className="space-y-4 text-xs">
+            <div className="p-4 bg-gradient-to-r from-indigo-950 via-slate-900 to-emerald-950 text-white rounded-xl border border-emerald-500/30 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  AI Slot Intelligence
+                </span>
+                <Badge variant="success" className="bg-emerald-500/20 text-emerald-300 border-emerald-400/40 text-[10px] py-0.5 font-bold">
+                  ✓ Slot Updated
+                </Badge>
+              </div>
+              <h4 className="text-base font-extrabold text-white">
+                {selectedFacilityObj?.name || 'Municipal Facility'}
+              </h4>
+              <p className="text-xs text-indigo-200">
+                Your reservation schedule has been successfully adjusted to the optimal available time window.
+              </p>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 text-slate-800">
+              <p className="font-bold text-xs uppercase text-slate-500 tracking-wider">Applied Reservation Schedule</p>
+              <div className="grid grid-cols-2 gap-3 text-[11px]">
+                <div className="p-2.5 bg-white rounded-lg border border-slate-200/80">
+                  <span className="text-slate-400 block text-[10px] font-medium">Event Date</span>
+                  <span className="font-bold text-slate-800">{reserveForm.event_date}</span>
+                </div>
+                <div className="p-2.5 bg-white rounded-lg border border-emerald-300 bg-emerald-50/40">
+                  <span className="text-emerald-700 block text-[10px] font-medium">New Time Window</span>
+                  <span className="font-bold text-emerald-800">02:00 PM - 06:00 PM</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] text-emerald-700 pt-1 font-medium">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>The schedule conflict is resolved. You can proceed with completing your reservation.</span>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end border-t border-slate-100">
+              <Button
+                size="sm"
+                variant="primary"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5"
+                onClick={() => setAppliedAlternativeSlot(null)}
+              >
+                Continue Reservation
+              </Button>
             </div>
           </div>
         )}

@@ -63,11 +63,29 @@ import {
 export function DashboardPage() {
   const navigate = useNavigate();
 
-  const userStr = sessionStorage.getItem('govserve_user') || localStorage.getItem('govserve_user');
-  let user: any = { name: 'Executive Administrator', role: 'Super Admin', email: 'admin@govserve.gov.ph' };
-  try {
-    if (userStr) user = JSON.parse(userStr);
-  } catch {}
+  const getUser = () => {
+    try {
+      const portal = sessionStorage.getItem('govserve_portal');
+      if (portal === 'staff') {
+        const s = sessionStorage.getItem('govserve_staff_user') || localStorage.getItem('govserve_staff_user');
+        if (s) return JSON.parse(s);
+      } else if (portal === 'citizen') {
+        const s = sessionStorage.getItem('govserve_citizen_user') || localStorage.getItem('govserve_citizen_user');
+        if (s) return JSON.parse(s);
+      }
+      const sess = sessionStorage.getItem('govserve_user');
+      if (sess) return JSON.parse(sess);
+      const citStr = localStorage.getItem('govserve_citizen_user');
+      const staffStr = localStorage.getItem('govserve_staff_user');
+      if (citStr) return JSON.parse(citStr);
+      if (staffStr) return JSON.parse(staffStr);
+      const s = localStorage.getItem('govserve_user');
+      return s ? JSON.parse(s) : null;
+    } catch {
+      return null;
+    }
+  };
+  const user = getUser();
 
   const isCitizen = user?.role === 'Citizen';
 
