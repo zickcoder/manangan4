@@ -12,7 +12,7 @@ const EP_URL = (
   env.VITE_EPROVIDER_API_URL ||
   env.VITE_EPROVIDER_API_BASE_URL ||
   env.VITE_SUPABASE_URL ||
-  'http://supa.eprovider.site/330a2e7808deec92591a'
+  'https://supa.eprovider.site/330a2e7808deec92591a'
 ).replace(/\/$/, '');
 
 const EP_KEY = (
