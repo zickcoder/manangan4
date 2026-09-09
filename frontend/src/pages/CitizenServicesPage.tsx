@@ -49,6 +49,7 @@ import {
   calculateFacilityFee
 } from '../lib/api';
 import { Facility, CemeteryPlot, Asset } from '../types';
+import { compressImage } from '../lib/imageCompressor';
 
 interface CitizenServicesProps {
   defaultTab?: 'facility' | 'parks' | 'reserve' | 'utility' | 'cemetery' | 'assets';
@@ -218,19 +219,20 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
   const [utilitySubmitting, setUtilitySubmitting] = useState(false);
   const [utilityError, setUtilityError] = useState('');
 
-  const handleUtilityPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUtilityPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUtilityError('');
-    const reader = new FileReader();
-    reader.onload = () => {
+    try {
+      const compressed = await compressImage(file);
       setUtilityForm(prev => ({
         ...prev,
-        photo_url: reader.result as string,
+        photo_url: compressed,
         photo_name: file.name
       }));
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      setUtilityError('Failed to process image file. Please try another image.');
+    }
   };
 
   // 3. Cemetery Plot Search & Burial

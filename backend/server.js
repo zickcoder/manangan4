@@ -20,7 +20,8 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Serve static frontend build if it exists
 const distPath = path.join(__dirname, '../frontend/dist');
@@ -584,11 +585,28 @@ app.get('/api/utilities', async (req, res) => {
 // File Water/Drainage Ticket
 app.post('/api/utilities', async (req, res) => {
   try {
-    const { citizen_name, citizen_phone, service_type, location, description, urgency } = req.body;
-    const ticketNo = `REQ-2026-${Math.floor(100 + Math.random() * 900)}`;
+    const { 
+      ticket_no, 
+      citizen_name, 
+      citizen_phone, 
+      citizen_email, 
+      citizen_id, 
+      service_type, 
+      location, 
+      affected_households, 
+      photo_url, 
+      description, 
+      urgency,
+      ai_priority_score 
+    } = req.body;
+
+    const currentYear = new Date().getFullYear();
+    const finalTicketNo = ticket_no || `REQ-${currentYear}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     // AI Priority Assessment
-    let priorityScore = 70;
+    let priorityScore = typeof ai_priority_score === 'number' 
+      ? ai_priority_score 
+      : (urgency === 'Urgent' ? 95 : urgency === 'High' ? 80 : 60);
     let autoUrgency = urgency || 'Normal';
     let assignedTeam = 'Quick Response Water Crew Alpha';
 
@@ -605,15 +623,30 @@ app.post('/api/utilities', async (req, res) => {
 
     const result = await pool.query(`
       INSERT INTO utility_requests (
-        ticket_no, citizen_name, citizen_phone, service_type, location,
+        ticket_no, citizen_name, citizen_phone, citizen_email, citizen_id,
+        service_type, location, affected_households, photo_url,
         description, urgency, ai_priority_score, status, assigned_team
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Pending', $9)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'Pending', $13)
       RETURNING *
-    `, [ticketNo, citizen_name, citizen_phone, service_type, location, description, autoUrgency, priorityScore, assignedTeam]);
+    `, [
+      finalTicketNo, 
+      citizen_name, 
+      citizen_phone, 
+      citizen_email || null, 
+      citizen_id || null, 
+      service_type, 
+      location, 
+      affected_households || null, 
+      photo_url || null, 
+      description, 
+      autoUrgency, 
+      priorityScore, 
+      assignedTeam
+    ]);
 
     await pool.query(
       'INSERT INTO activity_logs (user_name, action, module, details) VALUES ($1, $2, $3, $4)',
-      [citizen_name, 'Utility Request Logged', 'WATER & DRAINAGE', `${service_type} at ${location}`]
+      [citizen_name || 'Citizen', 'Utility Request Logged', 'WATER & DRAINAGE', `${service_type} at ${location}`]
     );
 
     res.status(201).json({ success: true, data: result.rows[0] });

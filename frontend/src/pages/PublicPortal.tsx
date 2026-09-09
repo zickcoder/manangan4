@@ -55,6 +55,7 @@ import {
   calculateFacilityFee
 } from '../lib/api';
 import { Facility, CemeteryPlot, Asset } from '../types';
+import { compressImage } from '../lib/imageCompressor';
 
 export function PublicPortal() {
   const [searchParams] = useSearchParams();
@@ -144,6 +145,21 @@ export function PublicPortal() {
   });
   const [utilitySuccess, setUtilitySuccess] = useState<any>(null);
   const [utilitySubmitting, setUtilitySubmitting] = useState(false);
+
+  const handlePublicUtilityPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImage(file);
+      setUtilityForm(prev => ({
+        ...prev,
+        photo_url: compressed,
+        photo_name: file.name
+      }));
+    } catch {
+      alert('Failed to process image. Please try another file.');
+    }
+  };
 
   // 4. Cemetery Plot Search & Burial State
   const [cemeteries, setCemeteries] = useState<string[]>(['Barangay 178 Municipal Cemetery']);
@@ -1234,26 +1250,45 @@ export function PublicPortal() {
                               </div>
                             ) : (
                               <>
-                                <div className="flex justify-center text-cyan-600">
-                                  <Upload className="w-8 h-8 opacity-70" />
-                                </div>
-                                <p className="text-xs text-slate-600 font-medium">
-                                  Click to upload an image from your phone or choose a sample picture below:
-                                </p>
+                                <label className="cursor-pointer block py-2 hover:opacity-90">
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handlePublicUtilityPhotoUpload}
+                                    className="hidden"
+                                  />
+                                  <div className="flex justify-center text-cyan-600 mb-1">
+                                    <Upload className="w-8 h-8 opacity-70" />
+                                  </div>
+                                  <p className="text-xs text-slate-700 font-bold">
+                                    Upload Photo from Your Device
+                                  </p>
+                                  <p className="text-[11px] text-slate-500 mt-0.5">
+                                    Click here to select a picture or camera capture
+                                  </p>
+                                  <span className="inline-block mt-2 px-3 py-1 bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold rounded-xl shadow-xs">
+                                    Choose Photo
+                                  </span>
+                                </label>
                                 
-                                {/* Quick Sample Picture Chooser */}
-                                <div className="pt-2 flex flex-wrap justify-center gap-1.5">
-                                  {SAMPLE_INCIDENT_PHOTOS.map((pic, idx) => (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      onClick={() => setUtilityForm({ ...utilityForm, photo_url: pic.url, photo_name: `${pic.label}.jpg` })}
-                                      className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-cyan-500 text-[11px] text-slate-700 font-medium shadow-xs transition-all flex items-center gap-1"
-                                    >
-                                      <ImageIcon className="w-3 h-3 text-cyan-600" />
-                                      <span>{pic.label}</span>
-                                    </button>
-                                  ))}
+                                <div className="border-t border-slate-200/80 pt-2.5 mt-2">
+                                  <p className="text-[11px] text-slate-500 font-medium mb-1.5">
+                                    Or choose a sample incident photo:
+                                  </p>
+                                  {/* Quick Sample Picture Chooser */}
+                                  <div className="flex flex-wrap justify-center gap-1.5">
+                                    {SAMPLE_INCIDENT_PHOTOS.map((pic, idx) => (
+                                      <button
+                                        key={idx}
+                                        type="button"
+                                        onClick={() => setUtilityForm({ ...utilityForm, photo_url: pic.url, photo_name: `${pic.label}.jpg` })}
+                                        className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-cyan-500 text-[11px] text-slate-700 font-medium shadow-xs transition-all flex items-center gap-1"
+                                      >
+                                        <ImageIcon className="w-3 h-3 text-cyan-600" />
+                                        <span>{pic.label}</span>
+                                      </button>
+                                    ))}
+                                  </div>
                                 </div>
                               </>
                             )}

@@ -1482,6 +1482,7 @@ export async function createUtilityRequest(payload: any) {
       const data = await res.json();
       if (data?.data) {
         newReq.id = data.data.id || newReq.id;
+        newReq.ticket_no = data.data.ticket_no || newReq.ticket_no;
         setStore('utilities', utilities);
       }
     }
@@ -1495,7 +1496,7 @@ export async function createUtilityRequest(payload: any) {
     window.dispatchEvent(new Event('govserve_data_updated'));
   }
 
-  return { success: true, ticket_no: ticketNo, data: newReq };
+  return { success: true, ticket_no: newReq.ticket_no || ticketNo, data: newReq };
 }
 
 export async function updateUtilityStatus(id: number, status: string, assigned_team?: string, resolution_notes?: string) {
@@ -1645,7 +1646,7 @@ export async function trackUniversalReference(refNo: string) {
     const burials = getStore('burials', DEFAULT_BURIALS);
     const item = burials.find((b: any) => b.reference_no?.toUpperCase() === cleanRef);
     if (item) return { success: true, type: 'Burial Record & Permit', data: item };
-  } else if (cleanRef.startsWith('UTL')) {
+  } else if (cleanRef.startsWith('UTL') || cleanRef.startsWith('REQ')) {
     const utilities = getStore('utilities', DEFAULT_UTILITIES);
     const item = utilities.find((u: any) => u.ticket_no?.toUpperCase() === cleanRef);
     if (item) return { success: true, type: 'Utility & Drainage Service Request', data: item };

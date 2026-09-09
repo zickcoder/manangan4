@@ -15,7 +15,8 @@ import {
   MapPin,
   Home,
   Check,
-  X
+  X,
+  Upload
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -23,6 +24,7 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
 import { fetchUtilities, updateUtilityStatus, createUtilityRequest } from '../lib/api';
+import { compressImage } from '../lib/imageCompressor';
 import { UtilityRequest } from '../types';
 
 export function UtilitiesModule() {
@@ -44,6 +46,8 @@ export function UtilitiesModule() {
     affected_households: '2 - 5 Households (Compound / Immediate Neighbors)',
     description: '',
     urgency: 'Urgent',
+    photo_url: '',
+    photo_name: '',
   });
 
   const loadData = async () => {
@@ -84,10 +88,36 @@ export function UtilitiesModule() {
     }
   };
 
+  const handleDirectPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImage(file);
+      setNewForm(prev => ({
+        ...prev,
+        photo_url: compressed,
+        photo_name: file.name
+      }));
+    } catch {
+      alert('Could not process image file.');
+    }
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await createUtilityRequest(newForm);
+      setNewForm({
+        citizen_name: '',
+        citizen_phone: '',
+        service_type: 'Water Main Leak',
+        location: '',
+        affected_households: '2 - 5 Households (Compound / Immediate Neighbors)',
+        description: '',
+        urgency: 'Urgent',
+        photo_url: '',
+        photo_name: '',
+      });
       setIsNewModalOpen(false);
       loadData();
     } catch (e) {
@@ -117,6 +147,15 @@ export function UtilitiesModule() {
             Review citizen-submitted hazard reports, verify photo evidence, and dispatch emergency response crews.
           </p>
         </div>
+        <Button
+          size="sm"
+          variant="primary"
+          className="bg-cyan-600 hover:bg-cyan-700 font-bold shadow-sm"
+          leftIcon={<Plus className="w-4 h-4" />}
+          onClick={() => setIsNewModalOpen(true)}
+        >
+          Direct Intake / Log Incident
+        </Button>
       </div>
 
       {/* Filter and Search Bar */}
@@ -407,6 +446,32 @@ export function UtilitiesModule() {
               onChange={(e) => setNewForm({ ...newForm, description: e.target.value })}
               className="w-full rounded-xl border border-slate-300 p-2 text-xs"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#334155] mb-1">Attach Photo Proof (Optional)</label>
+            {newForm.photo_url ? (
+              <div className="relative inline-block rounded-xl overflow-hidden border border-slate-300">
+                <img src={newForm.photo_url} alt="Proof" className="h-28 w-auto object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setNewForm(prev => ({ ...prev, photo_url: '', photo_name: '' }))}
+                  className="absolute top-1 right-1 bg-red-600 text-white p-1 rounded-full text-xs hover:bg-red-700"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex items-center gap-2 p-2.5 border border-dashed border-slate-300 rounded-xl bg-slate-50 hover:bg-slate-100 cursor-pointer text-slate-600">
+                <Upload className="w-4 h-4 text-cyan-600" />
+                <span className="text-xs font-medium">Select photo from computer/phone...</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleDirectPhotoUpload}
+                  className="hidden"
+                />
+              </label>
+            )}
           </div>
           <div className="pt-3 flex justify-end gap-2">
             <Button size="sm" variant="outline" type="button" onClick={() => setIsNewModalOpen(false)}>
