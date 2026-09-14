@@ -515,7 +515,7 @@ app.post('/api/cemetery/burials', async (req, res) => {
 app.patch('/api/cemetery/burials/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, remarks, fee_amount, permit_no, payment_method, paid_at, payment_due_date } = req.body;
+    const { status, remarks, fee_amount, permit_no, payment_method, paid_at, payment_due_date, reference_no } = req.body;
 
     const result = await pool.query(`
       UPDATE burial_records
@@ -526,9 +526,9 @@ app.patch('/api/cemetery/burials/:id/status', async (req, res) => {
           payment_method = COALESCE($5, payment_method),
           paid_at = COALESCE($6, paid_at),
           payment_due_date = COALESCE($7, payment_due_date)
-      WHERE id = $8 OR reference_no = $8
+      WHERE id::text = $8 OR reference_no = $8 OR (NULLIF($9, '') IS NOT NULL AND reference_no = $9)
       RETURNING *
-    `, [status, remarks, fee_amount, permit_no, payment_method, paid_at, payment_due_date, id]);
+    `, [status, remarks, fee_amount, permit_no, payment_method, paid_at, payment_due_date, String(id), reference_no || '']);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ success: false, message: 'Burial record not found' });
@@ -562,8 +562,15 @@ app.get('/api/utilities', async (req, res) => {
     const conditions = [];
 
     if (status && status !== 'all') {
-      params.push(status);
-      conditions.push(`status = $${params.length}`);
+      const lower = status.toLowerCase();
+      if (lower === 'dispatched' || lower === 'in progress') {
+        conditions.push(`LOWER(status) IN ('dispatched', 'in progress')`);
+      } else if (lower === 'pending' || lower === 'pending review') {
+        conditions.push(`LOWER(status) IN ('pending', 'pending review')`);
+      } else {
+        params.push(lower);
+        conditions.push(`LOWER(status) = $${params.length}`);
+      }
     }
     if (service_type && service_type !== 'all') {
       params.push(service_type);
@@ -573,7 +580,7 @@ app.get('/api/utilities', async (req, res) => {
     if (conditions.length > 0) {
       query += ' WHERE ' + conditions.join(' AND ');
     }
-    query += ' ORDER BY ai_priority_score DESC, created_at DESC';
+    query += ' ORDER BY created_at DESC, id DESC';
 
     const result = await pool.query(query, params);
     res.json({ success: true, data: result.rows });
@@ -601,9 +608,8 @@ app.post('/api/utilities', async (req, res) => {
     } = req.body;
 
     const currentYear = new Date().getFullYear();
-    const finalTicketNo = ticket_no || `REQ-${currentYear}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const finalTicketNo = ticket_no || `REQ-${currentYear}-${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
 
-    // AI Priority Assessment
     let priorityScore = typeof ai_priority_score === 'number' 
       ? ai_priority_score 
       : (urgency === 'Urgent' ? 95 : urgency === 'High' ? 80 : 60);
@@ -659,15 +665,19 @@ app.post('/api/utilities', async (req, res) => {
 app.patch('/api/utilities/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, assigned_team, resolution_notes, officer_name } = req.body;
+    const { status, assigned_team, resolution_notes, ticket_no } = req.body;
 
     const result = await pool.query(`
       UPDATE utility_requests
       SET status = $1, assigned_team = COALESCE($2, assigned_team), resolution_notes = COALESCE($3, resolution_notes),
           resolved_at = CASE WHEN $1 = 'Resolved' THEN CURRENT_TIMESTAMP ELSE resolved_at END
-      WHERE id = $4
+      WHERE id::text = $4 OR ticket_no = $4 OR (NULLIF($5, '') IS NOT NULL AND ticket_no = $5)
       RETURNING *
-    `, [status, assigned_team, resolution_notes, id]);
+    `, [status, assigned_team, resolution_notes, String(id), ticket_no || '']);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Utility ticket not found' });
+    }
 
     res.json({ success: true, data: result.rows[0] });
   } catch (error) {
@@ -709,11 +719,19 @@ app.get('/api/assets', async (req, res) => {
 // Add New Asset
 app.post('/api/assets', async (req, res) => {
   try {
-    const { name, category, serial_no, purchase_date, purchase_cost, current_condition, assigned_department, next_maintenance_due, image_url, specs } = req.body;
+    const { name, category, serial_no, purchase_date, purchase_cost, current_condition, assigned_department, next_maintenance_due, image_url, specs, ai_maintenance_alert } = req.body;
     const prefix = category.includes('Vehicle') ? 'AST-VEH' : category.includes('Heavy') ? 'AST-EQP' : 'AST-PMP';
     const asset_tag = `${prefix}-${Math.floor(100 + Math.random() * 900)}`;
 
-    const alertText = await predictAssetMaintenance({ name, category, current_condition, last_maintenance_date: purchase_date, next_maintenance_due });
+    // Prioritize manual input entered by the user
+    let alertText = ai_maintenance_alert || '';
+    if (!alertText) {
+      try {
+        alertText = await predictAssetMaintenance({ name, category, current_condition, last_maintenance_date: purchase_date, next_maintenance_due });
+      } catch (e) {
+        alertText = 'Operational and ready for municipal service.';
+      }
+    }
 
     const result = await pool.query(`
       INSERT INTO assets (
@@ -741,10 +759,10 @@ app.patch('/api/assets/:id', async (req, res) => {
       SET current_condition = COALESCE($1, current_condition),
           next_maintenance_due = COALESCE($2, next_maintenance_due),
           last_maintenance_date = CURRENT_DATE,
-          ai_maintenance_alert = COALESCE($3, ai_maintenance_alert)
+          ai_maintenance_alert = CASE WHEN $3 IS NOT NULL THEN $3 ELSE ai_maintenance_alert END
       WHERE id = $4
       RETURNING *
-    `, [current_condition, next_maintenance_due, ai_maintenance_alert, id]);
+    `, [current_condition, next_maintenance_due, ai_maintenance_alert !== undefined ? ai_maintenance_alert : null, id]);
 
     res.json({ success: true, data: result.rows[0] });
   } catch (error) {

@@ -107,7 +107,7 @@ export function AssetsModule() {
             <span>Asset Inventory Management & Maintenance Lifecycle</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Government vehicle fleet, heavy backhoes, emergency water pumps, generators, and predictive health alerts.
+            Government vehicle fleet, heavy backhoes, emergency water pumps, generators, and routine maintenance logs.
           </p>
         </div>
 
@@ -217,12 +217,12 @@ export function AssetsModule() {
               </div>
             )}
 
-            {/* AI Maintenance Alert */}
+            {/* Maintenance Diagnostic Note */}
             {asset.ai_maintenance_alert && (
               <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 text-xs space-y-1">
                 <div className="flex items-center gap-1.5 text-amber-800 font-bold">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                  <span>AI Predictive Health Diagnostic:</span>
+                  <Wrench className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Maintenance Diagnostic Log:</span>
                 </div>
                 <p className="text-[11px] text-slate-700">{asset.ai_maintenance_alert}</p>
               </div>
@@ -293,11 +293,12 @@ export function AssetsModule() {
             />
 
             <div>
-              <label className="block text-xs font-semibold text-[#334155] mb-1">Maintenance Diagnostic Log / AI Notes:</label>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Maintenance Diagnostic & Inspection Notes:</label>
               <textarea
                 rows={3}
                 value={maintenanceAlert}
                 onChange={(e) => setMaintenanceAlert(e.target.value)}
+                placeholder="Log diagnostic findings, replaced components, routine oil/filter change, or mechanical inspection remarks..."
                 className="w-full rounded-xl border border-slate-300 p-2 text-xs"
               />
             </div>

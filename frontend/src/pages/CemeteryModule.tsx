@@ -166,9 +166,11 @@ export function CemeteryModule() {
 
       await updateBurialStatus(burial.id, 'Pending Payment', { 
         fee_amount: 18000,
-        payment_due_date: reviewDueDate 
+        payment_due_date: reviewDueDate,
+        reference_no: burial.reference_no
       });
 
+      setSelectedReviewBurial(prev => prev ? { ...prev, status: 'Pending Payment', fee_amount: 18000, payment_due_date: reviewDueDate } : null);
       setIsReviewModalOpen(false);
       loadData();
 
@@ -200,9 +202,11 @@ export function CemeteryModule() {
       });
 
       await updateBurialStatus(burial.id, 'Paid', {
-        paid_at: new Date().toISOString()
+        paid_at: new Date().toISOString(),
+        reference_no: burial.reference_no
       });
 
+      setSelectedReviewBurial(prev => prev ? { ...prev, status: 'Paid' } : null);
       setIsReviewModalOpen(false);
       loadData();
 
@@ -233,7 +237,8 @@ export function CemeteryModule() {
         message: 'Updating application and resetting plot status.'
       });
 
-      await updateBurialStatus(burial.id, 'Rejected');
+      await updateBurialStatus(burial.id, 'Rejected', { reference_no: burial.reference_no });
+      setSelectedReviewBurial(prev => prev ? { ...prev, status: 'Rejected' } : null);
       setIsReviewModalOpen(false);
       loadData();
 
@@ -264,7 +269,8 @@ export function CemeteryModule() {
         message: 'Burial application marked as approved.'
       });
 
-      await updateBurialStatus(burial.id, 'Approved');
+      await updateBurialStatus(burial.id, 'Approved', { reference_no: burial.reference_no });
+      setSelectedReviewBurial(prev => prev ? { ...prev, status: 'Approved' } : null);
       setIsReviewModalOpen(false);
       loadData();
 
@@ -295,7 +301,8 @@ export function CemeteryModule() {
         message: 'Returning application to Pending Review status.'
       });
 
-      await updateBurialStatus(burial.id, 'Pending Review');
+      await updateBurialStatus(burial.id, 'Pending Review', { reference_no: burial.reference_no });
+      setSelectedReviewBurial(prev => prev ? { ...prev, status: 'Pending Review' } : null);
       setIsReviewModalOpen(false);
       loadData();
 
@@ -1140,90 +1147,95 @@ export function CemeteryModule() {
               </div>
             )}
 
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              <div className="flex gap-2">
-                {/* Pending Review: Reject + Approve */}
-                {(selectedReviewBurial.status === 'Pending' || selectedReviewBurial.status === 'Pending Review') && (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      className="font-bold text-xs"
-                      onClick={() => handleRejectBurial(selectedReviewBurial)}
-                    >
-                      ✕ Reject Application
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="success"
-                      className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs"
-                      onClick={() => handleApproveBurial(selectedReviewBurial)}
-                    >
-                      ✓ Approve Application
-                    </Button>
-                  </>
-                )}
-                {/* Approved: Return to Pending Review */}
-                {selectedReviewBurial.status === 'Approved' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
-                    onClick={() => handleReturnToPending(selectedReviewBurial)}
-                  >
-                    ↩ Return to Pending Review
-                  </Button>
-                )}
-                {/* Waiting for Payment: Return to Pending Review */}
-                {(selectedReviewBurial.status === 'Pending Payment' || selectedReviewBurial.status === 'Waiting for Payment') && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
-                    onClick={() => handleReturnToPending(selectedReviewBurial)}
-                  >
-                    ↩ Return to Pending Review
-                  </Button>
-                )}
-                {/* Rejected: Return to Pending Review */}
-                {selectedReviewBurial.status === 'Rejected' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
-                    onClick={() => handleReturnToPending(selectedReviewBurial)}
-                  >
-                    ↩ Return to Pending Review
-                  </Button>
-                )}
-              </div>
+            {(() => {
+              const modalStatus = (selectedReviewBurial.status || '').toLowerCase().trim();
+              return (
+                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                  <div className="flex gap-2">
+                    {/* Pending Review: Reject + Approve */}
+                    {(modalStatus === 'pending' || modalStatus === 'pending review') && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          className="font-bold text-xs"
+                          onClick={() => handleRejectBurial(selectedReviewBurial)}
+                        >
+                          ✕ Reject Application
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="success"
+                          className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs"
+                          onClick={() => handleApproveBurial(selectedReviewBurial)}
+                        >
+                          ✓ Approve Application
+                        </Button>
+                      </>
+                    )}
+                    {/* Approved: Return to Pending Review */}
+                    {modalStatus === 'approved' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+                        onClick={() => handleReturnToPending(selectedReviewBurial)}
+                      >
+                        ↩ Return to Pending Review
+                      </Button>
+                    )}
+                    {/* Waiting for Payment: Return to Pending Review */}
+                    {(modalStatus === 'pending payment' || modalStatus === 'waiting for payment') && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+                        onClick={() => handleReturnToPending(selectedReviewBurial)}
+                      >
+                        ↩ Return to Pending Review
+                      </Button>
+                    )}
+                    {/* Rejected: Return to Pending Review */}
+                    {modalStatus === 'rejected' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+                        onClick={() => handleReturnToPending(selectedReviewBurial)}
+                      >
+                        ↩ Return to Pending Review
+                      </Button>
+                    )}
+                  </div>
 
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" className="font-bold text-xs" onClick={() => setIsReviewModalOpen(false)}>
-                  Close
-                </Button>
-                {selectedReviewBurial.status === 'Approved' && (
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    className="bg-purple-600 hover:bg-purple-700 font-bold text-xs text-white"
-                    onClick={() => handleGrantPermit(selectedReviewBurial)}
-                  >
-                    Grant Application & Issue Payment Notice
-                  </Button>
-                )}
-                {(selectedReviewBurial.status === 'Pending Payment' || selectedReviewBurial.status === 'Waiting for Payment') && (
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    className="bg-emerald-600 hover:bg-emerald-700 font-bold text-xs text-white"
-                    onClick={() => handleConfirmPayment(selectedReviewBurial)}
-                  >
-                    ✓ Approve Payment (Cash Received)
-                  </Button>
-                )}
-              </div>
-            </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="font-bold text-xs" onClick={() => setIsReviewModalOpen(false)}>
+                      Close
+                    </Button>
+                    {modalStatus === 'approved' && (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        className="bg-purple-600 hover:bg-purple-700 font-bold text-xs text-white"
+                        onClick={() => handleGrantPermit(selectedReviewBurial)}
+                      >
+                        Grant Application & Issue Payment Notice
+                      </Button>
+                    )}
+                    {(modalStatus === 'pending payment' || modalStatus === 'waiting for payment') && (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        className="bg-emerald-600 hover:bg-emerald-700 font-bold text-xs text-white"
+                        onClick={() => handleConfirmPayment(selectedReviewBurial)}
+                      >
+                        ✓ Approve Payment (Cash Received)
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
       </Modal>

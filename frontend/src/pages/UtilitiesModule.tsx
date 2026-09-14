@@ -50,10 +50,15 @@ export function UtilitiesModule() {
     photo_name: '',
   });
 
+  const activeReqRef = React.useRef(0);
+
   const loadData = async () => {
+    const currentReqId = ++activeReqRef.current;
     try {
       const data = await fetchUtilities(statusFilter, 'all');
-      setRequests(data);
+      if (currentReqId === activeReqRef.current) {
+        setRequests(data);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -79,8 +84,10 @@ export function UtilitiesModule() {
         selectedReq.id,
         status,
         dispatchTeam,
-        resolutionNotes || `Status updated to ${status} by Municipal Dispatch`
+        resolutionNotes || `Status updated to ${status} by Municipal Dispatch`,
+        selectedReq.ticket_no
       );
+      setSelectedReq(prev => prev ? { ...prev, status, assigned_team: dispatchTeam, resolution_notes: resolutionNotes } : null);
       setIsDispatchModalOpen(false);
       loadData();
     } catch (e) {
@@ -125,12 +132,27 @@ export function UtilitiesModule() {
     }
   };
 
-  const filtered = requests.filter(r =>
-    r.ticket_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.citizen_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.service_type.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filtered = requests.filter(r => {
+    if (statusFilter !== 'all') {
+      const lower = statusFilter.toLowerCase();
+      const rStat = (r.status || '').toLowerCase();
+      if (lower === 'dispatched') {
+        if (rStat !== 'dispatched' && rStat !== 'in progress') return false;
+      } else if (lower === 'pending') {
+        if (rStat !== 'pending' && rStat !== 'pending review') return false;
+      } else if (rStat !== lower) {
+        return false;
+      }
+    }
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      r.ticket_no.toLowerCase().includes(q) ||
+      r.citizen_name.toLowerCase().includes(q) ||
+      r.location.toLowerCase().includes(q) ||
+      r.service_type.toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -199,7 +221,7 @@ export function UtilitiesModule() {
                   <th className="py-3 px-4">Service Hazard</th>
                   <th className="py-3 px-4">Location & Households</th>
                   <th className="py-3 px-4">Citizen Reporter</th>
-                  <th className="py-3 px-4">AI Score</th>
+                  <th className="py-3 px-4">Urgency / Severity</th>
                   <th className="py-3 px-4">Assigned Crew</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Action</th>
@@ -226,15 +248,14 @@ export function UtilitiesModule() {
                       <p className="text-[10px] text-slate-400">{u.citizen_phone}</p>
                     </td>
                     <td className="py-3.5 px-4">
-                      <span className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded text-[10px] border ${
-                        u.ai_priority_score >= 85
+                      <span className={`inline-flex items-center font-bold px-2 py-0.5 rounded text-[10px] border ${
+                        (u.urgency || '').toLowerCase() === 'urgent'
                           ? 'bg-red-50 text-red-700 border-red-200'
-                          : u.ai_priority_score >= 70
+                          : (u.urgency || '').toLowerCase() === 'high'
                           ? 'bg-amber-50 text-amber-700 border-amber-200'
                           : 'bg-blue-50 text-blue-700 border-blue-200'
                       }`}>
-                        <Sparkles className="w-3 h-3" />
-                        {u.ai_priority_score} / 100
+                        {u.urgency || 'Normal'}
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-slate-800 font-semibold">{u.assigned_team || 'Unassigned'}</td>
@@ -290,9 +311,8 @@ export function UtilitiesModule() {
                 </Badge>
                 <span className="font-mono font-bold text-cyan-400">{selectedReq.ticket_no}</span>
               </div>
-              <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5" />
-                AI Triage: {selectedReq.ai_priority_score} pts ({selectedReq.urgency})
+              <span className="text-[11px] font-bold text-amber-400">
+                Priority: {selectedReq.urgency || 'Normal'}
               </span>
             </div>
 
@@ -478,7 +498,7 @@ export function UtilitiesModule() {
               Cancel
             </Button>
             <Button size="sm" variant="primary" className="bg-cyan-600 hover:bg-cyan-700 font-bold" type="submit">
-              Log & AI Triage
+              Log Incident Ticket
             </Button>
           </div>
         </form>

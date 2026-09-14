@@ -1223,17 +1223,24 @@ export async function fetchBurials() {
   if (fetched && serverList.length > 0) {
     const serverRefs = new Set(serverList.map((b: any) => (b.reference_no || '').toLowerCase()));
     const unmerged = localList.filter((b: any) => b.reference_no && !serverRefs.has((b.reference_no || '').toLowerCase()));
-    return [...unmerged, ...serverList];
+    const combined = [...unmerged, ...serverList];
+    setStore('burials', combined);
+    return combined;
   }
   return localList;
 }
 
-export async function updateBurialStatus(id: number | string, status: string, extraData?: { fee_amount?: number; permit_no?: string; remarks?: string; payment_due_date?: string; paid_at?: string; payment_method?: string }) {
+export async function updateBurialStatus(id: number | string, status: string, extraData?: { fee_amount?: number; permit_no?: string; remarks?: string; payment_due_date?: string; paid_at?: string; payment_method?: string; reference_no?: string }) {
+  const burials = getStore('burials', DEFAULT_BURIALS);
+  const index = burials.findIndex((b: any) => b.id === id || String(b.id) === String(id) || b.reference_no === id || (extraData?.reference_no && b.reference_no === extraData.reference_no));
+  const burial = index !== -1 ? burials[index] : null;
+  const refNo = extraData?.reference_no || burial?.reference_no || (typeof id === 'string' && id.startsWith('BUR-') ? id : '');
+
   if (HAS_BACKEND) try {
-    await fetch(`${API_BASE}/cemetery/burials/${id}/status`, {
+    await fetch(`${API_BASE}/cemetery/burials/${encodeURIComponent(String(id))}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, ...extraData }),
+      body: JSON.stringify({ status, reference_no: refNo, ...extraData }),
     });
   } catch {}
 
@@ -1241,10 +1248,7 @@ export async function updateBurialStatus(id: number | string, status: string, ex
     await epPatch('burial_records', `id=eq.${id}`, { status, ...extraData });
   } catch {}
 
-  const burials = getStore('burials', DEFAULT_BURIALS);
-  const index = burials.findIndex((b: any) => b.id === id || String(b.id) === String(id) || b.reference_no === id);
-  if (index !== -1) {
-    const burial = burials[index];
+  if (index !== -1 && burial) {
     burial.status = status;
     if (extraData) Object.assign(burial, extraData);
 
@@ -1308,8 +1312,9 @@ export async function createBurial(payload: any) {
   const isStaffBooking = callerRole !== 'Citizen';
 
   const burials = getStore('burials', DEFAULT_BURIALS);
-  const refNo = `BUR-${new Date().getFullYear()}-${String(burials.length + 1).padStart(3, '0')}`;
-  const permitNo = `BP-${new Date().getFullYear()}-${String(burials.length + 89).padStart(4, '0')}`;
+  const randomSuffix = `${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
+  const refNo = `BUR-${new Date().getFullYear()}-${randomSuffix}`;
+  const permitNo = `BP-${new Date().getFullYear()}-${randomSuffix}`;
 
   if (!isStaffBooking) {
     addNotification({
@@ -1407,10 +1412,23 @@ export async function fetchUtilities(status = 'all', service_type = 'all') {
     const serverTickets = new Set(serverList.map((u: any) => (u.ticket_no || '').toLowerCase()));
     const unmerged = localList.filter((u: any) => u.ticket_no && !serverTickets.has((u.ticket_no || '').toLowerCase()));
     list = [...unmerged, ...serverList];
+    if (status === 'all' && service_type === 'all') {
+      setStore('utilities', list);
+    }
   }
 
   if (status !== 'all') {
-    list = list.filter((u: any) => (u.status || '').toLowerCase() === status.toLowerCase());
+    const lower = status.toLowerCase();
+    list = list.filter((u: any) => {
+      const uStat = (u.status || '').toLowerCase();
+      if (lower === 'dispatched' || lower === 'in progress') {
+        return uStat === 'dispatched' || uStat === 'in progress';
+      }
+      if (lower === 'pending' || lower === 'pending review') {
+        return uStat === 'pending' || uStat === 'pending review';
+      }
+      return uStat === lower;
+    });
   }
   if (service_type !== 'all') {
     list = list.filter((u: any) => u.service_type === service_type);
@@ -1433,14 +1451,15 @@ export async function createUtilityRequest(payload: any) {
   const isStaffBooking = callerRole !== 'Citizen';
 
   const utilities = getStore('utilities', DEFAULT_UTILITIES);
-  const ticketNo = `REQ-${new Date().getFullYear()}-${String(utilities.length + 1).padStart(3, '0')}`;
+  const randomSuffix = `${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
+  const ticketNo = `REQ-${new Date().getFullYear()}-${randomSuffix}`;
 
-  const aiScore = payload.urgency === 'Urgent' ? 95 : payload.urgency === 'High' ? 80 : 60;
+  const urgencyScore = payload.urgency === 'Urgent' ? 95 : payload.urgency === 'High' ? 80 : 60;
 
   if (!isStaffBooking) {
     addNotification({
       title: 'New Utility Incident Filed',
-      text: `${payload.service_type || 'Utility incident'} reported at ${payload.location || 'site'}. Priority Score: ${aiScore}.`,
+      text: `${payload.service_type || 'Utility incident'} reported at ${payload.location || 'site'}. Priority: ${payload.urgency || 'Normal'}.`,
       targetRole: 'Admin',
       category: 'utility'
     });
@@ -1463,7 +1482,7 @@ export async function createUtilityRequest(payload: any) {
     ...payload,
     citizen_email: citizenMeta.citizen_email || payload.citizen_email,
     urgency: payload.urgency || 'Normal',
-    ai_priority_score: aiScore,
+    ai_priority_score: urgencyScore,
     status: 'Pending',
     created_at: new Date().toISOString()
   };
@@ -1499,13 +1518,17 @@ export async function createUtilityRequest(payload: any) {
   return { success: true, ticket_no: newReq.ticket_no || ticketNo, data: newReq };
 }
 
-export async function updateUtilityStatus(id: number, status: string, assigned_team?: string, resolution_notes?: string) {
+export async function updateUtilityStatus(id: number | string, status: string, assigned_team?: string, resolution_notes?: string, ticket_no?: string) {
   let targetEmail = '';
+  const utilities = getStore('utilities', DEFAULT_UTILITIES);
+  const item = utilities.find((u: any) => u.id === id || String(u.id) === String(id) || u.ticket_no === id || (ticket_no && u.ticket_no === ticket_no));
+  const finalTicketNo = ticket_no || item?.ticket_no || (typeof id === 'string' && id.startsWith('REQ-') ? id : '');
+
   if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/utilities/${id}/status`, {
+    const res = await fetch(`${API_BASE}/utilities/${encodeURIComponent(String(id))}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, assigned_team, resolution_notes }),
+      body: JSON.stringify({ status, assigned_team, resolution_notes, ticket_no: finalTicketNo }),
     });
     if (res.ok) {
       const data = await res.json();
@@ -1517,8 +1540,6 @@ export async function updateUtilityStatus(id: number, status: string, assigned_t
     await epPatch('utility_requests', `id=eq.${id}`, { status, assigned_team, resolution_notes });
   } catch {}
 
-  const utilities = getStore('utilities', DEFAULT_UTILITIES);
-  const item = utilities.find((u: any) => u.id === id || String(u.id) === String(id));
   if (item) {
     item.status = status;
     if (assigned_team) item.assigned_team = assigned_team;
