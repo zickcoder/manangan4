@@ -573,9 +573,9 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
 
   const localList = getStore('reservations', DEFAULT_RESERVATIONS);
   if (fetched && serverList.length > 0) {
-    const serverRefs = new Set(serverList.map((r: any) => (r.reference_no || '').toLowerCase()));
-    const unmerged = localList.filter((r: any) => r.reference_no && !serverRefs.has((r.reference_no || '').toLowerCase()));
-    list = [...unmerged, ...serverList];
+    // Server is the single source of truth — overwrite local, never merge stale data
+    list = serverList;
+    setStore('reservations', serverList);
   } else {
     list = localList;
   }
@@ -1221,11 +1221,9 @@ export async function fetchBurials() {
 
   const localList = getStore('burials', DEFAULT_BURIALS);
   if (fetched && serverList.length > 0) {
-    const serverRefs = new Set(serverList.map((b: any) => (b.reference_no || '').toLowerCase()));
-    const unmerged = localList.filter((b: any) => b.reference_no && !serverRefs.has((b.reference_no || '').toLowerCase()));
-    const combined = [...unmerged, ...serverList];
-    setStore('burials', combined);
-    return combined;
+    // Server is the single source of truth — overwrite local, never merge stale data
+    setStore('burials', serverList);
+    return serverList;
   }
   return localList;
 }
@@ -1409,12 +1407,9 @@ export async function fetchUtilities(status = 'all', service_type = 'all') {
   const localList = getStore('utilities', DEFAULT_UTILITIES);
   let list = localList;
   if (fetched && serverList.length > 0) {
-    const serverTickets = new Set(serverList.map((u: any) => (u.ticket_no || '').toLowerCase()));
-    const unmerged = localList.filter((u: any) => u.ticket_no && !serverTickets.has((u.ticket_no || '').toLowerCase()));
-    list = [...unmerged, ...serverList];
-    if (status === 'all' && service_type === 'all') {
-      setStore('utilities', list);
-    }
+    // Server is the single source of truth — overwrite local, never merge stale data
+    list = serverList;
+    setStore('utilities', serverList);
   }
 
   if (status !== 'all') {
@@ -1631,12 +1626,14 @@ export async function createAsset(payload: any) {
   return { success: true, asset_tag: newAsset.asset_tag, data: newAsset };
 }
 
-export async function updateAssetCondition(id: number, current_condition: string, next_maintenance_due?: string, ai_maintenance_alert?: string) {
+export async function updateAssetCondition(id: number, current_condition: string, next_maintenance_due?: string, ai_maintenance_alert?: string, image_url?: string) {
+  // Resolve image: '__clear__' means remove the image
+  const resolvedImage = image_url === '__clear__' ? '' : image_url;
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/assets/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ current_condition, next_maintenance_due, ai_maintenance_alert }),
+      body: JSON.stringify({ current_condition, next_maintenance_due, ai_maintenance_alert, image_url: resolvedImage }),
     });
     if (res.ok) return await res.json();
   } catch {}
@@ -1646,7 +1643,8 @@ export async function updateAssetCondition(id: number, current_condition: string
   if (item) {
     item.current_condition = current_condition;
     if (next_maintenance_due) item.next_maintenance_due = next_maintenance_due;
-    if (ai_maintenance_alert) item.ai_maintenance_alert = ai_maintenance_alert;
+    if (ai_maintenance_alert !== undefined) item.ai_maintenance_alert = ai_maintenance_alert;
+    if (resolvedImage !== undefined) item.image_url = resolvedImage;
     setStore('assets', assets);
   }
   return { success: true };

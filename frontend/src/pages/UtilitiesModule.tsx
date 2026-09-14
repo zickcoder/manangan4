@@ -221,7 +221,6 @@ export function UtilitiesModule() {
                   <th className="py-3 px-4">Service Hazard</th>
                   <th className="py-3 px-4">Location & Households</th>
                   <th className="py-3 px-4">Citizen Reporter</th>
-                  <th className="py-3 px-4">Urgency / Severity</th>
                   <th className="py-3 px-4">Assigned Crew</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Action</th>
@@ -246,17 +245,6 @@ export function UtilitiesModule() {
                     <td className="py-3.5 px-4 text-slate-700">
                       <p className="font-semibold">{u.citizen_name}</p>
                       <p className="text-[10px] text-slate-400">{u.citizen_phone}</p>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className={`inline-flex items-center font-bold px-2 py-0.5 rounded text-[10px] border ${
-                        (u.urgency || '').toLowerCase() === 'urgent'
-                          ? 'bg-red-50 text-red-700 border-red-200'
-                          : (u.urgency || '').toLowerCase() === 'high'
-                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                          : 'bg-blue-50 text-blue-700 border-blue-200'
-                      }`}>
-                        {u.urgency || 'Normal'}
-                      </span>
                     </td>
                     <td className="py-3.5 px-4 text-slate-800 font-semibold">{u.assigned_team || 'Unassigned'}</td>
                     <td className="py-3.5 px-4">

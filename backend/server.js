@@ -752,17 +752,18 @@ app.post('/api/assets', async (req, res) => {
 app.patch('/api/assets/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { current_condition, next_maintenance_due, ai_maintenance_alert } = req.body;
+    const { current_condition, next_maintenance_due, ai_maintenance_alert, image_url } = req.body;
 
     const result = await pool.query(`
       UPDATE assets
       SET current_condition = COALESCE($1, current_condition),
           next_maintenance_due = COALESCE($2, next_maintenance_due),
           last_maintenance_date = CURRENT_DATE,
-          ai_maintenance_alert = CASE WHEN $3 IS NOT NULL THEN $3 ELSE ai_maintenance_alert END
+          ai_maintenance_alert = CASE WHEN $3 IS NOT NULL THEN $3 ELSE ai_maintenance_alert END,
+          image_url = CASE WHEN $5 IS NOT NULL THEN $5 ELSE image_url END
       WHERE id = $4
       RETURNING *
-    `, [current_condition, next_maintenance_due, ai_maintenance_alert !== undefined ? ai_maintenance_alert : null, id]);
+    `, [current_condition, next_maintenance_due, ai_maintenance_alert !== undefined ? ai_maintenance_alert : null, id, image_url !== undefined ? image_url : null]);
 
     res.json({ success: true, data: result.rows[0] });
   } catch (error) {

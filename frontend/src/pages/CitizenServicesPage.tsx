@@ -1868,7 +1868,9 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                       <span className="font-mono text-[10px] font-black bg-slate-950/80 text-white px-2 py-0.5 rounded-md">{asset.asset_tag}</span>
                     </div>
                     <div className="absolute top-2.5 right-2.5">
-                      <Badge variant={asset.current_condition === 'Operational' ? 'success' : 'warning'}>{asset.current_condition}</Badge>
+                      <Badge variant={asset.current_condition === 'Operational' ? 'success' : 'warning'}>
+                        {asset.current_condition === 'Operational' ? 'Operational' : 'Not Available'}
+                      </Badge>
                     </div>
                   </div>
                   <div className="p-4 space-y-1.5">
@@ -1918,7 +1920,7 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
               <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
                 <span className="text-slate-400 block text-[10px]">Condition</span>
                 <Badge variant={selectedAssetDetail.current_condition === 'Operational' ? 'success' : 'warning'} className="mt-1">
-                  {selectedAssetDetail.current_condition}
+                  {selectedAssetDetail.current_condition === 'Operational' ? 'Operational' : 'Not Available'}
                 </Badge>
               </div>
               <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">

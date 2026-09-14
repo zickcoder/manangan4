@@ -1798,7 +1798,7 @@ export function PublicPortal() {
                       </div>
                       <div className="absolute top-2.5 right-2.5">
                         <Badge variant={asset.current_condition === 'Operational' ? 'success' : 'warning'}>
-                          {asset.current_condition}
+                          {asset.current_condition === 'Operational' ? 'Operational' : 'Not Available'}
                         </Badge>
                       </div>
                     </div>
@@ -1933,7 +1933,7 @@ export function PublicPortal() {
               <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
                 <span className="text-slate-400 block text-[10px]">Status / Condition</span>
                 <Badge variant={selectedAssetDetail.current_condition === 'Operational' ? 'success' : 'warning'} className="mt-1">
-                  {selectedAssetDetail.current_condition}
+                  {selectedAssetDetail.current_condition === 'Operational' ? 'Operational' : 'Not Available'}
                 </Badge>
               </div>
               <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
