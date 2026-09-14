@@ -29,6 +29,7 @@ import { UtilityRequest } from '../types';
 
 export function UtilitiesModule() {
   const [requests, setRequests] = useState<UtilityRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedReq, setSelectedReq] = useState<UtilityRequest | null>(null);
@@ -52,22 +53,25 @@ export function UtilitiesModule() {
 
   const activeReqRef = React.useRef(0);
 
-  const loadData = async () => {
+  const loadData = async (initial = false) => {
     const currentReqId = ++activeReqRef.current;
+    if (initial) setIsLoading(true);
     try {
-      const data = await fetchUtilities(statusFilter, 'all');
+      const data = await fetchUtilities('all', 'all');
       if (currentReqId === activeReqRef.current) {
         setRequests(data);
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      if (initial) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 2500);
-    const handleUpdate = () => loadData();
+    loadData(true);
+    const interval = setInterval(() => loadData(false), 3000);
+    const handleUpdate = () => loadData(false);
     window.addEventListener('govserve_data_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
     return () => {
@@ -75,7 +79,7 @@ export function UtilitiesModule() {
       window.removeEventListener('govserve_data_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
     };
-  }, [statusFilter]);
+  }, []);
 
   const handleUpdateStatus = async (status: string) => {
     if (!selectedReq) return;
@@ -227,54 +231,73 @@ export function UtilitiesModule() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filtered.map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3.5 px-4 font-mono font-bold text-cyan-700">{u.ticket_no}</td>
-                    <td className="py-3.5 px-4">
-                      <p className="font-bold text-slate-900">{u.service_type}</p>
-                      {u.photo_url && (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-cyan-700 font-semibold bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 mt-0.5">
-                          <ImageIcon className="w-3 h-3" /> Photo Attached
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 max-w-[220px]">
-                      <p className="text-slate-800 font-semibold truncate">{u.location}</p>
-                      <p className="text-[10px] text-slate-400 truncate">{u.affected_households || '1 Household'}</p>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-700">
-                      <p className="font-semibold">{u.citizen_name}</p>
-                      <p className="text-[10px] text-slate-400">{u.citizen_phone}</p>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-800 font-semibold">{u.assigned_team || 'Unassigned'}</td>
-                    <td className="py-3.5 px-4">
-                      <Badge variant={u.status === 'Resolved' ? 'success' : u.status === 'In Progress' || u.status === 'Dispatched' ? 'info' : 'warning'}>
-                        {u.status === 'In Progress' ? 'Dispatched' : u.status}
-                      </Badge>
-                    </td>
-                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      {u.status === 'Resolved' || u.status === 'Rejected' || u.status === 'Cancelled' ? (
-                        <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                          {u.status === 'Resolved' ? '✓ Resolved (Locked)' : 'Ticket Locked'}
-                        </span>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          leftIcon={<Eye className="w-3.5 h-3.5" />}
-                          onClick={() => {
-                            setSelectedReq(u);
-                            setDispatchTeam(u.assigned_team || 'Quick Response Water Crew Alpha');
-                            setResolutionNotes(u.resolution_notes || '');
-                            setIsDispatchModalOpen(true);
-                          }}
-                        >
-                          Manage Ticket
-                        </Button>
-                      )}
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={7} className="py-16 text-center">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="w-8 h-8 border-4 border-cyan-600 border-t-transparent rounded-full animate-spin" />
+                        <p className="text-sm text-slate-500 font-medium">Connecting to cloud server...</p>
+                        <p className="text-xs text-slate-400">This may take 15–30 seconds on first load.</p>
+                      </div>
                     </td>
                   </tr>
-                ))}
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center">
+                      <p className="text-sm text-slate-500 font-semibold">No incidents found.</p>
+                      <p className="text-xs text-slate-400 mt-1">Try changing the status filter or search query.</p>
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((u) => (
+                    <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3.5 px-4 font-mono font-bold text-cyan-700">{u.ticket_no}</td>
+                      <td className="py-3.5 px-4">
+                        <p className="font-bold text-slate-900">{u.service_type}</p>
+                        {u.photo_url && (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-cyan-700 font-semibold bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 mt-0.5">
+                            <ImageIcon className="w-3 h-3" /> Photo Attached
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 max-w-[220px]">
+                        <p className="text-slate-800 font-semibold truncate">{u.location}</p>
+                        <p className="text-[10px] text-slate-400 truncate">{u.affected_households || '1 Household'}</p>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-700">
+                        <p className="font-semibold">{u.citizen_name}</p>
+                        <p className="text-[10px] text-slate-400">{u.citizen_phone}</p>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-800 font-semibold">{u.assigned_team || 'Unassigned'}</td>
+                      <td className="py-3.5 px-4">
+                        <Badge variant={u.status === 'Resolved' ? 'success' : u.status === 'In Progress' || u.status === 'Dispatched' ? 'info' : 'warning'}>
+                          {u.status === 'In Progress' ? 'Dispatched' : u.status}
+                        </Badge>
+                      </td>
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        {u.status === 'Resolved' || u.status === 'Rejected' || u.status === 'Cancelled' ? (
+                          <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                            {u.status === 'Resolved' ? '✓ Resolved (Locked)' : 'Ticket Locked'}
+                          </span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            leftIcon={<Eye className="w-3.5 h-3.5" />}
+                            onClick={() => {
+                              setSelectedReq(u);
+                              setDispatchTeam(u.assigned_team || 'Quick Response Water Crew Alpha');
+                              setResolutionNotes(u.resolution_notes || '');
+                              setIsDispatchModalOpen(true);
+                            }}
+                          >
+                            Manage Ticket
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

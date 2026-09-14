@@ -1385,7 +1385,7 @@ export async function fetchUtilities(status = 'all', service_type = 'all') {
   let fetched = false;
 
   if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/utilities?status=${encodeURIComponent(status)}&service_type=${encodeURIComponent(service_type)}`);
+    const res = await fetch(`${API_BASE}/utilities`);
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data?.data)) {
@@ -1396,21 +1396,19 @@ export async function fetchUtilities(status = 'all', service_type = 'all') {
   } catch {}
 
   if (!fetched && HAS_EPROVIDER) try {
-    const q = status !== 'all' ? `status=eq.${encodeURIComponent(status)}&order=id.desc` : 'order=id.desc';
-    const data = await epGet('utility_requests', q);
+    const data = await epGet('utility_requests', 'order=id.desc');
     if (Array.isArray(data)) {
       serverList = data;
       fetched = true;
     }
   } catch {}
 
-  const localList = getStore('utilities', DEFAULT_UTILITIES);
-  let list = localList;
-  if (fetched && serverList.length > 0) {
-    // Server is the single source of truth — overwrite local, never merge stale data
-    list = serverList;
+  if (fetched) {
     setStore('utilities', serverList);
   }
+
+  const currentStore = getStore('utilities', DEFAULT_UTILITIES);
+  let list = fetched ? serverList : currentStore;
 
   if (status !== 'all') {
     const lower = status.toLowerCase();
