@@ -866,9 +866,14 @@ app.post('/api/auth/login', async (req, res) => {
           user: { id: 1, name: 'Atty. Elena Ramos', email: 'admin@govserve.gov.ph', role: 'Super Admin', department: 'Municipal Executive Office' }
         });
       }
-      return res.status(401).json({ success: false, message: 'Invalid credentials. User not found in database.' });
+      return res.status(401).json({ success: false, message: 'Invalid credentials. Staff account not found.' });
     }
     const user = result.rows[0];
+    // Reject citizens from logging into the staff console
+    const role = (user.role || '').toLowerCase();
+    if (role === 'citizen' || role === 'resident') {
+      return res.status(403).json({ success: false, message: 'This is the Staff & Admin login page. Please use the Citizen login page instead.' });
+    }
     if (user.password !== password) {
       return res.status(401).json({ success: false, message: 'Invalid password.' });
     }
@@ -888,6 +893,12 @@ app.post('/api/auth/login-citizen', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Account not found. Please register first.' });
     }
     const user = result.rows[0];
+    // Reject admin/staff from logging into the citizen portal
+    const role = (user.role || '').toLowerCase();
+    const isStaff = ['super admin', 'admin', 'staff officer', 'officer', 'engineer', 'staff'].some(r => role.includes(r));
+    if (isStaff) {
+      return res.status(403).json({ success: false, message: 'This is the Citizen login page. Please use the Staff & Admin login page instead.' });
+    }
     if (user.password !== password) {
       return res.status(401).json({ success: false, message: 'Invalid password.' });
     }

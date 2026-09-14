@@ -1499,8 +1499,16 @@ export async function createUtilityRequest(payload: any) {
         newReq.ticket_no = data.data.ticket_no || newReq.ticket_no;
         setStore('utilities', utilities);
       }
+    } else {
+      // Backend rejected — remove from local store and throw so citizen sees the error
+      setStore('utilities', utilities.filter((u: any) => u.ticket_no !== newReq.ticket_no));
+      throw new Error('Server error: could not save your ticket. Please try again in a moment.');
     }
-  } catch {}
+  } catch (err: any) {
+    // If server is sleeping/unreachable, remove local copy and rethrow
+    setStore('utilities', utilities.filter((u: any) => u.ticket_no !== newReq.ticket_no));
+    throw new Error(err?.message || 'Unable to reach server. Please try again in a moment.');
+  }
 
   if (HAS_EPROVIDER) try {
     await epPost('utility_requests', newReq);
@@ -1696,7 +1704,7 @@ export async function fetchActivityLogs() {
 export async function loginStaff(email: string, password: string) {
   const cleanEmail = (email || '').toLowerCase().trim();
 
-  // 1. Try Backend API first if configured
+  // Backend returned non-ok (e.g. 403 role mismatch) — surface that message
   if (HAS_BACKEND) {
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
@@ -1704,10 +1712,9 @@ export async function loginStaff(email: string, password: string) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail, password }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.success) return data;
-      }
+      const data = await res.json();
+      if (data && data.success) return data;
+      if (!res.ok) return { success: false, message: data.message || 'Invalid credentials.' };
     } catch (e) {
       console.warn('Backend login attempt failed, falling back to eProvider DB...', e);
     }
@@ -1737,7 +1744,7 @@ export async function loginStaff(email: string, password: string) {
               }
             };
           } else {
-            return { success: false, message: 'Access denied: Citizen account cannot login to Staff Console.' };
+            return { success: false, message: 'This is the Staff & Admin login page. Please use the Citizen login page instead.' };
           }
         } else {
           return { success: false, message: 'Invalid password for this staff account.' };
@@ -1771,7 +1778,7 @@ export async function loginStaff(email: string, password: string) {
 export async function loginCitizen(email: string, password: string) {
   const cleanEmail = (email || '').toLowerCase().trim();
 
-  // 1. Try Backend API first if configured
+  // 1. Try Backend API first — surface backend error messages (including role mismatch 403)
   if (HAS_BACKEND) {
     try {
       const res = await fetch(`${API_BASE}/auth/login-citizen`, {
@@ -1779,10 +1786,9 @@ export async function loginCitizen(email: string, password: string) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail, password }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.success) return data;
-      }
+      const data = await res.json();
+      if (data && data.success) return data;
+      if (!res.ok) return { success: false, message: data.message || 'Invalid credentials.' };
     } catch (e) {
       console.warn('Backend citizen login attempt failed, falling back to eProvider DB...', e);
     }
@@ -1795,6 +1801,12 @@ export async function loginCitizen(email: string, password: string) {
       if (Array.isArray(users) && users.length > 0) {
         const dbUser = users[0];
         if (dbUser.password === password) {
+          // Reject admin/staff from citizen portal
+          const role = (dbUser.role || '').toLowerCase();
+          const isStaff = ['super admin', 'admin', 'staff officer', 'officer', 'engineer', 'staff'].some(r => role.includes(r));
+          if (isStaff) {
+            return { success: false, message: 'This is the Citizen login page. Please use the Staff & Admin login page instead.' };
+          }
           return {
             success: true,
             token: `jwt-db-citizen-token-${dbUser.id}-${Date.now()}`,

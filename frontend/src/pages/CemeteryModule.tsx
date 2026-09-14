@@ -40,6 +40,7 @@ export function CemeteryModule() {
   const [plotSearch, setPlotSearch] = useState('');
   const [plotFilter, setPlotFilter] = useState<'All' | 'Available' | 'Reserved' | 'Occupied'>('All');
   const [burialStatusFilter, setBurialStatusFilter] = useState<string>('All');
+  const [isLoading, setIsLoading] = useState(true);
 
   // Status Animation Modal
   const [animModal, setAnimModal] = useState<{
@@ -91,7 +92,8 @@ export function CemeteryModule() {
     price: '18000',
   });
 
-  const loadData = async () => {
+  const loadData = async (isInitial = false) => {
+    if (isInitial) setIsLoading(true);
     try {
       const [cems, plotData, burialData] = await Promise.all([
         fetchCemeteries(),
@@ -103,13 +105,15 @@ export function CemeteryModule() {
       setBurials(burialData);
     } catch (e) {
       console.error(e);
+    } finally {
+      if (isInitial) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 2500);
-    const handleUpdate = () => loadData();
+    loadData(true);
+    const interval = setInterval(() => loadData(false), 2500);
+    const handleUpdate = () => loadData(false);
     window.addEventListener('govserve_data_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
     return () => {
@@ -359,6 +363,16 @@ export function CemeteryModule() {
   const occupiedCount = plots.filter(p => p.status === 'Occupied').length;
   const availableCount = plots.filter(p => p.status === 'Available').length;
   const reservedCount = plots.filter(p => p.status === 'Reserved').length;
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 space-y-4 text-center">
+        <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
+        <p className="text-sm font-bold text-slate-700">Connecting to cloud server...</p>
+        <p className="text-xs text-slate-400 max-w-xs">The server may be waking up after inactivity. This usually takes 15–30 seconds. Please wait.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-fade-in w-full max-w-full overflow-hidden">
