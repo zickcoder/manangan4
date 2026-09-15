@@ -23,6 +23,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
+import { StatusAnimationModal } from '../components/ui/StatusAnimationModal';
 import { fetchUtilities, updateUtilityStatus, createUtilityRequest } from '../lib/api';
 import { compressImage } from '../lib/imageCompressor';
 import { UtilityRequest } from '../types';
@@ -35,6 +36,18 @@ export function UtilitiesModule() {
   const [selectedReq, setSelectedReq] = useState<UtilityRequest | null>(null);
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
+
+  const [animModal, setAnimModal] = useState<{
+    isOpen: boolean;
+    type: 'loading' | 'success' | 'paid' | 'rejected';
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'loading',
+    title: '',
+    message: ''
+  });
 
   const [dispatchTeam, setDispatchTeam] = useState('Quick Response Water Crew Alpha');
   const [resolutionNotes, setResolutionNotes] = useState('');
@@ -82,6 +95,13 @@ export function UtilitiesModule() {
   const handleUpdateStatus = async (status: string) => {
     if (!selectedReq) return;
     setIsUpdating(true);
+    setAnimModal({
+      isOpen: true,
+      type: 'loading',
+      title: 'Updating Dispatch...',
+      message: `Updating utility ticket #${selectedReq.ticket_no} status.`
+    });
+
     try {
       const assignedTeamToSave = (status === 'Rejected' || status === 'Cancelled' || status === 'Pending')
         ? (selectedReq.assigned_team || 'Unassigned')
@@ -99,8 +119,52 @@ export function UtilitiesModule() {
       );
       setIsDispatchModalOpen(false);
       loadData();
+
+      setTimeout(() => {
+        if (status === 'Rejected') {
+          setAnimModal({
+            isOpen: true,
+            type: 'rejected',
+            title: '✕ Ticket Rejected',
+            message: `Ticket #${selectedReq.ticket_no} has been marked as Rejected.`
+          });
+        } else if (status === 'Pending') {
+          setAnimModal({
+            isOpen: true,
+            type: 'success',
+            title: '↩ Returned to Pending Review',
+            message: `Ticket #${selectedReq.ticket_no} returned to Pending queue.`
+          });
+        } else if (status === 'Dispatched') {
+          setAnimModal({
+            isOpen: true,
+            type: 'success',
+            title: '✓ Crew Dispatched!',
+            message: `${assignedTeamToSave} dispatched to incident location.`
+          });
+        } else if (status === 'Resolved') {
+          setAnimModal({
+            isOpen: true,
+            type: 'success',
+            title: '✓ Incident Resolved & Repaired!',
+            message: `Ticket #${selectedReq.ticket_no} marked as resolved.`
+          });
+        } else {
+          setAnimModal({
+            isOpen: true,
+            type: 'success',
+            title: `✓ Status Updated to ${status}`,
+            message: `Ticket #${selectedReq.ticket_no} updated successfully.`
+          });
+        }
+      }, 250);
     } catch (e) {
-      alert('Failed to update ticket: please try again');
+      setAnimModal({
+        isOpen: true,
+        type: 'rejected',
+        title: 'Error Occurred',
+        message: 'Failed to update ticket status.'
+      });
     } finally {
       setIsUpdating(false);
     }
@@ -123,6 +187,13 @@ export function UtilitiesModule() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAnimModal({
+      isOpen: true,
+      type: 'loading',
+      title: 'Filing Incident...',
+      message: 'Creating utility dispatch report.'
+    });
+
     try {
       await createUtilityRequest(newForm);
       setNewForm({
@@ -138,8 +209,22 @@ export function UtilitiesModule() {
       });
       setIsNewModalOpen(false);
       loadData();
+
+      setTimeout(() => {
+        setAnimModal({
+          isOpen: true,
+          type: 'success',
+          title: '✓ Incident Ticket Created!',
+          message: 'Water supply & drainage response team notified.'
+        });
+      }, 250);
     } catch (e) {
-      alert('Failed to log request');
+      setAnimModal({
+        isOpen: true,
+        type: 'rejected',
+        title: 'Failed to Log Request',
+        message: 'Could not submit report. Please try again.'
+      });
     }
   };
 
@@ -544,6 +629,15 @@ export function UtilitiesModule() {
           </div>
         </form>
       </Modal>
+
+      {/* Status Animation Modal — auto-dismisses after action completes */}
+      <StatusAnimationModal
+        isOpen={animModal.isOpen}
+        type={animModal.type}
+        title={animModal.title}
+        message={animModal.message}
+        onClose={() => setAnimModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }
