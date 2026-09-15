@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { CheckCircle2, XCircle, Loader2, Sparkles } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, Sparkles, X } from 'lucide-react';
 
 interface StatusAnimationModalProps {
   isOpen: boolean;
@@ -16,10 +16,21 @@ export function StatusAnimationModal({
   title,
   message,
   onClose,
-  autoCloseMs = 1800,
+  autoCloseMs = 1200,
 }: StatusAnimationModalProps) {
   useEffect(() => {
-    if (isOpen && type !== 'loading' && autoCloseMs > 0) {
+    if (!isOpen) return;
+
+    // Safety timeout: if stuck in 'loading', force auto-dismiss after 2.5 seconds
+    if (type === 'loading') {
+      const safetyTimer = setTimeout(() => {
+        if (onClose) onClose();
+      }, 2500);
+      return () => clearTimeout(safetyTimer);
+    }
+
+    // Auto-dismiss for success / paid / rejected (default 1200ms)
+    if (autoCloseMs > 0) {
       const timer = setTimeout(() => {
         if (onClose) onClose();
       }, autoCloseMs);
@@ -30,9 +41,29 @@ export function StatusAnimationModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-      <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl border border-slate-100 text-center space-y-4 animate-scale-up">
-        
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in cursor-pointer"
+      onClick={() => {
+        if (onClose) onClose();
+      }}
+    >
+      <div 
+        className="relative bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl border border-slate-100 text-center space-y-4 animate-scale-up cursor-default"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close Button */}
+        <button
+          type="button"
+          onClick={() => {
+            if (onClose) onClose();
+          }}
+          className="absolute top-4 right-4 p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+          title="Dismiss"
+          aria-label="Dismiss modal"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
         {/* Animated Icon Housing */}
         <div className="flex justify-center">
           {type === 'loading' && (
@@ -68,9 +99,14 @@ export function StatusAnimationModal({
         </div>
 
         {/* Progress Line */}
-        {type !== 'loading' && (
+        {type !== 'loading' && autoCloseMs > 0 && (
           <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-            <div className="bg-emerald-500 h-full animate-[shrink_1.8s_linear_forwards]" />
+            <div 
+              className={`h-full ${type === 'rejected' ? 'bg-red-500' : 'bg-emerald-500'}`}
+              style={{
+                animation: `shrink ${autoCloseMs}ms linear forwards`
+              }} 
+            />
           </div>
         )}
       </div>

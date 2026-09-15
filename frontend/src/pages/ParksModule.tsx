@@ -256,7 +256,7 @@ export function ParksModule() {
             message: `Park booking updated successfully.`
           });
         }
-      }, 500);
+      }, 200);
     } catch (e) {
       setAnimModal({
         isOpen: true,
@@ -295,7 +295,7 @@ export function ParksModule() {
           title: '✓ Park Schedule Submitted!',
           message: 'Booking submitted to Pending Review queue.'
         });
-      }, 500);
+      }, 200);
     } catch (e) {
       setAnimModal({
         isOpen: true,

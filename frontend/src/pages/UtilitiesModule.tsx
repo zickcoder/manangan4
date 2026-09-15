@@ -83,10 +83,12 @@ export function UtilitiesModule() {
     if (!selectedReq) return;
     setIsUpdating(true);
     try {
-      const assignedTeamToSave = (status === 'Rejected' || status === 'Cancelled')
+      const assignedTeamToSave = (status === 'Rejected' || status === 'Cancelled' || status === 'Pending')
         ? (selectedReq.assigned_team || 'Unassigned')
         : dispatchTeam;
-      const notesToSave = resolutionNotes || `Status updated to ${status} by Municipal Dispatch`;
+      const notesToSave = resolutionNotes || (status === 'Pending' ? 'Returned to Pending Review by Municipal Dispatch' : `Status updated to ${status} by Municipal Dispatch`);
+
+      setSelectedReq(prev => prev ? { ...prev, status, assigned_team: assignedTeamToSave, resolution_notes: notesToSave } : null);
 
       await updateUtilityStatus(
         selectedReq.id,
@@ -95,9 +97,8 @@ export function UtilitiesModule() {
         notesToSave,
         selectedReq.ticket_no
       );
-      setSelectedReq(prev => prev ? { ...prev, status, assigned_team: assignedTeamToSave, resolution_notes: notesToSave } : null);
       setIsDispatchModalOpen(false);
-      await loadData();
+      loadData();
     } catch (e) {
       alert('Failed to update ticket: please try again');
     } finally {
@@ -388,7 +389,7 @@ export function UtilitiesModule() {
               <textarea
                 rows={3}
                 value={resolutionNotes}
-                disabled={selectedReq.status === 'Resolved' || selectedReq.status === 'Rejected' || selectedReq.status === 'Cancelled' || isUpdating}
+                disabled={selectedReq.status === 'Resolved' || selectedReq.status === 'Cancelled' || isUpdating}
                 onChange={(e) => setResolutionNotes(e.target.value)}
                 placeholder="Log dispatch orders, repair completion details, replaced valves, or declogged meters..."
                 className="w-full rounded-xl border border-slate-300 p-2.5 text-xs focus:border-cyan-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
@@ -397,7 +398,7 @@ export function UtilitiesModule() {
 
             {/* Action Buttons */}
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              <div>
+              <div className="flex gap-2">
                 {(selectedReq.status === 'Pending' || selectedReq.status === 'Pending Review') && (
                   <Button
                     size="sm"
@@ -407,6 +408,17 @@ export function UtilitiesModule() {
                     onClick={() => handleUpdateStatus('Rejected')}
                   >
                     {isUpdating ? 'Updating...' : '✕ Reject Ticket'}
+                  </Button>
+                )}
+                {selectedReq.status === 'Rejected' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="font-bold text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+                    disabled={isUpdating}
+                    onClick={() => handleUpdateStatus('Pending')}
+                  >
+                    {isUpdating ? 'Updating...' : '↩ Return to Pending Review'}
                   </Button>
                 )}
               </div>

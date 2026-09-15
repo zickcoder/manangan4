@@ -262,7 +262,7 @@ export function FacilitiesModule() {
             message: `Status set successfully.`
           });
         }
-      }, 500);
+      }, 200);
     } catch (e) {
       setAnimModal({
         isOpen: true,
@@ -320,7 +320,7 @@ export function FacilitiesModule() {
           title: '✓ Facility Reserved Successfully!',
           message: 'Booking submitted to Pending Review queue.'
         });
-      }, 500);
+      }, 200);
     } catch (e) {
       setAnimModal({
         isOpen: true,

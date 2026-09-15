@@ -39,28 +39,39 @@ const EP_HEADERS = {
   'Prefer': 'return=representation'
 };
 
-async function epGet(table: string, query = '') {
-  const res = await fetch(`${EP_REST}/${table}${query ? '?' + query : ''}`, { headers: EP_HEADERS });
+async function fastFetch(url: string, options: RequestInit = {}, timeoutMs = 2500): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function epGet(table: string, query = '', timeoutMs = 2500) {
+  const res = await fastFetch(`${EP_REST}/${table}${query ? '?' + query : ''}`, { headers: EP_HEADERS }, timeoutMs);
   if (!res.ok) throw new Error(`eProvider GET ${table} failed: ${res.status}`);
   return res.json();
 }
 
-async function epPost(table: string, body: any) {
-  const res = await fetch(`${EP_REST}/${table}`, {
+async function epPost(table: string, body: any, timeoutMs = 2500) {
+  const res = await fastFetch(`${EP_REST}/${table}`, {
     method: 'POST',
     headers: EP_HEADERS,
     body: JSON.stringify(body)
-  });
+  }, timeoutMs);
   if (!res.ok) throw new Error(`eProvider POST ${table} failed: ${res.status}`);
   return res.json();
 }
 
-async function epPatch(table: string, query: string, body: any) {
-  const res = await fetch(`${EP_REST}/${table}?${query}`, {
+async function epPatch(table: string, query: string, body: any, timeoutMs = 2500) {
+  const res = await fastFetch(`${EP_REST}/${table}?${query}`, {
     method: 'PATCH',
     headers: { ...EP_HEADERS, 'Prefer': 'return=representation' },
     body: JSON.stringify(body)
-  });
+  }, timeoutMs);
   if (!res.ok) throw new Error(`eProvider PATCH ${table} failed: ${res.status}`);
   return res.json();
 }
@@ -491,7 +502,7 @@ export async function fetchFacilities(category = 'all') {
     return Array.isArray(data) ? data : [];
   } catch {}
   if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/facilities?category=${encodeURIComponent(category)}`);
+    const res = await fastFetch(`${API_BASE}/facilities?category=${encodeURIComponent(category)}`, {}, 2500);
     if (res.ok) { const data = await res.json(); if (data?.data) return data.data; }
   } catch {}
   let list = getStore('facilities', DEFAULT_FACILITIES);
@@ -552,7 +563,7 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
 
   if (HAS_BACKEND) try {
     const cancelParam = excludeCancelled ? '&exclude_cancelled=true' : '';
-    const res = await fetch(`${API_BASE}/facilities/reservations?status=${encodeURIComponent(status)}&category=${encodeURIComponent(category)}${cancelParam}`);
+    const res = await fastFetch(`${API_BASE}/facilities/reservations?status=${encodeURIComponent(status)}&category=${encodeURIComponent(category)}${cancelParam}`, {}, 2500);
     if (res.ok) { 
       const data = await res.json(); 
       if (Array.isArray(data?.data)) {
@@ -795,29 +806,15 @@ export async function updateReservationStatus(
   extraData?: { fee_amount?: number; payment_due_date?: string; paid_at?: string; payment_method?: string }
 ) {
   let targetEmail = '';
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/facilities/reservations/${id}/status`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, remarks, reviewer_name, ...extraData })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.data) {
-        targetEmail = data.data.applicant_email || data.data.citizen_email || '';
-      }
-    }
-  } catch {}
 
-  if (HAS_EPROVIDER) try {
-    await epPatch('facility_reservations', `id=eq.${id}`, { status, remarks, reviewer_name, ...extraData });
-  } catch {}
-
+  // 1. Immediately update local store so UI reflects change in 0ms
   const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
   const item = reservations.find((r: any) => r.id === id || String(r.id) === String(id));
   if (item) { 
     item.status = status; 
     if (remarks) item.remarks = remarks;
     if (extraData) Object.assign(item, extraData);
-    if (!targetEmail) targetEmail = item.applicant_email || item.citizen_email || '';
+    targetEmail = item.applicant_email || item.citizen_email || '';
     setStore('reservations', reservations); 
   }
 
@@ -834,6 +831,35 @@ export async function updateReservationStatus(
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('govserve_data_updated'));
   }
+
+  // 2. Non-blocking cloud backend & eProvider sync with fast timeout
+  (async () => {
+    if (HAS_BACKEND) try {
+      const res = await fastFetch(`${API_BASE}/facilities/reservations/${id}/status`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, remarks, reviewer_name, ...extraData })
+      }, 3000);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.data && !targetEmail) {
+          const email = data.data.applicant_email || data.data.citizen_email || '';
+          if (email && email.includes('@')) {
+            addNotification({
+              title: `Reservation ${status}`,
+              text: `Your reservation request status has been updated to "${status}". ${remarks ? 'Note: ' + remarks : ''}`,
+              targetRole: 'Citizen',
+              targetEmail: email,
+              category: 'reservation',
+            });
+          }
+        }
+      }
+    } catch {}
+
+    if (HAS_EPROVIDER) try {
+      await epPatch('facility_reservations', `id=eq.${id}`, { status, remarks, reviewer_name, ...extraData }, 3000);
+    } catch {}
+  })();
+
   return { success: true };
 }
 
@@ -1090,7 +1116,7 @@ export async function fetchCemeteries(): Promise<string[]> {
 
 export async function fetchCemeteryPlots(section = 'all', status = 'all', cemetery_name = 'all') {
   if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/cemetery/plots?section=${encodeURIComponent(section)}&status=${encodeURIComponent(status)}&cemetery_name=${encodeURIComponent(cemetery_name)}`);
+    const res = await fastFetch(`${API_BASE}/cemetery/plots?section=${encodeURIComponent(section)}&status=${encodeURIComponent(status)}&cemetery_name=${encodeURIComponent(cemetery_name)}`, {}, 2500);
     if (res.ok) {
       const data = await res.json();
       if (data?.data) return data.data;
@@ -1197,7 +1223,7 @@ export async function fetchBurials() {
   let fetched = false;
 
   if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/cemetery/burials`);
+    const res = await fastFetch(`${API_BASE}/cemetery/burials`, {}, 2500);
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data?.data)) {
@@ -1222,18 +1248,7 @@ export async function updateBurialStatus(id: number | string, status: string, ex
   const burial = index !== -1 ? burials[index] : null;
   const refNo = extraData?.reference_no || burial?.reference_no || (typeof id === 'string' && id.startsWith('BUR-') ? id : '');
 
-  if (HAS_BACKEND) try {
-    await fetch(`${API_BASE}/cemetery/burials/${encodeURIComponent(String(id))}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, reference_no: refNo, ...extraData }),
-    });
-  } catch {}
-
-  if (HAS_EPROVIDER) try {
-    await epPatch('burial_records', `id=eq.${id}`, { status, ...extraData });
-  } catch {}
-
+  // 1. Immediately update local store and plots
   if (index !== -1 && burial) {
     burial.status = status;
     if (extraData) Object.assign(burial, extraData);
@@ -1277,10 +1292,24 @@ export async function updateBurialStatus(id: number | string, status: string, ex
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('govserve_data_updated'));
     }
-
-    return { success: true, data: burial };
   }
-  return { success: true };
+
+  // 2. Non-blocking cloud backend & eProvider sync with fast timeout
+  (async () => {
+    if (HAS_BACKEND) try {
+      await fastFetch(`${API_BASE}/cemetery/burials/${encodeURIComponent(String(id))}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, reference_no: refNo, ...extraData }),
+      }, 3000);
+    } catch {}
+
+    if (HAS_EPROVIDER) try {
+      await epPatch('burial_records', `id=eq.${id}`, { status, ...extraData }, 3000);
+    } catch {}
+  })();
+
+  return { success: true, data: burial };
 }
 
 export async function createBurial(payload: any) {
@@ -1373,7 +1402,7 @@ export async function fetchUtilities(status = 'all', service_type = 'all') {
   let fetched = false;
 
   if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/utilities`);
+    const res = await fastFetch(`${API_BASE}/utilities`, {}, 2500);
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data?.data)) {
@@ -1520,32 +1549,12 @@ export async function updateUtilityStatus(id: number | string, status: string, a
   const finalTicketNo = ticket_no || item?.ticket_no || (typeof id === 'string' && id.startsWith('REQ-') ? id : '');
   const targetParam = (typeof id === 'number' && id > 2000000000 && finalTicketNo) ? finalTicketNo : id;
 
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/utilities/${encodeURIComponent(String(targetParam))}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, assigned_team, resolution_notes, ticket_no: finalTicketNo }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.data) {
-        targetEmail = data.data.citizen_email || '';
-        if (item) Object.assign(item, data.data);
-      }
-    }
-  } catch (err) {
-    console.warn('Backend update utility status failed:', err);
-  }
-
-  if (HAS_EPROVIDER) try {
-    await epPatch('utility_requests', `id=eq.${id}`, { status, assigned_team, resolution_notes });
-  } catch {}
-
+  // 1. Immediately update local store
   if (item) {
     item.status = status;
     if (assigned_team) item.assigned_team = assigned_team;
     if (resolution_notes) item.resolution_notes = resolution_notes;
-    if (!targetEmail) targetEmail = item.citizen_email || '';
+    targetEmail = item.citizen_email || '';
     setStore('utilities', utilities);
   }
 
@@ -1562,6 +1571,31 @@ export async function updateUtilityStatus(id: number | string, status: string, a
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('govserve_data_updated'));
   }
+
+  // 2. Non-blocking cloud backend & eProvider sync with fast timeout
+  (async () => {
+    if (HAS_BACKEND) try {
+      const res = await fastFetch(`${API_BASE}/utilities/${encodeURIComponent(String(targetParam))}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, assigned_team, resolution_notes, ticket_no: finalTicketNo }),
+      }, 3000);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.data && item) {
+          Object.assign(item, data.data);
+          setStore('utilities', utilities);
+        }
+      }
+    } catch (err) {
+      console.warn('Backend update utility status failed:', err);
+    }
+
+    if (HAS_EPROVIDER) try {
+      await epPatch('utility_requests', `id=eq.${id}`, { status, assigned_team, resolution_notes }, 3000);
+    } catch {}
+  })();
+
   return { success: true };
 }
 

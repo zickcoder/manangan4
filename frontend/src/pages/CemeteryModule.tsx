@@ -185,7 +185,7 @@ export function CemeteryModule() {
           title: '✓ Application Granted!',
           message: `Billing notice (₱18,000) issued for ${burial.reference_no}.`
         });
-      }, 500);
+      }, 200);
     } catch (e) {
       setAnimModal({
         isOpen: true,
@@ -221,7 +221,7 @@ export function CemeteryModule() {
           title: '✓ Payment Approved & Official Receipt Issued!',
           message: `Burial Permit ${burial.permit_no || ''} marked as PAID.`
         });
-      }, 500);
+      }, 200);
     } catch (e) {
       setAnimModal({
         isOpen: true,
@@ -253,7 +253,7 @@ export function CemeteryModule() {
           title: '✕ Application Rejected',
           message: `Burial application ${burial.reference_no} rejected.`
         });
-      }, 500);
+      }, 200);
     } catch (e) {
       setAnimModal({
         isOpen: true,
@@ -285,7 +285,7 @@ export function CemeteryModule() {
           title: '✓ Application Approved!',
           message: `Burial application ${burial.reference_no} is now approved.`
         });
-      }, 500);
+      }, 200);
     } catch (e) {
       setAnimModal({
         isOpen: true,
@@ -317,7 +317,7 @@ export function CemeteryModule() {
           title: '↩ Returned to Pending Review',
           message: `Burial application ${burial.reference_no} returned to Pending Review.`
         });
-      }, 500);
+      }, 200);
     } catch (e) {
       setAnimModal({
         isOpen: true,
