@@ -313,7 +313,7 @@ export function MyTicketsPage() {
       ref_no: u.ticket_no || `UTL-${u.id}`,
       category: 'utility',
       type: 'Water & Drainage Request',
-      title: `${u.service_type || 'Utility Report'} (${u.urgency || 'Urgent'})`,
+      title: u.service_type || 'Utility Report',
       date: formatDateSafely(u.created_at),
       time: u.created_at ? new Date(u.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Daytime',
       status: u.status || 'Pending',
@@ -871,12 +871,12 @@ export function MyTicketsPage() {
         )}
       </Modal>
 
-      {/* Popup Modal: Cancel Confirm Or Resubmit Ticket? */}
+      {/* Popup Modal: Cancel Confirmation */}
       <Modal
         isOpen={Boolean(ticketToCancel)}
         onClose={() => !isCancelling && setTicketToCancel(null)}
-        title="Cancel Confirm Or Resubmit Ticket?"
-        description={`Application #${ticketToCancel?.ref_no || ''} — Choose an action below`}
+        title={ticketToCancel?.category === 'utility' ? 'Cancel Water & Drainage Request?' : 'Cancel or Resubmit Ticket?'}
+        description={`Application #${ticketToCancel?.ref_no || ''} — Confirm your action below`}
         maxWidth="md"
       >
         {ticketToCancel && (
@@ -888,10 +888,13 @@ export function MyTicketsPage() {
               </div>
               <div className="space-y-1">
                 <h4 className="font-bold text-amber-950 text-sm">
-                  Cancel or Resubmit with Corrections?
+                  {ticketToCancel.category === 'utility' ? 'Cancel this incident report?' : 'Cancel or Resubmit with Corrections?'}
                 </h4>
                 <p className="text-amber-800 text-xs leading-relaxed">
-                  You requested to cancel application <strong className="font-mono text-amber-950">{ticketToCancel.ref_no}</strong>. If you only need to adjust your schedule date, time, attendees, or details, you can choose to <strong>Resubmit Ticket</strong> instead of cancelling.
+                  {ticketToCancel.category === 'utility'
+                    ? <>You are about to cancel incident ticket <strong className="font-mono text-amber-950">{ticketToCancel.ref_no}</strong>. This action cannot be undone.</>
+                    : <>You requested to cancel application <strong className="font-mono text-amber-950">{ticketToCancel.ref_no}</strong>. If you only need to adjust your schedule date, time, attendees, or details, you can choose to <strong>Resubmit Ticket</strong> instead of cancelling.</>
+                  }
                 </p>
               </div>
             </div>
@@ -920,34 +923,36 @@ export function MyTicketsPage() {
 
             {/* Action Cards */}
             <div className="space-y-2.5 pt-1">
-              {/* Option 1: Resubmit Ticket */}
-              <div 
-                onClick={() => {
-                  const item = ticketToCancel;
-                  setTicketToCancel(null);
-                  handleResubmit(item);
-                }}
-                className="p-3.5 bg-purple-50/80 hover:bg-purple-100/80 border border-purple-200 rounded-2xl cursor-pointer transition-all flex items-center justify-between group shadow-sm hover:shadow"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
-                    <RotateCcw className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-purple-950 text-sm">Resubmit Ticket (Modify Details)</h5>
-                    <p className="text-purple-700 text-[11px]">Edit date, time, equipment, or details with existing info retained</p>
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  className="shrink-0 bg-purple-600 hover:bg-purple-700 text-white font-bold pointer-events-none"
+              {/* Option 1: Resubmit Ticket — only for non-utility categories */}
+              {ticketToCancel.category !== 'utility' && (
+                <div 
+                  onClick={() => {
+                    const item = ticketToCancel;
+                    setTicketToCancel(null);
+                    handleResubmit(item);
+                  }}
+                  className="p-3.5 bg-purple-50/80 hover:bg-purple-100/80 border border-purple-200 rounded-2xl cursor-pointer transition-all flex items-center justify-between group shadow-sm hover:shadow"
                 >
-                  Resubmit
-                </Button>
-              </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                      <RotateCcw className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-purple-950 text-sm">Resubmit Ticket (Modify Details)</h5>
+                      <p className="text-purple-700 text-[11px]">Edit date, time, equipment, or details with existing info retained</p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    className="shrink-0 bg-purple-600 hover:bg-purple-700 text-white font-bold pointer-events-none"
+                  >
+                    Resubmit
+                  </Button>
+                </div>
+              )}
 
-              {/* Option 2: Confirm Cancellation */}
+              {/* Confirm Cancellation */}
               <div 
                 onClick={handleConfirmCancel}
                 className="p-3.5 bg-rose-50/80 hover:bg-rose-100/80 border border-rose-200 rounded-2xl cursor-pointer transition-all flex items-center justify-between group shadow-sm hover:shadow"
@@ -958,7 +963,9 @@ export function MyTicketsPage() {
                   </div>
                   <div>
                     <h5 className="font-bold text-rose-950 text-sm">Confirm Cancellation</h5>
-                    <p className="text-rose-700 text-[11px]">Officially cancel application and release reserved schedule slot</p>
+                    <p className="text-rose-700 text-[11px]">
+                      {ticketToCancel.category === 'utility' ? 'Cancel this incident report permanently' : 'Officially cancel application and release reserved schedule slot'}
+                    </p>
                   </div>
                 </div>
                 <Button

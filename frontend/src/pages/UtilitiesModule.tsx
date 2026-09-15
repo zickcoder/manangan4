@@ -143,6 +143,9 @@ export function UtilitiesModule() {
   };
 
   const filtered = requests.filter(r => {
+    // Cancelled tickets are never shown on the admin side
+    if ((r.status || '').toLowerCase() === 'cancelled') return false;
+
     if (statusFilter !== 'all') {
       const lower = statusFilter.toLowerCase();
       const rStat = (r.status || '').toLowerCase();
@@ -204,7 +207,7 @@ export function UtilitiesModule() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-          {['all', 'Pending', 'Dispatched', 'Resolved', 'Rejected', 'Cancelled'].map((st) => (
+          {['all', 'Pending', 'Dispatched', 'Resolved', 'Rejected'].map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
@@ -314,17 +317,12 @@ export function UtilitiesModule() {
       >
         {selectedReq && (
           <div className="space-y-4 text-xs">
-            {/* Status & Priority Header */}
-            <div className="flex items-center justify-between p-3 bg-slate-900 text-white rounded-xl">
-              <div className="flex items-center gap-2">
-                <Badge variant={selectedReq.status === 'Resolved' ? 'success' : selectedReq.status === 'In Progress' || selectedReq.status === 'Dispatched' ? 'info' : 'warning'}>
-                  {selectedReq.status === 'In Progress' ? 'Dispatched' : selectedReq.status}
-                </Badge>
-                <span className="font-mono font-bold text-cyan-400">{selectedReq.ticket_no}</span>
-              </div>
-              <span className="text-[11px] font-bold text-amber-400">
-                Priority: {selectedReq.urgency || 'Normal'}
-              </span>
+            {/* Status Header */}
+            <div className="flex items-center gap-2 p-3 bg-slate-900 text-white rounded-xl">
+              <Badge variant={selectedReq.status === 'Resolved' ? 'success' : selectedReq.status === 'In Progress' || selectedReq.status === 'Dispatched' ? 'info' : selectedReq.status === 'Rejected' ? 'destructive' : 'warning'}>
+                {selectedReq.status === 'In Progress' ? 'Dispatched' : selectedReq.status}
+              </Badge>
+              <span className="font-mono font-bold text-cyan-400">{selectedReq.ticket_no}</span>
             </div>
 
             {/* Reporter Details */}
@@ -410,11 +408,6 @@ export function UtilitiesModule() {
                   >
                     {isUpdating ? 'Updating...' : '✕ Reject Ticket'}
                   </Button>
-                )}
-                {(selectedReq.status === 'Resolved' || selectedReq.status === 'Rejected' || selectedReq.status === 'Cancelled') && (
-                  <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                    Status: {selectedReq.status} (Archived)
-                  </span>
                 )}
               </div>
               <div className="flex gap-2">
