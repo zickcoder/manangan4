@@ -667,17 +667,27 @@ app.patch('/api/utilities/:id/status', async (req, res) => {
     const { id } = req.params;
     const { status, assigned_team, resolution_notes, ticket_no } = req.body;
 
+    const resolvedAtClause = status === 'Resolved' ? 'CURRENT_TIMESTAMP' : 'resolved_at';
     const result = await pool.query(`
       UPDATE utility_requests
-      SET status = $1, assigned_team = COALESCE($2, assigned_team), resolution_notes = COALESCE($3, resolution_notes),
-          resolved_at = CASE WHEN $1 = 'Resolved' THEN CURRENT_TIMESTAMP ELSE resolved_at END
+      SET status = $1,
+          assigned_team = COALESCE($2, assigned_team),
+          resolution_notes = COALESCE($3, resolution_notes),
+          resolved_at = ${resolvedAtClause}
       WHERE id::text = $4 OR ticket_no = $4 OR (NULLIF($5, '') IS NOT NULL AND ticket_no = $5)
       RETURNING *
-    `, [status, assigned_team, resolution_notes, String(id), ticket_no || '']);
+    `, [status, assigned_team || null, resolution_notes || null, String(id), ticket_no || '']);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ success: false, message: 'Utility ticket not found' });
     }
+
+    try {
+      await pool.query(
+        'INSERT INTO activity_logs (user_name, action, module, details) VALUES ($1, $2, $3, $4)',
+        ['Municipal Dispatch', `Utility Ticket ${status}`, 'WATER & DRAINAGE', `Ticket ${result.rows[0]?.ticket_no || id} status updated to ${status}`]
+      );
+    } catch {}
 
     res.json({ success: true, data: result.rows[0] });
   } catch (error) {

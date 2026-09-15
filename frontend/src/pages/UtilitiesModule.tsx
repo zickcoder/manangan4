@@ -38,6 +38,7 @@ export function UtilitiesModule() {
 
   const [dispatchTeam, setDispatchTeam] = useState('Quick Response Water Crew Alpha');
   const [resolutionNotes, setResolutionNotes] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const [newForm, setNewForm] = useState({
     citizen_name: '',
@@ -51,18 +52,15 @@ export function UtilitiesModule() {
     photo_name: '',
   });
 
-  const activeReqRef = React.useRef(0);
-
   const loadData = async (initial = false) => {
-    const currentReqId = ++activeReqRef.current;
     if (initial) setIsLoading(true);
     try {
       const data = await fetchUtilities('all', 'all');
-      if (currentReqId === activeReqRef.current) {
+      if (Array.isArray(data)) {
         setRequests(data);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Error fetching utilities:', e);
     } finally {
       if (initial) setIsLoading(false);
     }
@@ -83,19 +81,27 @@ export function UtilitiesModule() {
 
   const handleUpdateStatus = async (status: string) => {
     if (!selectedReq) return;
+    setIsUpdating(true);
     try {
+      const assignedTeamToSave = (status === 'Rejected' || status === 'Cancelled')
+        ? (selectedReq.assigned_team || 'Unassigned')
+        : dispatchTeam;
+      const notesToSave = resolutionNotes || `Status updated to ${status} by Municipal Dispatch`;
+
       await updateUtilityStatus(
         selectedReq.id,
         status,
-        dispatchTeam,
-        resolutionNotes || `Status updated to ${status} by Municipal Dispatch`,
+        assignedTeamToSave,
+        notesToSave,
         selectedReq.ticket_no
       );
-      setSelectedReq(prev => prev ? { ...prev, status, assigned_team: dispatchTeam, resolution_notes: resolutionNotes } : null);
+      setSelectedReq(prev => prev ? { ...prev, status, assigned_team: assignedTeamToSave, resolution_notes: notesToSave } : null);
       setIsDispatchModalOpen(false);
-      loadData();
+      await loadData();
     } catch (e) {
-      alert('Failed to update ticket');
+      alert('Failed to update ticket: please try again');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -151,10 +157,10 @@ export function UtilitiesModule() {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
-      r.ticket_no.toLowerCase().includes(q) ||
-      r.citizen_name.toLowerCase().includes(q) ||
-      r.location.toLowerCase().includes(q) ||
-      r.service_type.toLowerCase().includes(q)
+      (r.ticket_no || '').toLowerCase().includes(q) ||
+      (r.citizen_name || '').toLowerCase().includes(q) ||
+      (r.location || '').toLowerCase().includes(q) ||
+      (r.service_type || '').toLowerCase().includes(q)
     );
   });
 
@@ -198,7 +204,7 @@ export function UtilitiesModule() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-          {['all', 'Pending', 'Dispatched', 'Resolved', 'Rejected'].map((st) => (
+          {['all', 'Pending', 'Dispatched', 'Resolved', 'Rejected', 'Cancelled'].map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
@@ -270,30 +276,24 @@ export function UtilitiesModule() {
                       </td>
                       <td className="py-3.5 px-4 text-slate-800 font-semibold">{u.assigned_team || 'Unassigned'}</td>
                       <td className="py-3.5 px-4">
-                        <Badge variant={u.status === 'Resolved' ? 'success' : u.status === 'In Progress' || u.status === 'Dispatched' ? 'info' : 'warning'}>
+                        <Badge variant={u.status === 'Resolved' ? 'success' : u.status === 'In Progress' || u.status === 'Dispatched' ? 'info' : u.status === 'Cancelled' ? 'default' : u.status === 'Rejected' ? 'destructive' : 'warning'}>
                           {u.status === 'In Progress' ? 'Dispatched' : u.status}
                         </Badge>
                       </td>
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        {u.status === 'Resolved' || u.status === 'Rejected' || u.status === 'Cancelled' ? (
-                          <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                            {u.status === 'Resolved' ? '✓ Resolved (Locked)' : 'Ticket Locked'}
-                          </span>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            leftIcon={<Eye className="w-3.5 h-3.5" />}
-                            onClick={() => {
-                              setSelectedReq(u);
-                              setDispatchTeam(u.assigned_team || 'Quick Response Water Crew Alpha');
-                              setResolutionNotes(u.resolution_notes || '');
-                              setIsDispatchModalOpen(true);
-                            }}
-                          >
-                            Manage Ticket
-                          </Button>
-                        )}
+                        <Button
+                          size="sm"
+                          variant={u.status === 'Resolved' || u.status === 'Rejected' || u.status === 'Cancelled' ? 'outline' : 'secondary'}
+                          leftIcon={<Eye className="w-3.5 h-3.5" />}
+                          onClick={() => {
+                            setSelectedReq(u);
+                            setDispatchTeam(u.assigned_team || 'Quick Response Water Crew Alpha');
+                            setResolutionNotes(u.resolution_notes || '');
+                            setIsDispatchModalOpen(true);
+                          }}
+                        >
+                          {u.status === 'Resolved' || u.status === 'Rejected' || u.status === 'Cancelled' ? 'View Details' : 'Manage Ticket'}
+                        </Button>
                       </td>
                     </tr>
                   ))
@@ -373,8 +373,9 @@ export function UtilitiesModule() {
               <label className="block text-xs font-bold text-[#334155] mb-1.5">Assign Municipal Field Response Crew:</label>
               <select
                 value={dispatchTeam}
+                disabled={selectedReq.status === 'Resolved' || selectedReq.status === 'Rejected' || selectedReq.status === 'Cancelled' || isUpdating}
                 onChange={(e) => setDispatchTeam(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-medium focus:border-cyan-600 focus:outline-none"
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-medium focus:border-cyan-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
               >
                 <option value="Quick Response Water Crew Alpha">Quick Response Water Crew Alpha (Mainlines & Pipe Bursts)</option>
                 <option value="Drainage Cleanout Team 2">Drainage Cleanout Team 2 (Heavy Jetting & Culverts)</option>
@@ -389,9 +390,10 @@ export function UtilitiesModule() {
               <textarea
                 rows={3}
                 value={resolutionNotes}
+                disabled={selectedReq.status === 'Resolved' || selectedReq.status === 'Rejected' || selectedReq.status === 'Cancelled' || isUpdating}
                 onChange={(e) => setResolutionNotes(e.target.value)}
                 placeholder="Log dispatch orders, repair completion details, replaced valves, or declogged meters..."
-                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs focus:border-cyan-600 focus:outline-none"
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs focus:border-cyan-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
               />
             </div>
 
@@ -399,9 +401,20 @@ export function UtilitiesModule() {
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
               <div>
                 {(selectedReq.status === 'Pending' || selectedReq.status === 'Pending Review') && (
-                  <Button size="sm" variant="destructive" className="font-bold text-xs" onClick={() => handleUpdateStatus('Rejected')}>
-                    ✕ Reject Ticket
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="font-bold text-xs"
+                    disabled={isUpdating}
+                    onClick={() => handleUpdateStatus('Rejected')}
+                  >
+                    {isUpdating ? 'Updating...' : '✕ Reject Ticket'}
                   </Button>
+                )}
+                {(selectedReq.status === 'Resolved' || selectedReq.status === 'Rejected' || selectedReq.status === 'Cancelled') && (
+                  <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                    Status: {selectedReq.status} (Archived)
+                  </span>
                 )}
               </div>
               <div className="flex gap-2">
@@ -409,15 +422,27 @@ export function UtilitiesModule() {
                   Close
                 </Button>
                 {(selectedReq.status === 'Pending' || selectedReq.status === 'Pending Review') && (
-                  <Button size="sm" variant="primary" className="bg-cyan-600 hover:bg-cyan-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Dispatched')}>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    className="bg-cyan-600 hover:bg-cyan-700 font-bold text-white text-xs shadow-sm"
+                    disabled={isUpdating}
+                    onClick={() => handleUpdateStatus('Dispatched')}
+                  >
                     <Truck className="w-3.5 h-3.5 mr-1" />
-                    Dispatch Crew
+                    {isUpdating ? 'Dispatching...' : 'Dispatch Crew'}
                   </Button>
                 )}
                 {(selectedReq.status === 'Dispatched' || selectedReq.status === 'In Progress') && (
-                  <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Resolved')}>
+                  <Button
+                    size="sm"
+                    variant="success"
+                    className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs shadow-sm"
+                    disabled={isUpdating}
+                    onClick={() => handleUpdateStatus('Resolved')}
+                  >
                     <Check className="w-3.5 h-3.5 mr-1" />
-                    Mark Resolved & Repaired
+                    {isUpdating ? 'Resolving...' : 'Mark Resolved & Repaired'}
                   </Button>
                 )}
               </div>

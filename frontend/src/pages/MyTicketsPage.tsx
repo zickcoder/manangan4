@@ -120,7 +120,7 @@ export function MyTicketsPage() {
       } else if (ticketToCancel.category === 'facility') {
         await updateReservationStatus(ticketToCancel.originalId, 'Cancelled', 'Cancelled by citizen');
       } else if (ticketToCancel.category === 'utility') {
-        await cancelUtilityRequest(ticketToCancel.originalId);
+        await cancelUtilityRequest(ticketToCancel.originalId, 'Cancelled by citizen', ticketToCancel.ref_no);
       }
       if (selectedSubmission?.id === ticketToCancel.id) {
         setSelectedSubmission(null);
