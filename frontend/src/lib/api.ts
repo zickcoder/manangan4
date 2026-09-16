@@ -14,28 +14,23 @@ const API_BASE = `${rawBase.replace(/\/$/, '')}/api`;
 const HAS_BACKEND = true;
 
 // eProvider (Supabase-compatible) Cloud Database - robust detection with fallbacks
-const env = (import.meta as any).env || {};
-const EP_URL = (
-  env.VITE_EPROVIDER_URL ||
-  env.VITE_EPROVIDER_API_URL ||
-  env.VITE_EPROVIDER_API_BASE_URL ||
-  env.VITE_SUPABASE_URL ||
-  ''
-).replace(/\/$/, '');
-
+const EP_URL = 'https://supa.eprovider.site';
+const EP_SCHEMA = 'tenant_3585c0ec474d4b5b9e095046236e3cdb';
 const EP_KEY = (
   env.VITE_EPROVIDER_ANON_KEY ||
   env.EPROVIDER_ANON_KEY ||
   env.VITE_SUPABASE_ANON_KEY ||
-  ''
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsInByb2plY3RfaWQiOiIzNTg1YzBlYy00NzRkLTRiNWItOWUwOS01MDQ2MjM2ZTNjZGIiLCJpYXQiOjE3ODk1MzAzNzcsImV4cCI6MjEwNTEwNjM3NywiYXVkIjoiZXByb3ZpZGVyLXJlc3QiLCJpc3MiOiJlcHJvdmlkZXItY29udHJvbC1wbGFuZSJ9.xXaonWQzBxlU9RqZd25j4FOc3RIcqcarfJfMx3ofbNo'
 );
 
 const HAS_EPROVIDER = Boolean(EP_URL && EP_KEY);
-const EP_REST = HAS_EPROVIDER ? `${EP_URL}/rest/v1` : '';
+const EP_REST = `${EP_URL}/rest`;
 const EP_HEADERS = {
   'apikey': EP_KEY,
   'Authorization': `Bearer ${EP_KEY}`,
   'Content-Type': 'application/json',
+  'Accept-Profile': EP_SCHEMA,
+  'Content-Profile': EP_SCHEMA,
   'Prefer': 'return=representation'
 };
 
