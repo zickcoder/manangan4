@@ -20,8 +20,14 @@ export default async (req) => {
     return { status: 200, body: { ok: true }, headers: resHeaders };
   }
 
-  // Determine the route path either from query.route, query.path, or headers
-  const route = (query.route || query.path || query.endpoint || '').replace(/^\//, '');
+  // Determine the route path from req.path, req.url, query params, or subpath
+  let rawPath = (req.path || req.url || '').toString();
+  if (rawPath.includes('/api/')) {
+    rawPath = rawPath.split('/api/')[1];
+  } else if (rawPath.startsWith('/api')) {
+    rawPath = rawPath.slice(4);
+  }
+  const route = (query.route || query.path || query.endpoint || rawPath || '').replace(/^\//, '').split('?')[0];
 
   try {
     // 1. HEALTH / ECHO / TEST
