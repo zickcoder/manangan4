@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { CheckCircle2, XCircle, Loader2, Sparkles, X } from 'lucide-react';
 
 interface StatusAnimationModalProps {
@@ -16,27 +16,30 @@ export function StatusAnimationModal({
   title,
   message,
   onClose,
-  autoCloseMs = 1200,
+  autoCloseMs = 1100,
 }: StatusAnimationModalProps) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!isOpen) return;
 
     // Safety timeout: if stuck in 'loading', force auto-dismiss after 2.5 seconds
     if (type === 'loading') {
       const safetyTimer = setTimeout(() => {
-        if (onClose) onClose();
+        onCloseRef.current?.();
       }, 2500);
       return () => clearTimeout(safetyTimer);
     }
 
-    // Auto-dismiss for success / paid / rejected (default 1200ms)
+    // Auto-dismiss automatically for success / paid / rejected (default 1100ms)
     if (autoCloseMs > 0) {
       const timer = setTimeout(() => {
-        if (onClose) onClose();
+        onCloseRef.current?.();
       }, autoCloseMs);
       return () => clearTimeout(timer);
     }
-  }, [isOpen, type, autoCloseMs, onClose]);
+  }, [isOpen, type, autoCloseMs]);
 
   if (!isOpen) return null;
 
@@ -44,20 +47,20 @@ export function StatusAnimationModal({
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in cursor-pointer"
       onClick={() => {
-        if (onClose) onClose();
+        onCloseRef.current?.();
       }}
     >
       <div 
         className="relative bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl border border-slate-100 text-center space-y-4 animate-scale-up cursor-default"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Close Button */}
+        {/* Optional Manual Dismiss Button */}
         <button
           type="button"
           onClick={() => {
-            if (onClose) onClose();
+            onCloseRef.current?.();
           }}
-          className="absolute top-4 right-4 p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+          className="absolute top-4 right-4 p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
           title="Dismiss"
           aria-label="Dismiss modal"
         >
@@ -98,7 +101,7 @@ export function StatusAnimationModal({
           </p>
         </div>
 
-        {/* Progress Line */}
+        {/* Visual Countdown Progress Line */}
         {type !== 'loading' && autoCloseMs > 0 && (
           <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div 

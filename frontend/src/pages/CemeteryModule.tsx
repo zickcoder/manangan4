@@ -1260,7 +1260,7 @@ export function CemeteryModule() {
         type={animModal.type}
         title={animModal.title}
         message={animModal.message}
-        onClose={() => setAnimModal({ ...animModal, isOpen: false })}
+        onClose={() => setAnimModal(prev => ({ ...prev, isOpen: false }))}
       />
     </div>
   );

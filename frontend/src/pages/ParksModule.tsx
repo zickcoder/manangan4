@@ -771,7 +771,7 @@ export function ParksModule() {
         type={animModal.type}
         title={animModal.title}
         message={animModal.message}
-        onClose={() => setAnimModal({ ...animModal, isOpen: false })}
+        onClose={() => setAnimModal(prev => ({ ...prev, isOpen: false }))}
       />
 
       {/* Modal: Add / Edit Park / Ground */}

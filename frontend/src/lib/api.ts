@@ -39,6 +39,12 @@ const EP_HEADERS = {
   'Prefer': 'return=representation'
 };
 
+// Edge Function URL (From Classmate tutorial: calling Edge Function client-side)
+const EDGE_URL = (
+  env.VITE_EDGE_FUNCTION_URL ||
+  (EP_URL ? `${EP_URL}/functions/v1/api` : '')
+);
+
 async function fastFetch(url: string, options: RequestInit = {}, timeoutMs = 2500): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -48,6 +54,26 @@ async function fastFetch(url: string, options: RequestInit = {}, timeoutMs = 250
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function edgeFetch(endpoint: string, options: RequestInit = {}, timeoutMs = 3000): Promise<any> {
+  if (!EDGE_URL || !EP_KEY) return null;
+  try {
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const res = await fastFetch(`${EDGE_URL}${cleanEndpoint}`, {
+      ...options,
+      headers: {
+        'apikey': EP_KEY,
+        'Authorization': `Bearer ${EP_KEY}`,
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+      }
+    }, timeoutMs);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {}
+  return null;
 }
 
 async function epGet(table: string, query = '', timeoutMs = 2500) {
@@ -465,6 +491,9 @@ export function initLocalStore() {
 initLocalStore();
 
 export async function fetchStats() {
+  const edgeResult = await edgeFetch('/stats');
+  if (edgeResult?.data) return edgeResult.data;
+
   if (HAS_BACKEND) try {
     const res = await fetch(`${API_BASE}/stats`);
     if (res.ok) {
@@ -496,6 +525,9 @@ export async function fetchStats() {
 }
 
 export async function fetchFacilities(category = 'all') {
+  const edgeResult = await edgeFetch(`/facilities?category=${encodeURIComponent(category)}`);
+  if (Array.isArray(edgeResult?.data)) return edgeResult.data;
+
   if (HAS_EPROVIDER) try {
     const q = category !== 'all' ? `category=ilike.*${encodeURIComponent(category)}*` : '';
     const data = await epGet('facilities', q + '&order=id.asc');
@@ -561,7 +593,15 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
   let serverList: any[] = [];
   let fetched = false;
 
-  if (HAS_BACKEND) try {
+  if (!fetched) {
+    const edgeData = await edgeFetch(`/facilities/reservations?status=${encodeURIComponent(status)}`);
+    if (Array.isArray(edgeData?.data)) {
+      serverList = edgeData.data;
+      fetched = true;
+    }
+  }
+
+  if (!fetched && HAS_BACKEND) try {
     const cancelParam = excludeCancelled ? '&exclude_cancelled=true' : '';
     const res = await fastFetch(`${API_BASE}/facilities/reservations?status=${encodeURIComponent(status)}&category=${encodeURIComponent(category)}${cancelParam}`, {}, 2500);
     if (res.ok) { 
