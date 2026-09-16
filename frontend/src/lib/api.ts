@@ -26,7 +26,8 @@ const EP_KEY = (
 );
 
 const HAS_EPROVIDER = Boolean(EP_URL && EP_KEY);
-const EP_REST = `${EP_URL}/rest`;
+const isDev = Boolean(typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'));
+const EP_REST = isDev ? '/eprov-rest' : `${EP_URL}/rest`;
 const EP_HEADERS = {
   'apikey': EP_KEY,
   'Authorization': `Bearer ${EP_KEY}`,
