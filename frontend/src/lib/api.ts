@@ -1847,7 +1847,43 @@ export async function loginStaff(email: string, password: string) {
 export async function loginCitizen(email: string, password: string) {
   const cleanEmail = (email || '').toLowerCase().trim();
 
-  // 0. Try Edge Function first (eProvider live cloud database)
+  // 1. Query eProvider Cloud Database directly (Fastest & 100% persistent)
+  if (HAS_EPROVIDER) {
+    try {
+      const users = await epGet('users', `email=eq.${encodeURIComponent(cleanEmail)}`);
+      if (Array.isArray(users) && users.length > 0) {
+        const dbUser = users[0];
+        if (dbUser.password === password) {
+          // Reject admin/staff from citizen portal
+          const role = (dbUser.role || '').toLowerCase();
+          const isStaff = ['super admin', 'admin', 'staff officer', 'officer', 'engineer', 'staff'].some(r => role.includes(r));
+          if (isStaff) {
+            return { success: false, message: 'This is the Citizen login page. Please use the Staff & Admin login page instead.' };
+          }
+          console.log('✅ Logged in via eProvider Cloud Database:', dbUser.email);
+          return {
+            success: true,
+            token: `jwt-db-citizen-token-${dbUser.id}-${Date.now()}`,
+            user: {
+              id: dbUser.id,
+              name: dbUser.name,
+              email: dbUser.email,
+              phone: dbUser.phone || '+63 917 123 4567',
+              role: dbUser.role || 'Citizen',
+              department: dbUser.department || 'Registered Resident',
+              avatar: dbUser.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
+            }
+          };
+        } else {
+          return { success: false, message: 'Invalid password. Please check your credentials.' };
+        }
+      }
+    } catch (epErr) {
+      console.warn('eProvider citizen login error:', epErr);
+    }
+  }
+
+  // 2. Try Edge Function
   try {
     const edgeRes = await edgeFetch('/auth/login', {
       method: 'POST',
@@ -1870,57 +1906,6 @@ export async function loginCitizen(email: string, password: string) {
       };
     }
   } catch {}
-
-  // 1. Try Backend API first — surface backend error messages (including role mismatch 403)
-  if (HAS_BACKEND) {
-    try {
-      const res = await fetch(`${API_BASE}/auth/login-citizen`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, password }),
-      });
-      const data = await res.json();
-      if (data && data.success) return data;
-      if (!res.ok) return { success: false, message: data.message || 'Invalid credentials.' };
-    } catch (e) {
-      console.warn('Backend citizen login attempt failed, falling back to eProvider DB...', e);
-    }
-  }
-
-  // 2. Query eProvider Cloud Database directly
-  if (HAS_EPROVIDER) {
-    try {
-      const users = await epGet('users', `email=eq.${encodeURIComponent(cleanEmail)}`);
-      if (Array.isArray(users) && users.length > 0) {
-        const dbUser = users[0];
-        if (dbUser.password === password) {
-          // Reject admin/staff from citizen portal
-          const role = (dbUser.role || '').toLowerCase();
-          const isStaff = ['super admin', 'admin', 'staff officer', 'officer', 'engineer', 'staff'].some(r => role.includes(r));
-          if (isStaff) {
-            return { success: false, message: 'This is the Citizen login page. Please use the Staff & Admin login page instead.' };
-          }
-          return {
-            success: true,
-            token: `jwt-db-citizen-token-${dbUser.id}-${Date.now()}`,
-            user: {
-              id: dbUser.id,
-              name: dbUser.name,
-              email: dbUser.email,
-              phone: dbUser.phone || '+63 917 123 4567',
-              role: dbUser.role || 'Citizen',
-              department: dbUser.department || 'Registered Resident',
-              avatar: dbUser.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
-            }
-          };
-        } else {
-          return { success: false, message: 'Invalid password. Please check your credentials.' };
-        }
-      }
-    } catch (epErr) {
-      console.warn('eProvider citizen login error:', epErr);
-    }
-  }
 
   // 3. Fallback for offline local demo
   const registeredUsers = getStore('registered_citizens', [
@@ -1960,38 +1945,12 @@ export async function loginCitizen(email: string, password: string) {
 export async function registerCitizen(data: { name: string; email: string; phone: string; password: string }) {
   const cleanEmail = (data.email || '').toLowerCase().trim();
 
-  // 0. Try Edge Function first (eProvider live cloud database)
-  try {
-    const edgeRes = await edgeFetch('/auth/register-citizen', {
-      method: 'POST',
-      body: JSON.stringify({ ...data, email: cleanEmail })
-    });
-    if (edgeRes && edgeRes.success) return edgeRes;
-  } catch {}
-
-  // 1. Try Backend API first if configured
-  if (HAS_BACKEND) {
-    try {
-      const res = await fetch(`${API_BASE}/auth/register-citizen`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, email: cleanEmail }),
-      });
-      if (res.ok) {
-        const result = await res.json();
-        if (result && result.success) return result;
-      }
-    } catch (e) {
-      console.warn('Backend citizen register failed, falling back to eProvider DB...', e);
-    }
-  }
-
-  // 2. Query and insert into eProvider Cloud Database directly
+  // 1. Direct eProvider Cloud Database Insert (Primary - 100% cloud persistent)
   if (HAS_EPROVIDER) {
     try {
       const existing = await epGet('users', `email=eq.${encodeURIComponent(cleanEmail)}`);
       if (Array.isArray(existing) && existing.length > 0) {
-        return { success: false, message: 'Email address is already registered in the system database.' };
+        return { success: false, message: 'Email address is already registered in the database.' };
       }
 
       const newCitizenPayload = {
@@ -2007,6 +1966,7 @@ export async function registerCitizen(data: { name: string; email: string; phone
 
       const inserted = await epPost('users', newCitizenPayload);
       const createdUser = Array.isArray(inserted) && inserted.length > 0 ? inserted[0] : newCitizenPayload;
+      console.log('✅ Citizen successfully saved to eProvider Cloud Database:', createdUser);
 
       return {
         success: true,
@@ -2015,6 +1975,32 @@ export async function registerCitizen(data: { name: string; email: string; phone
       };
     } catch (epErr) {
       console.warn('eProvider citizen register error:', epErr);
+    }
+  }
+
+  // 2. Try Edge Function if eProvider REST was unreachable
+  try {
+    const edgeRes = await edgeFetch('/auth/register-citizen', {
+      method: 'POST',
+      body: JSON.stringify({ ...data, email: cleanEmail })
+    });
+    if (edgeRes && edgeRes.success && edgeRes.user) return edgeRes;
+  } catch {}
+
+  // 3. Try Backend API if configured
+  if (HAS_BACKEND) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/register-citizen`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, email: cleanEmail }),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        if (result && result.success) return result;
+      }
+    } catch (e) {
+      console.warn('Backend citizen register failed, falling back to local store...', e);
     }
   }
 
