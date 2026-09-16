@@ -21,7 +21,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
-import { fetchAssets, updateAssetCondition, createAsset } from '../lib/api';
+import { fetchAssets, updateAssetCondition, createAsset, deleteAsset } from '../lib/api';
 import { compressImage } from '../lib/imageCompressor';
 import { Asset } from '../types';
 
@@ -64,9 +64,14 @@ export function AssetsModule() {
     loadData();
   }, [categoryFilter]);
 
-  const handleDeleteAsset = (id: number) => {
+  const handleDeleteAsset = async (id: number) => {
     if (confirm('Are you sure you want to delete this asset from the inventory?')) {
-      setAssets(prev => prev.filter(a => a.id !== id));
+      try {
+        await deleteAsset(id);
+        setAssets(prev => prev.filter(a => a.id !== id));
+      } catch (e) {
+        alert('Failed to delete asset. Please try again.');
+      }
     }
   };
 

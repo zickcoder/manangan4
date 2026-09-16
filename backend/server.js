@@ -301,6 +301,64 @@ app.patch('/api/facilities/reservations/:id/status', async (req, res) => {
   }
 });
 
+// Update Full Reservation Details (Resubmit / Modify)
+app.patch('/api/facilities/reservations/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      facility_id, applicant_name, applicant_email, applicant_phone, 
+      purpose, event_date, start_time, end_time, attendees, 
+      special_equipment, hours, fee_amount, status, remarks 
+    } = req.body;
+
+    const result = await pool.query(`
+      UPDATE facility_reservations
+      SET 
+        facility_id = COALESCE($1, facility_id),
+        applicant_name = COALESCE($2, applicant_name),
+        applicant_email = COALESCE($3, applicant_email),
+        applicant_phone = COALESCE($4, applicant_phone),
+        purpose = COALESCE($5, purpose),
+        event_date = COALESCE($6, event_date),
+        start_time = COALESCE($7, start_time),
+        end_time = COALESCE($8, end_time),
+        attendees = COALESCE($9, attendees),
+        special_equipment = COALESCE($10, special_equipment),
+        hours = COALESCE($11, hours),
+        fee_amount = COALESCE($12, fee_amount),
+        status = COALESCE($13, status),
+        remarks = COALESCE($14, remarks)
+      WHERE id = $15 OR reference_no = $16
+      RETURNING *
+    `, [
+      facility_id ? parseInt(facility_id) : null,
+      applicant_name || null,
+      applicant_email || null,
+      applicant_phone || null,
+      purpose || null,
+      event_date || null,
+      start_time || null,
+      end_time || null,
+      attendees ? parseInt(attendees) : null,
+      special_equipment || null,
+      hours ? parseFloat(hours) : null,
+      fee_amount ? parseFloat(fee_amount) : null,
+      status || null,
+      remarks || null,
+      isNaN(parseInt(id)) ? -1 : parseInt(id),
+      id
+    ]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Reservation not found' });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // AI Conflict Detection & Recommendation for Facilities
 app.post('/api/ai/facility-check', async (req, res) => {
   try {
@@ -776,6 +834,17 @@ app.patch('/api/assets/:id', async (req, res) => {
     `, [current_condition, next_maintenance_due, ai_maintenance_alert !== undefined ? ai_maintenance_alert : null, id, image_url !== undefined ? image_url : null]);
 
     res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete Asset
+app.delete('/api/assets/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM assets WHERE id = $1', [id]);
+    res.json({ success: true, message: 'Asset deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

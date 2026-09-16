@@ -27,6 +27,7 @@ import {
   updateReservationStatus, 
   createReservation, 
   checkFacilityAI,
+  checkDoubleBooking,
   createFacility,
   updateFacility,
   deleteFacility,
@@ -298,11 +299,43 @@ export function FacilitiesModule() {
       setAnimModal({
         isOpen: true,
         type: 'loading',
+        title: 'Checking Availability...',
+        message: 'Verifying schedule for conflicts before booking.'
+      });
+
+      const facObj = facilities.find(f => f.id === Number(newForm.facility_id)) || facilities[0];
+
+      // Double booking check
+      if (facObj && newForm.event_date && newForm.start_time && newForm.end_time) {
+        const conflict = await checkDoubleBooking(
+          facObj.id,
+          facObj.name,
+          newForm.event_date,
+          newForm.start_time,
+          newForm.end_time,
+          undefined,
+          undefined,
+          undefined,
+          'Government Facility'
+        );
+        if (conflict.hasConflict) {
+          setAnimModal({
+            isOpen: true,
+            type: 'rejected',
+            title: '⚠️ Schedule Conflict Detected',
+            message: conflict.message
+          });
+          return;
+        }
+      }
+
+      setAnimModal({
+        isOpen: true,
+        type: 'loading',
         title: 'Booking Facility...',
         message: 'Checking schedule availability and creating booking ticket.'
       });
 
-      const facObj = facilities.find(f => f.id === Number(newForm.facility_id)) || facilities[0];
       await createReservation({
         ...newForm,
         facility_category: 'Government Facility',

@@ -284,6 +284,19 @@ export function MyTicketsPage() {
                      (r.facility_name || '').toLowerCase().includes('park') ||
                      (r.facility_name || '').toLowerCase().includes('amphitheater') ||
                      (r.facility_name || '').toLowerCase().includes('plaza');
+      // Produce a clean YYYY-MM-DD string from event_date for use in date inputs
+      const rawEventDate = (r as any).event_date || '';
+      let eventDateIso = '';
+      if (rawEventDate) {
+        try {
+          const d = new Date(rawEventDate);
+          if (!isNaN(d.getTime())) {
+            eventDateIso = d.toISOString().split('T')[0];
+          } else {
+            eventDateIso = String(rawEventDate).slice(0, 10);
+          }
+        } catch { eventDateIso = String(rawEventDate).slice(0, 10); }
+      }
       return {
         id: `res-${r.id}`,
         originalId: r.id,
@@ -293,6 +306,7 @@ export function MyTicketsPage() {
         type: isPark ? 'Park & Recreation Grounds Scheduling' : 'Government Facility Reservation',
         title: r.facility_name || (isPark ? 'Municipal Park / Ground' : 'Government Facility'),
         date: formatDateSafely(r.event_date),
+        event_date_iso: eventDateIso,
         time: `${r.start_time || ''} - ${r.end_time || ''}`,
         status: r.status || 'Pending',
         fee_amount: (r as any).fee_amount || calculateFacilityFee(r.start_time, r.end_time, r.hourly_rate || 0) || 0,

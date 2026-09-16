@@ -65,6 +65,15 @@ function getCurrentUser() {
   }
 }
 
+function useLiveClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
 export function AppHeader({ onToggleSidebar, onOpenProfile, title, subtitle }: HeaderProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -73,6 +82,7 @@ export function AppHeader({ onToggleSidebar, onOpenProfile, title, subtitle }: H
   const [currentUser, setCurrentUser] = useState(getCurrentUser);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
+  const liveTime = useLiveClock();
 
   const isCitizen = currentUser?.role === 'Citizen';
 
@@ -193,8 +203,18 @@ export function AppHeader({ onToggleSidebar, onOpenProfile, title, subtitle }: H
         </div>
       </div>
 
-      {/* Right: Notifications & Profile */}
+      {/* Right: Date/Time + Notifications + Profile */}
       <div className="flex items-center gap-2 md:gap-3">
+        {/* Live Date & Time Display */}
+        <div className="flex flex-col items-end mr-1 sm:mr-2 select-none text-right">
+          <span className="text-xs sm:text-[13px] font-bold text-[#0f172a] leading-tight tabular-nums">
+            {liveTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+          </span>
+          <span className="text-[10px] text-[#64748b] font-medium leading-tight">
+            {liveTime.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          </span>
+        </div>
+
         {/* Live Notifications Popover */}
         <div className="relative" ref={popoverRef}>
           <button

@@ -159,7 +159,7 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     applicant_phone: currentUser?.phone || '',
     purpose: PURPOSE_OPTIONS[0],
     custom_purpose: '',
-    event_date: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
+    event_date: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
     start_time: '08:00 AM',
     end_time: '12:00 PM',
     attendees: '50',
@@ -309,7 +309,8 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
             applicant_name: stateItem.applicant || prev.applicant_name,
             applicant_phone: stateItem.contact || prev.applicant_phone,
             purpose: stateItem.details || prev.purpose,
-            event_date: stateItem.date && !stateItem.date.includes('N/A') ? stateItem.date : prev.event_date,
+            // Use the raw ISO date (YYYY-MM-DD) for the date input, fall back to previous value
+            event_date: stateItem.event_date_iso || (stateItem.date && !stateItem.date.includes('N/A') ? stateItem.date : prev.event_date),
             start_time: sTime,
             end_time: eTime,
           }));
@@ -548,6 +549,19 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     if (isPaxExceeded) {
       setReserveError(`Number of attendees (${currentAttendees}) exceeds maximum venue capacity (${selectedFacilityObj?.capacity}).`);
       return;
+    }
+
+    // Enforce 3-day-ahead booking constraint (not for resubmissions which already own the slot)
+    if (!activeResubmit) {
+      const minDate = new Date();
+      minDate.setDate(minDate.getDate() + 3);
+      minDate.setHours(0, 0, 0, 0);
+      const chosenDate = new Date(reserveForm.event_date);
+      if (chosenDate < minDate) {
+        const minDateStr = minDate.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' });
+        setReserveError(`Bookings must be made at least 3 days in advance. Earliest bookable date is ${minDateStr}.`);
+        return;
+      }
     }
 
     setReserveSubmitting(true);
@@ -940,17 +954,30 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                       </div>
 
                       {/* DATE AND TIME */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <Input
-                          label="Event Date *"
-                          type="date"
-                          required
-                          value={reserveForm.event_date}
-                          onChange={(e) => setReserveForm({ ...reserveForm, event_date: e.target.value })}
-                        />
-                        <div>
-                          <label className="block text-xs font-semibold text-[#334155] mb-1.5">Start Time *</label>
-                          <select
+                      {/* 3-day minimum booking rule */}
+                      {(() => {
+                        const minDate = new Date();
+                        minDate.setDate(minDate.getDate() + 3);
+                        const minBookingDate = minDate.toISOString().split('T')[0];
+                        return (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                              <label className="block text-xs font-semibold text-[#334155] mb-1.5">Event Date *</label>
+                              <input
+                                type="date"
+                                required
+                                min={activeResubmit ? undefined : minBookingDate}
+                                value={reserveForm.event_date}
+                                onChange={(e) => setReserveForm({ ...reserveForm, event_date: e.target.value })}
+                                className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm focus:border-blue-600 focus:outline-none"
+                              />
+                              {!activeResubmit && (
+                                <p className="text-[10px] text-slate-400 mt-0.5">📅 Earliest: {minDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-[#334155] mb-1.5">Start Time *</label>
+                              <select
                             value={reserveForm.start_time}
                             onChange={(e) => setReserveForm({ ...reserveForm, start_time: e.target.value })}
                             className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm"
@@ -996,7 +1023,9 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                             <option value="10:00 PM">10:00 PM</option>
                           </select>
                         </div>
-                      </div>
+                          </div>
+                        );
+                      })()} {/* End date IIFE */}
 
                       {/* Live Calculated Fee & Duration Banner */}
                       <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${

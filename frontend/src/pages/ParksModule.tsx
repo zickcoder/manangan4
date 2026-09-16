@@ -27,6 +27,7 @@ import {
   fetchReservations, 
   updateReservationStatus, 
   createReservation,
+  checkDoubleBooking,
   createFacility,
   updateFacility,
   deleteFacility,
@@ -273,11 +274,43 @@ export function ParksModule() {
       setAnimModal({
         isOpen: true,
         type: 'loading',
+        title: 'Checking Availability...',
+        message: 'Verifying park schedule for conflicts.'
+      });
+
+      const parkObj = parks.find(p => p.id === Number(newForm.facility_id)) || parks[0];
+
+      // Double booking check
+      if (parkObj && newForm.event_date && newForm.start_time && newForm.end_time) {
+        const conflict = await checkDoubleBooking(
+          parkObj.id,
+          parkObj.name,
+          newForm.event_date,
+          newForm.start_time,
+          newForm.end_time,
+          undefined,
+          undefined,
+          undefined,
+          'Park & Recreation'
+        );
+        if (conflict.hasConflict) {
+          setAnimModal({
+            isOpen: true,
+            type: 'rejected',
+            title: '⚠️ Schedule Conflict Detected',
+            message: conflict.message
+          });
+          return;
+        }
+      }
+
+      setAnimModal({
+        isOpen: true,
+        type: 'loading',
         title: 'Scheduling Park Event...',
         message: 'Reserving park ground and generating ticket.'
       });
 
-      const parkObj = parks.find(p => p.id === Number(newForm.facility_id)) || parks[0];
       await createReservation({
         ...newForm,
         facility_category: 'Park & Recreation',

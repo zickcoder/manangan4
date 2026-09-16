@@ -100,6 +100,15 @@ async function epPatch(table: string, query: string, body: any, timeoutMs = 2500
   return res.json();
 }
 
+async function epDelete(table: string, query: string, timeoutMs = 2500) {
+  const res = await fastFetch(`${EP_REST}/${table}?${query}`, {
+    method: 'DELETE',
+    headers: EP_HEADERS
+  }, timeoutMs);
+  if (!res.ok) throw new Error(`eProvider DELETE ${table} failed: ${res.status}`);
+  return true;
+}
+
 // Initial Seed Data (from database_schema_and_seed.sql)
 const DEFAULT_FACILITIES = [
   {
@@ -591,6 +600,22 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
   let serverList: any[] = [];
   let fetched = false;
 
+  // 1. Primary: eProvider Cloud Database
+  if (HAS_EPROVIDER) {
+    try {
+      let q = 'order=id.desc';
+      if (status !== 'all') q += `&status=eq.${encodeURIComponent(status)}`;
+      const data = await epGet('facility_reservations', q);
+      if (Array.isArray(data)) {
+        serverList = data;
+        fetched = true;
+      }
+    } catch (e) {
+      console.warn('eProvider fetchReservations error:', e);
+    }
+  }
+
+  // 2. Secondary: Edge function
   if (!fetched) {
     const edgeData = await edgeFetch(`/facilities/reservations?status=${encodeURIComponent(status)}`);
     if (Array.isArray(edgeData?.data)) {
@@ -599,6 +624,7 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
     }
   }
 
+  // 3. Secondary: Render Backend
   if (!fetched && HAS_BACKEND) try {
     const cancelParam = excludeCancelled ? '&exclude_cancelled=true' : '';
     const res = await fastFetch(`${API_BASE}/facilities/reservations?status=${encodeURIComponent(status)}&category=${encodeURIComponent(category)}${cancelParam}`, {}, 2500);
@@ -608,15 +634,6 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
         serverList = data.data;
         fetched = true;
       }
-    }
-  } catch {}
-
-  if (!fetched && HAS_EPROVIDER) try {
-    const q = status !== 'all' ? `status=eq.${encodeURIComponent(status)}&order=id.desc` : 'order=id.desc';
-    const data = await epGet('facility_reservations', q);
-    if (Array.isArray(data) && data.length > 0) {
-      serverList = data;
-      fetched = true;
     }
   } catch {}
 
@@ -725,10 +742,31 @@ export async function createReservation(payload: any) {
   const equipmentText = Array.isArray(payload.special_equipment) ? payload.special_equipment.join(', ') : (payload.special_equipment || null);
 
   // If this is a resubmission of an existing ticket
-  if (payload.resubmitId) {
-    const resubmitId = payload.resubmitId;
+  const isResubmission = Boolean(payload.resubmitId || payload.resubmit_id || payload.is_resubmit);
+  if (isResubmission) {
+    const resubmitId = payload.resubmitId || payload.resubmit_id;
     const existingRef = payload.reference_no;
     delete payload.resubmitId;
+    delete payload.resubmit_id;
+    delete payload.is_resubmit;
+
+    const dbUpdate: any = {
+      purpose: payload.purpose,
+      event_date: payload.event_date ? payload.event_date.split('T')[0] : undefined,
+      start_time: payload.start_time,
+      end_time: payload.end_time,
+      attendees: payload.attendees ? Number(payload.attendees) : undefined,
+      special_equipment: equipmentText || null,
+      hours: payload.hours ? Number(payload.hours) : undefined,
+      fee_amount: payload.fee_amount ? Number(payload.fee_amount) : undefined,
+      status: 'Pending Review',
+      remarks: 'Resubmitted with updated schedule/details'
+    };
+    if (payload.facility_id) dbUpdate.facility_id = Number(payload.facility_id);
+    if (payload.applicant_name) dbUpdate.applicant_name = payload.applicant_name;
+    if (payload.applicant_phone) dbUpdate.applicant_phone = payload.applicant_phone;
+    Object.keys(dbUpdate).forEach(k => dbUpdate[k] === undefined && delete dbUpdate[k]);
+
     const updateData = {
       ...citizenMeta,
       ...payload,
@@ -742,23 +780,38 @@ export async function createReservation(payload: any) {
     };
 
     const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
-    const existingIdx = reservations.findIndex((r: any) => r.id === resubmitId || String(r.id) === String(resubmitId));
+    const existingIdx = reservations.findIndex((r: any) => 
+      (existingRef && r.reference_no === existingRef) || 
+      r.id === resubmitId || 
+      String(r.id) === String(resubmitId)
+    );
     if (existingIdx !== -1) {
       reservations[existingIdx] = { ...reservations[existingIdx], ...updateData };
       setStore('reservations', reservations);
     }
 
-    if (HAS_BACKEND) try {
-      await fetch(`${API_BASE}/facilities/reservations/${resubmitId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updateData)
-      });
-    } catch {}
+    // 1. Patch eProvider Cloud Database (Primary)
+    if (HAS_EPROVIDER) {
+      try {
+        const epQuery = existingRef 
+          ? `reference_no=eq.${encodeURIComponent(existingRef)}` 
+          : `id=eq.${resubmitId}`;
+        await epPatch('facility_reservations', epQuery, dbUpdate, 3000);
+      } catch (epErr) {
+        console.warn('eProvider resubmit patch error:', epErr);
+      }
+    }
 
-    if (HAS_EPROVIDER) try {
-      await epPatch('facility_reservations', `id=eq.${resubmitId}`, updateData);
-    } catch {}
+    // 2. Patch backend (Secondary)
+    if (HAS_BACKEND) {
+      try {
+        await fastFetch(`${API_BASE}/facilities/reservations/${existingRef || resubmitId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(dbUpdate)
+        }, 3000);
+      } catch {}
+    }
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('govserve_data_updated'));
@@ -789,9 +842,29 @@ export async function createReservation(payload: any) {
     }
   }
 
+  // Prepare database-clean payload matching PostgreSQL schema
+  const dbReservation = {
+    reference_no: refNo,
+    facility_id: payload.facility_id ? Number(payload.facility_id) : 1,
+    citizen_id: citizenMeta.citizen_id ? Number(citizenMeta.citizen_id) : null,
+    applicant_name: citizenMeta.applicant_name || payload.applicant_name || 'Resident Applicant',
+    applicant_email: applicantEmail || '',
+    citizen_email: applicantEmail || null,
+    applicant_phone: payload.applicant_phone || '',
+    purpose: payload.purpose || 'Civic Event',
+    event_date: payload.event_date ? payload.event_date.split('T')[0] : new Date().toISOString().split('T')[0],
+    start_time: payload.start_time || '08:00 AM',
+    end_time: payload.end_time || '12:00 PM',
+    attendees: Number(payload.attendees) || 20,
+    special_equipment: equipmentText || null,
+    fee_amount: Number(payload.fee_amount) || 0,
+    hours: Number(payload.hours) || 1,
+    status: 'Pending Review'
+  };
+
   const newReservation = {
     id: Date.now(),
-    reference_no: refNo,
+    ...dbReservation,
     ...citizenMeta,
     ...payload,
     facility_category: normalizedCategory,
@@ -808,26 +881,38 @@ export async function createReservation(payload: any) {
   reservations.unshift(newReservation);
   setStore('reservations', reservations);
 
-  let backendSuccess = false;
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/facilities/reservations`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newReservation)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.data) {
-        newReservation.id = data.data.id || newReservation.id;
-        newReservation.reference_no = data.data.reference_no || newReservation.reference_no;
+  // 1. Primary: Save to eProvider Cloud Database
+  if (HAS_EPROVIDER) {
+    try {
+      const inserted = await epPost('facility_reservations', dbReservation);
+      if (Array.isArray(inserted) && inserted[0]?.id) {
+        newReservation.id = inserted[0].id;
+        newReservation.reference_no = inserted[0].reference_no || newReservation.reference_no;
         setStore('reservations', reservations);
-        backendSuccess = true;
       }
+    } catch (e) {
+      console.warn('eProvider createReservation error:', e);
     }
-  } catch {}
+  }
 
-  // Only post to eProvider as fallback if backend is offline/failed
-  if (!backendSuccess && HAS_EPROVIDER) try {
-    await epPost('facility_reservations', newReservation);
-  } catch {}
+  // 2. Secondary: Sync to Render backend
+  if (HAS_BACKEND) {
+    try {
+      const res = await fastFetch(`${API_BASE}/facilities/reservations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dbReservation)
+      }, 3000);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.data) {
+          newReservation.id = data.data.id || newReservation.id;
+          newReservation.reference_no = data.data.reference_no || newReservation.reference_no;
+          setStore('reservations', reservations);
+        }
+      }
+    } catch {}
+  }
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('govserve_data_updated'));
@@ -894,8 +979,18 @@ export async function updateReservationStatus(
     } catch {}
 
     if (HAS_EPROVIDER) try {
-      await epPatch('facility_reservations', `id=eq.${id}`, { status, remarks, reviewer_name, ...extraData }, 3000);
-    } catch {}
+      const epPatchPayload: any = { status };
+      if (remarks !== undefined) epPatchPayload.remarks = remarks;
+      if (extraData?.fee_amount !== undefined) epPatchPayload.fee_amount = Number(extraData.fee_amount);
+      if (extraData?.payment_due_date !== undefined) epPatchPayload.payment_due_date = extraData.payment_due_date;
+      if (extraData?.paid_at !== undefined) epPatchPayload.paid_at = extraData.paid_at;
+      if (extraData?.payment_method !== undefined) epPatchPayload.payment_method = extraData.payment_method;
+
+      const q = item?.reference_no ? `reference_no=eq.${encodeURIComponent(item.reference_no)}` : `id=eq.${id}`;
+      await epPatch('facility_reservations', q, epPatchPayload, 3000);
+    } catch (epErr) {
+      console.warn('eProvider updateReservationStatus error:', epErr);
+    }
   })();
 
   return { success: true };
@@ -1076,11 +1171,11 @@ export async function checkDoubleBooking(
       const isApproved = conflict.status === 'Approved' || conflict.status === 'Paid';
       const statusLabel = conflict.status || 'Active';
       return {
-        hasConflict: false,
+        hasConflict: true,
         isOwnSchedule: true,
         message: isApproved
-          ? `You already booked this date (${conflict.reference_no} • Status: ${statusLabel}). Your reservation is already confirmed by admin. Please select another date if you wish to book another schedule, or view your existing ticket.`
-          : `You already have an active booking on this date (${conflict.reference_no} • Status: ${statusLabel}). Please select another date if you wish to book another schedule, or view your existing ticket.`,
+          ? `You already booked this venue for this schedule (${conflict.reference_no} • Status: ${statusLabel}). Your reservation is already registered. Please select another date or time slot.`
+          : `You already have an active booking on this date and time (${conflict.reference_no} • Status: ${statusLabel}). Please select another date or time slot.`,
         existingBooking: {
           reference_no: conflict.reference_no,
           facility_name: conflict.facility_name,
@@ -1260,21 +1355,37 @@ export async function fetchBurials() {
   let serverList: any[] = [];
   let fetched = false;
 
-  if (HAS_BACKEND) try {
-    const res = await fastFetch(`${API_BASE}/cemetery/burials`, {}, 2500);
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data?.data)) {
-        serverList = data.data;
+  // 1. Primary: eProvider Cloud Database
+  if (HAS_EPROVIDER) {
+    try {
+      const data = await epGet('burial_records', 'order=id.desc');
+      if (Array.isArray(data)) {
+        serverList = data;
         fetched = true;
+        setStore('burials', data);
       }
+    } catch (e) {
+      console.warn('eProvider fetchBurials error:', e);
     }
-  } catch {}
+  }
+
+  // 2. Secondary: Render Backend
+  if (!fetched && HAS_BACKEND) {
+    try {
+      const res = await fastFetch(`${API_BASE}/cemetery/burials`, {}, 2500);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.data)) {
+          serverList = data.data;
+          fetched = true;
+          setStore('burials', data.data);
+        }
+      }
+    } catch {}
+  }
 
   const localList = getStore('burials', DEFAULT_BURIALS);
   if (fetched && serverList.length > 0) {
-    // Server is the single source of truth — overwrite local, never merge stale data
-    setStore('burials', serverList);
     return serverList;
   }
   return localList;
@@ -1388,11 +1499,36 @@ export async function createBurial(payload: any) {
     }
   }
 
-  const newBurial = {
-    id: Date.now(),
+  // Clean payload matching PostgreSQL burial_records schema (without out-of-range integer id)
+  const dbBurial = {
     reference_no: refNo,
     permit_no: permitNo,
-    status: 'Pending Review',
+    deceased_name: payload.deceased_name || payload.deceased_full_name || 'Individual',
+    date_of_birth: payload.date_of_birth || null,
+    date_of_death: payload.date_of_death || new Date().toISOString().split('T')[0],
+    burial_date: payload.burial_date || new Date().toISOString().split('T')[0],
+    plot_id: payload.plot_id ? Number(payload.plot_id) : null,
+    plot_code: payload.plot_code || null,
+    section: payload.section || null,
+    cemetery_name: payload.cemetery_name || 'Barangay 178 Municipal Cemetery',
+    contact_person: payload.contact_person || citizenMeta.applicant_name || 'Relative',
+    contact_phone: payload.contact_phone || payload.applicant_phone || '09123456789',
+    applicant_email: citizenMeta.citizen_email || payload.citizen_email || payload.applicant_email || null,
+    citizen_email: citizenMeta.citizen_email || payload.citizen_email || payload.applicant_email || null,
+    citizen_id: citizenMeta.citizen_id ? Number(citizenMeta.citizen_id) : null,
+    cause_of_death: payload.cause_of_death || null,
+    deceased_address: payload.deceased_address || null,
+    attending_physician: payload.attending_physician || null,
+    applicant_relationship: payload.applicant_relationship || null,
+    applicant_address: payload.applicant_address || null,
+    burial_time: payload.burial_time || null,
+    fee_amount: Number(payload.fee_amount) || 0,
+    status: 'Pending Review'
+  };
+
+  const newBurial = {
+    id: Date.now(),
+    ...dbBurial,
     ...citizenMeta,
     ...payload,
     created_at: new Date().toISOString()
@@ -1406,27 +1542,39 @@ export async function createBurial(payload: any) {
     updatePlotStatus(Number(payload.plot_id), 'Reserved');
   }
 
-  // Save to Render backend
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/cemetery/burials`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newBurial),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.data) {
-        newBurial.id = data.data.id || newBurial.id;
+  // 1. Primary: Save to eProvider Cloud Database
+  if (HAS_EPROVIDER) {
+    try {
+      const inserted = await epPost('burial_records', dbBurial);
+      if (Array.isArray(inserted) && inserted[0]?.id) {
+        newBurial.id = inserted[0].id;
+        newBurial.reference_no = inserted[0].reference_no || newBurial.reference_no;
         setStore('burials', burials);
       }
+    } catch (e) {
+      console.warn('eProvider createBurial error:', e);
     }
-  } catch (err) {
-    console.warn('Backend burial post failed:', err);
   }
 
-  if (HAS_EPROVIDER) try {
-    await epPost('burial_records', newBurial);
-  } catch {}
+  // 2. Secondary: Sync to Render backend
+  if (HAS_BACKEND) {
+    try {
+      const res = await fastFetch(`${API_BASE}/cemetery/burials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dbBurial),
+      }, 3000);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.data) {
+          newBurial.id = data.data.id || newBurial.id;
+          setStore('burials', burials);
+        }
+      }
+    } catch (err) {
+      console.warn('Backend burial post failed:', err);
+    }
+  }
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('govserve_data_updated'));
@@ -1439,28 +1587,33 @@ export async function fetchUtilities(status = 'all', service_type = 'all') {
   let serverList: any[] = [];
   let fetched = false;
 
-  if (HAS_BACKEND) try {
+  // 1. Primary: eProvider Cloud Database
+  if (HAS_EPROVIDER) try {
+    let q = 'order=id.desc';
+    if (status !== 'all') q += `&status=eq.${encodeURIComponent(status)}`;
+    if (service_type !== 'all') q += `&service_type=eq.${encodeURIComponent(service_type)}`;
+    const data = await epGet('utility_requests', q);
+    if (Array.isArray(data)) {
+      serverList = data;
+      fetched = true;
+      setStore('utilities', data);
+    }
+  } catch (e) {
+    console.warn('eProvider fetchUtilities error:', e);
+  }
+
+  // 2. Secondary: Backend API
+  if (!fetched && HAS_BACKEND) try {
     const res = await fastFetch(`${API_BASE}/utilities`, {}, 2500);
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data?.data)) {
         serverList = data.data;
         fetched = true;
+        setStore('utilities', data.data);
       }
     }
   } catch {}
-
-  if (!fetched && HAS_EPROVIDER) try {
-    const data = await epGet('utility_requests', 'order=id.desc');
-    if (Array.isArray(data)) {
-      serverList = data;
-      fetched = true;
-    }
-  } catch {}
-
-  if (fetched) {
-    setStore('utilities', serverList);
-  }
 
   const currentStore = getStore('utilities', DEFAULT_UTILITIES);
   let list = fetched ? serverList : currentStore;
@@ -1498,7 +1651,8 @@ export async function createUtilityRequest(payload: any) {
     citizenMeta = {
       citizen_id: payload.citizen_id || cu.id || undefined,
       citizen_email: (payload.citizen_email || cu.email || '').toLowerCase().trim(),
-      applicant_email: (payload.citizen_email || cu.email || '').toLowerCase().trim()
+      applicant_email: (payload.citizen_email || cu.email || '').toLowerCase().trim(),
+      citizen_name: payload.citizen_name || cu.name || undefined
     };
     callerRole = cu.role || 'Citizen';
   } catch {}
@@ -1529,49 +1683,70 @@ export async function createUtilityRequest(payload: any) {
     }
   }
 
-  const newReq = {
-    id: Date.now(),
+  // Database-clean payload without out-of-range integer id
+  const dbReq = {
     ticket_no: ticketNo,
-    ...citizenMeta,
-    ...payload,
-    citizen_email: citizenMeta.citizen_email || payload.citizen_email,
+    citizen_name: citizenMeta.citizen_name || payload.citizen_name || 'Resident User',
+    citizen_email: citizenMeta.citizen_email || payload.citizen_email || null,
+    citizen_id: citizenMeta.citizen_id ? Number(citizenMeta.citizen_id) : null,
+    citizen_phone: citizenMeta.citizen_phone || payload.citizen_phone || '09123456789',
+    service_type: payload.service_type || 'Drainage & Water Hazard',
+    location: payload.location || 'Barangay 178',
+    description: payload.description || '',
+    photo_url: payload.photo_url || null,
+    affected_households: payload.affected_households || null,
     urgency: payload.urgency || 'Normal',
     ai_priority_score: urgencyScore,
-    status: 'Pending',
+    status: 'Pending'
+  };
+
+  const newReq = {
+    id: Date.now(),
+    ...dbReq,
     created_at: new Date().toISOString()
   };
 
-  // Always save to local store
+  // Always save to local store first
   utilities.unshift(newReq);
   setStore('utilities', utilities);
 
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/utilities`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newReq),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.data) {
-        newReq.id = data.data.id || newReq.id;
-        newReq.ticket_no = data.data.ticket_no || newReq.ticket_no;
+  // 1. Save to eProvider Cloud Database (Primary — always persistent)
+  let eproviderSaved = false;
+  if (HAS_EPROVIDER) {
+    try {
+      const inserted = await epPost('utility_requests', dbReq);
+      if (inserted) {
+        eproviderSaved = true;
+        const savedRow = Array.isArray(inserted) && inserted.length > 0 ? inserted[0] : null;
+        if (savedRow?.id) newReq.id = savedRow.id;
+        if (savedRow?.ticket_no) newReq.ticket_no = savedRow.ticket_no;
         setStore('utilities', utilities);
       }
-    } else {
-      // Backend rejected — remove from local store and throw so citizen sees the error
-      setStore('utilities', utilities.filter((u: any) => u.ticket_no !== newReq.ticket_no));
-      throw new Error('Server error: could not save your ticket. Please try again in a moment.');
+    } catch (epErr) {
+      console.warn('eProvider utility save error:', epErr);
     }
-  } catch (err: any) {
-    // If server is sleeping/unreachable, remove local copy and rethrow
-    setStore('utilities', utilities.filter((u: any) => u.ticket_no !== newReq.ticket_no));
-    throw new Error(err?.message || 'Unable to reach server. Please try again in a moment.');
   }
 
-  if (HAS_EPROVIDER) try {
-    await epPost('utility_requests', newReq);
-  } catch {}
+  // 2. Also sync to Render backend (Secondary — non-blocking)
+  if (HAS_BACKEND) {
+    try {
+      const res = await fastFetch(`${API_BASE}/utilities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dbReq),
+      }, 3000);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.data) {
+          newReq.id = data.data.id || newReq.id;
+          newReq.ticket_no = data.data.ticket_no || newReq.ticket_no;
+          setStore('utilities', utilities);
+        }
+      }
+    } catch {
+      // Backend offline is acceptable when eProvider saved successfully
+    }
+  }
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('govserve_data_updated'));
@@ -1638,70 +1813,149 @@ export async function updateUtilityStatus(id: number | string, status: string, a
 }
 
 export async function fetchAssets(category = 'all', condition = 'all') {
-  let serverList: any[] = [];
+  let list: any[] = [];
   let fetched = false;
 
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/assets?category=${encodeURIComponent(category)}&condition=${encodeURIComponent(condition)}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data?.data)) {
-        serverList = data.data;
+  // 1. Primary: eProvider Cloud Database
+  if (HAS_EPROVIDER) {
+    try {
+      let q = 'order=id.asc';
+      if (category !== 'all') q += `&category=ilike.*${encodeURIComponent(category)}*`;
+      if (condition !== 'all') q += `&current_condition=eq.${encodeURIComponent(condition)}`;
+      const data = await epGet('assets', q);
+      if (Array.isArray(data)) {
+        list = data;
         fetched = true;
+        setStore('assets', data);
       }
+    } catch (e) {
+      console.warn('eProvider fetchAssets error:', e);
     }
-  } catch {}
-
-  const localList = getStore('assets', DEFAULT_ASSETS);
-  let list = localList;
-  if (fetched && serverList.length > 0) {
-    const serverTags = new Set(serverList.map((a: any) => (a.asset_tag || '').toLowerCase()));
-    const unmerged = localList.filter((a: any) => a.asset_tag && !serverTags.has((a.asset_tag || '').toLowerCase()));
-    list = [...unmerged, ...serverList];
   }
 
-  if (category !== 'all') {
-    list = list.filter((a: any) => a.category === category);
+  // 2. Secondary: Render backend
+  if (!fetched && HAS_BACKEND) {
+    try {
+      const res = await fastFetch(`${API_BASE}/assets?category=${encodeURIComponent(category)}&condition=${encodeURIComponent(condition)}`, {}, 2500);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.data)) {
+          list = data.data;
+          fetched = true;
+          setStore('assets', data.data);
+        }
+      }
+    } catch {}
   }
-  if (condition !== 'all') {
-    list = list.filter((a: any) => a.current_condition === condition);
+
+  // 3. Fallback: local store
+  if (!fetched) {
+    list = getStore('assets', DEFAULT_ASSETS);
+    if (category !== 'all') {
+      list = list.filter((a: any) => (a.category || '').toLowerCase() === category.toLowerCase());
+    }
+    if (condition !== 'all') {
+      list = list.filter((a: any) => a.current_condition === condition);
+    }
   }
+
   return list;
 }
 
 export async function createAsset(payload: any) {
   const assets = getStore('assets', DEFAULT_ASSETS);
   const assetTag = `AST-${new Date().getFullYear()}-${String(assets.length + 1).padStart(3, '0')}`;
+
+  const dbPayload = {
+    asset_tag: assetTag,
+    name: payload.name || 'Municipal Equipment Unit',
+    category: payload.category || 'Heavy Equipment',
+    serial_no: payload.serial_no || null,
+    purchase_date: payload.purchase_date || null,
+    purchase_cost: parseFloat(payload.purchase_cost) || 0,
+    current_condition: payload.current_condition || 'Operational',
+    assigned_department: payload.assigned_department || 'General Services',
+    last_maintenance_date: payload.last_maintenance_date || null,
+    next_maintenance_due: payload.next_maintenance_due || null,
+    ai_maintenance_alert: payload.ai_maintenance_alert || null,
+    specs: payload.specs || null,
+    image_url: payload.image_url || null
+  };
+
   const newAsset = {
     id: Date.now(),
-    asset_tag: assetTag,
-    ...payload,
-    current_condition: payload.current_condition || 'Operational',
+    ...dbPayload,
     created_at: new Date().toISOString()
   };
   assets.unshift(newAsset);
   setStore('assets', assets);
 
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/assets`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newAsset),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.data) {
-        newAsset.id = data.data.id || newAsset.id;
-        newAsset.asset_tag = data.data.asset_tag || newAsset.asset_tag;
+  // 1. Save to eProvider Cloud Database (Primary)
+  if (HAS_EPROVIDER) {
+    try {
+      const inserted = await epPost('assets', dbPayload);
+      if (Array.isArray(inserted) && inserted[0]?.id) {
+        newAsset.id = inserted[0].id;
+        newAsset.asset_tag = inserted[0].asset_tag || newAsset.asset_tag;
         setStore('assets', assets);
       }
+    } catch (e) {
+      console.warn('eProvider createAsset error:', e);
     }
-  } catch {}
+  }
+
+  // 2. Sync to Render Backend (Secondary)
+  if (HAS_BACKEND) {
+    try {
+      const res = await fetch(`${API_BASE}/assets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dbPayload)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.data) {
+          newAsset.id = data.data.id || newAsset.id;
+          newAsset.asset_tag = data.data.asset_tag || newAsset.asset_tag;
+          setStore('assets', assets);
+        }
+      }
+    } catch {}
+  }
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('govserve_data_updated'));
   }
+
   return { success: true, asset_tag: newAsset.asset_tag, data: newAsset };
+}
+
+export async function deleteAsset(id: number) {
+  // 1. Update local store immediately
+  const assets = getStore('assets', DEFAULT_ASSETS);
+  const updated = assets.filter((a: any) => Number(a.id) !== Number(id));
+  setStore('assets', updated);
+
+  // 2. Delete from eProvider Cloud Database (Primary)
+  if (HAS_EPROVIDER) {
+    try {
+      await epDelete('assets', `id=eq.${id}`);
+    } catch (e) {
+      console.warn('eProvider deleteAsset error:', e);
+    }
+  }
+
+  // 3. Delete from Backend (Secondary)
+  if (HAS_BACKEND) {
+    try {
+      await fetch(`${API_BASE}/assets/${id}`, { method: 'DELETE' });
+    } catch {}
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('govserve_data_updated'));
+  }
+  return { success: true };
 }
 
 export async function updateAssetCondition(id: number, current_condition: string, next_maintenance_due?: string, ai_maintenance_alert?: string, image_url?: string) {
