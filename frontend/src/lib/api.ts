@@ -1,11 +1,13 @@
 import { addNotification } from './notifications';
 
+const env = (import.meta as any).env || {};
+
 // Live Render Cloud Backend API (Node.js Express + PostgreSQL)
 const RENDER_BACKEND_URL = 'https://govserve-backend.onrender.com';
 
 // In eProvider builds, VITE_API_URL is auto-injected with supa.eprovider.site (which is a database, not an express backend).
 // We strictly ignore any eprovider/supabase URLs for the Express API and always route to Render.
-const envApiUrl = (import.meta as any).env?.VITE_API_URL || '';
+const envApiUrl = env?.VITE_API_URL || '';
 const rawBase = (envApiUrl && !envApiUrl.includes('eprovider.site') && !envApiUrl.includes('supabase'))
   ? envApiUrl
   : RENDER_BACKEND_URL;
