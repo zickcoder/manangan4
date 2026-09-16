@@ -1850,6 +1850,30 @@ export async function loginStaff(email: string, password: string) {
 export async function loginCitizen(email: string, password: string) {
   const cleanEmail = (email || '').toLowerCase().trim();
 
+  // 0. Try Edge Function first (eProvider live cloud database)
+  try {
+    const edgeRes = await edgeFetch('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: cleanEmail, password })
+    });
+    if (edgeRes && edgeRes.success && edgeRes.user) {
+      const dbUser = edgeRes.user;
+      return {
+        success: true,
+        token: `jwt-edge-citizen-${dbUser.id}-${Date.now()}`,
+        user: {
+          id: dbUser.id,
+          name: dbUser.name,
+          email: dbUser.email,
+          phone: dbUser.phone || '+63 917 123 4567',
+          role: dbUser.role || 'Citizen',
+          department: dbUser.department || 'Registered Resident',
+          avatar: dbUser.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
+        }
+      };
+    }
+  } catch {}
+
   // 1. Try Backend API first — surface backend error messages (including role mismatch 403)
   if (HAS_BACKEND) {
     try {
@@ -1938,6 +1962,15 @@ export async function loginCitizen(email: string, password: string) {
 
 export async function registerCitizen(data: { name: string; email: string; phone: string; password: string }) {
   const cleanEmail = (data.email || '').toLowerCase().trim();
+
+  // 0. Try Edge Function first (eProvider live cloud database)
+  try {
+    const edgeRes = await edgeFetch('/auth/register-citizen', {
+      method: 'POST',
+      body: JSON.stringify({ ...data, email: cleanEmail })
+    });
+    if (edgeRes && edgeRes.success) return edgeRes;
+  } catch {}
 
   // 1. Try Backend API first if configured
   if (HAS_BACKEND) {
