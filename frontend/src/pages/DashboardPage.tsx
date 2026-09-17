@@ -246,7 +246,7 @@ export function DashboardPage() {
         {/* ═══════════════════════════════════════════════════════════════════════ */}
         {/* ── SECTION 1: CITIZEN HERO BANNER ──                                  */}
         {/* ═══════════════════════════════════════════════════════════════════════ */}
-        <div className="-mx-3 sm:-mx-5 md:-mx-6 lg:-mx-8 relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#0a1128] via-[#131f3f] to-[#1e3a8a] text-white px-8 sm:px-14 lg:px-24 py-20 sm:py-24 lg:py-28 min-h-[396px] flex flex-col justify-center shadow-xl border border-blue-500/30 ring-1 ring-white/10">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#0a1128] via-[#131f3f] to-[#1e3a8a] text-white p-6 sm:p-8 lg:p-10 shadow-xl border border-blue-500/30 ring-1 ring-white/10">
           
           {/* 
             ═══════════════════════════════════════════════════════════════════════
@@ -257,21 +257,21 @@ export function DashboardPage() {
           */}
           <div 
             id="pinpoint-citizen-hero-logo" 
-            className="absolute right-6 sm:right-10 lg:right-16 top-1/2 -translate-y-1/2 pointer-events-none opacity-15 select-none hidden md:block"
+            className="absolute right-6 sm:right-10 top-1/2 -translate-y-1/2 pointer-events-none opacity-15 select-none hidden md:block"
           >
             <img
               src="/logoforinsidebothdashboardofcetizenandadminside.png"
               alt="LGU Official Seal"
-              className="w-80 h-80 lg:w-[26rem] lg:h-[26rem] object-contain drop-shadow-2xl"
+              className="w-56 h-56 lg:w-72 lg:h-72 object-contain drop-shadow-2xl"
               onError={(e) => {
                 e.currentTarget.style.display = 'none';
               }}
             />
           </div>
 
-          <div className="relative z-10 flex flex-col md:flex-row md:items-start justify-between gap-10 lg:gap-24 w-full">
+          <div className="relative z-10 flex flex-col md:flex-row md:items-start justify-between gap-6 sm:gap-8 w-full">
             {/* Left side ("lefty"): Badge, Welcome heading, and Description */}
-            <div className="flex-1 w-full max-w-full space-y-4">
+            <div className="flex-1 w-full max-w-full space-y-3">
               <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/20 text-blue-200 border border-blue-400/30 text-xs font-semibold backdrop-blur-md w-fit">
                 <Sparkles className="w-3.5 h-3.5 text-blue-300 shrink-0" />
                 GovServe Public Assets &amp; Facilities Portal • Help &amp; Service Guide
