@@ -6,12 +6,19 @@ import {
   ShieldCheck, 
   Copy, 
   Check, 
-  FileText
+  FileText,
+  Lock,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Loader2
 } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { useNavigate } from 'react-router-dom';
+import { updateUserPin, verifyUserPin } from '../../lib/api';
+import { PinInput } from '../auth/PinInput';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -40,6 +47,15 @@ export function UserProfileModal({ isOpen, onClose, user }: UserProfileModalProp
   const navigate = useNavigate();
   const [copiedEmail, setCopiedEmail] = useState(false);
 
+  // PIN change state
+  const [isChangingPin, setIsChangingPin] = useState(false);
+  const [currentPinInput, setCurrentPinInput] = useState('');
+  const [newPinInput, setNewPinInput] = useState('');
+  const [confirmPinInput, setConfirmPinInput] = useState('');
+  const [pinLoading, setPinLoading] = useState(false);
+  const [pinMsg, setPinMsg] = useState('');
+  const [pinError, setPinError] = useState('');
+
   const isCitizen = user?.role === 'Citizen';
   const rawEmail = user?.email || (isCitizen ? 'juan.delacruz@citizen.gov.ph' : 'admin@lgu.gov.ph');
   const maskedEmail = maskEmail(rawEmail);
@@ -54,6 +70,49 @@ export function UserProfileModal({ isOpen, onClose, user }: UserProfileModalProp
     if (!name) return 'U';
     const parts = name.split(' ');
     return parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : parts[0].slice(0, 2).toUpperCase();
+  };
+
+  const handleChangePinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinError('');
+    setPinMsg('');
+
+    const activeExpectedPin = user?.pin || '123456';
+    if (!verifyUserPin(activeExpectedPin, currentPinInput)) {
+      setPinError('Incorrect current PIN. (Default for accounts is 123456).');
+      return;
+    }
+
+    if (newPinInput.length !== 6 || !/^\d{6}$/.test(newPinInput)) {
+      setPinError('New PIN must be exactly 6 numeric digits.');
+      return;
+    }
+
+    if (newPinInput !== confirmPinInput) {
+      setPinError('New PIN and confirmation do not match.');
+      return;
+    }
+
+    setPinLoading(true);
+    try {
+      const res = await updateUserPin(rawEmail, newPinInput);
+      if (res.success) {
+        setPinMsg('✅ Security PIN successfully updated!');
+        setTimeout(() => {
+          setIsChangingPin(false);
+          setCurrentPinInput('');
+          setNewPinInput('');
+          setConfirmPinInput('');
+          setPinMsg('');
+        }, 1500);
+      } else {
+        setPinError(res.message || 'Failed to update PIN.');
+      }
+    } catch {
+      setPinError('An error occurred while updating PIN.');
+    } finally {
+      setPinLoading(false);
+    }
   };
 
   return (
@@ -132,6 +191,98 @@ export function UserProfileModal({ isOpen, onClose, user }: UserProfileModalProp
               <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
                 <Phone className="w-4 h-4" />
               </div>
+            </div>
+
+            {/* Security PIN Display & Update */}
+            <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="text-slate-400 block text-[10px] font-semibold uppercase tracking-wider">6-Digit Security PIN</span>
+                  <span className="font-mono font-bold text-slate-900 text-sm tracking-widest">••••••</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsChangingPin(!isChangingPin);
+                      setPinError('');
+                      setPinMsg('');
+                    }}
+                    className="px-2.5 py-1 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer"
+                  >
+                    {isChangingPin ? 'Cancel' : 'Change PIN'}
+                  </button>
+                  <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
+                    <KeyRound className="w-4 h-4" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Inline PIN Change Form */}
+              {isChangingPin && (
+                <form onSubmit={handleChangePinSubmit} className="pt-2 border-t border-slate-100 space-y-3">
+                  {pinMsg && (
+                    <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{pinMsg}</span>
+                    </div>
+                  )}
+
+                  {pinError && (
+                    <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">
+                      {pinError}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Current PIN</label>
+                      <input
+                        type="password"
+                        maxLength={6}
+                        required
+                        value={currentPinInput}
+                        onChange={(e) => setCurrentPinInput(e.target.value.replace(/\D/g, ''))}
+                        placeholder="••••••"
+                        className="w-full px-2.5 py-1.5 font-mono text-center text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">New 6-Digit PIN</label>
+                      <input
+                        type="password"
+                        maxLength={6}
+                        required
+                        value={newPinInput}
+                        onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, ''))}
+                        placeholder="••••••"
+                        className="w-full px-2.5 py-1.5 font-mono text-center text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Confirm PIN</label>
+                      <input
+                        type="password"
+                        maxLength={6}
+                        required
+                        value={confirmPinInput}
+                        onChange={(e) => setConfirmPinInput(e.target.value.replace(/\D/g, ''))}
+                        placeholder="••••••"
+                        className="w-full px-2.5 py-1.5 font-mono text-center text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-600"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={pinLoading || newPinInput.length !== 6 || confirmPinInput.length !== 6}
+                    className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {pinLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    <span>Update PIN</span>
+                  </button>
+                </form>
+              )}
             </div>
 
             {/* Role & Access */}

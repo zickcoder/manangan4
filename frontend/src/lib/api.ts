@@ -2204,6 +2204,10 @@ export async function loginStaff(email: string, password: string) {
             (r) => (dbUser.role || '').toLowerCase().includes(r)
           );
           if (isStaffOrAdmin) {
+            const userPin = dbUser.pin || '123456';
+            if (!dbUser.pin && HAS_EPROVIDER) {
+              epPatch('users', `email=eq.${encodeURIComponent(cleanEmail)}`, { pin: '123456' }).catch(() => {});
+            }
             return {
               success: true,
               token: `jwt-db-token-${dbUser.id}-${Date.now()}`,
@@ -2213,7 +2217,9 @@ export async function loginStaff(email: string, password: string) {
                 email: dbUser.email,
                 role: dbUser.role || 'Super Admin',
                 department: dbUser.department || 'Municipal Executive Office',
-                avatar: dbUser.avatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'
+                avatar: dbUser.avatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+                pin: userPin,
+                last_otp_at: dbUser.last_otp_at
               }
             };
           } else {
@@ -2231,6 +2237,7 @@ export async function loginStaff(email: string, password: string) {
   // 3. Fallback for offline local demo
   const customAdminPass = localStorage.getItem('govserve_admin_password') || 'admin123';
   if ((cleanEmail === 'admin@govserve.gov.ph' || cleanEmail === 'staff@govserve.gov.ph') && (password === customAdminPass || password === 'admin123' || password === 'staff123')) {
+    const localPin = localStorage.getItem(`govserve_staff_pin_${cleanEmail}`) || '123456';
     return {
       success: true,
       token: 'jwt-local-demo-token-998822',
@@ -2240,7 +2247,8 @@ export async function loginStaff(email: string, password: string) {
         email: cleanEmail,
         role: cleanEmail === 'admin@govserve.gov.ph' ? 'Super Admin' : 'Staff Officer',
         department: cleanEmail === 'admin@govserve.gov.ph' ? 'Municipal Executive Office' : 'City Engineering & Public Works',
-        avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'
+        avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+        pin: localPin
       }
     };
   }
@@ -2265,6 +2273,10 @@ export async function loginCitizen(email: string, password: string) {
             return { success: false, message: 'This is the Citizen login page. Please use the Staff & Admin login page instead.' };
           }
           console.log('✅ Logged in via eProvider Cloud Database:', dbUser.email);
+          const userPin = dbUser.pin || '123456';
+          if (!dbUser.pin && HAS_EPROVIDER) {
+            epPatch('users', `email=eq.${encodeURIComponent(cleanEmail)}`, { pin: '123456' }).catch(() => {});
+          }
           return {
             success: true,
             token: `jwt-db-citizen-token-${dbUser.id}-${Date.now()}`,
@@ -2275,7 +2287,9 @@ export async function loginCitizen(email: string, password: string) {
               phone: dbUser.phone || '+63 917 123 4567',
               role: dbUser.role || 'Citizen',
               department: dbUser.department || 'Registered Resident',
-              avatar: dbUser.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
+              avatar: dbUser.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+              pin: userPin,
+              last_otp_at: dbUser.last_otp_at
             }
           };
         } else {
@@ -2305,7 +2319,9 @@ export async function loginCitizen(email: string, password: string) {
           phone: dbUser.phone || '+63 917 123 4567',
           role: dbUser.role || 'Citizen',
           department: dbUser.department || 'Registered Resident',
-          avatar: dbUser.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
+          avatar: dbUser.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+          pin: dbUser.pin || '123456',
+          last_otp_at: dbUser.last_otp_at
         }
       };
     }
@@ -2319,6 +2335,7 @@ export async function loginCitizen(email: string, password: string) {
       email: 'juan.delacruz@citizen.gov.ph',
       phone: '+63 917 123 4567',
       password: 'citizen123',
+      pin: '123456',
       role: 'Citizen',
       department: 'Resident User',
       avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
@@ -2328,6 +2345,7 @@ export async function loginCitizen(email: string, password: string) {
 
   const user = registeredUsers.find((u: any) => u.email.toLowerCase() === cleanEmail && (u.password === password || password === 'password123' || password === 'citizen123'));
   if (user) {
+    const localPin = user.pin || localStorage.getItem(`govserve_citizen_pin_${cleanEmail}`) || '123456';
     return {
       success: true,
       token: 'jwt-citizen-session-token',
@@ -2338,7 +2356,8 @@ export async function loginCitizen(email: string, password: string) {
         phone: user.phone,
         role: 'Citizen',
         department: user.department || 'Registered Resident',
-        avatar: user.avatar
+        avatar: user.avatar,
+        pin: localPin
       }
     };
   }
@@ -2346,8 +2365,9 @@ export async function loginCitizen(email: string, password: string) {
   return { success: false, message: 'Invalid email or password. Citizen account not found in database.' };
 }
 
-export async function registerCitizen(data: { name: string; email: string; phone: string; password: string }) {
+export async function registerCitizen(data: { name: string; email: string; phone: string; password: string; pin?: string }) {
   const cleanEmail = (data.email || '').toLowerCase().trim();
+  const initialPin = data.pin || '123456';
 
   // 1. Direct eProvider Cloud Database Insert (Primary - 100% cloud persistent)
   if (HAS_EPROVIDER) {
@@ -2362,6 +2382,7 @@ export async function registerCitizen(data: { name: string; email: string; phone
         email: cleanEmail,
         phone: data.phone.trim(),
         password: data.password,
+        pin: initialPin,
         role: 'Citizen',
         department: 'Resident User',
         avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
@@ -2572,4 +2593,142 @@ export function recordSuccessfulLogin(key: string = 'default') {
   localStorage.removeItem(`govserve_login_fails_${key}`);
   localStorage.removeItem(`govserve_locked_until_${key}`);
 }
+
+/** Helper to get current calendar date string in local timezone (YYYY-MM-DD) */
+export function getLocalDateString(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** Check if current user has already verified OTP or PIN on the current calendar day */
+export function isSameSessionSameDay(email: string, portal: 'citizen' | 'staff', userObj?: any): boolean {
+  if (typeof window === 'undefined') return false;
+  const cleanEmail = (email || '').toLowerCase().trim();
+  const today = getLocalDateString();
+
+  // 1. Check persistent localStorage date for this user & portal
+  const lastOtpDate = localStorage.getItem(`govserve_otp_date_${portal}_${cleanEmail}`);
+  if (lastOtpDate === today) {
+    return true;
+  }
+
+  // 2. Check if userObj from database/session has last_otp_at from today
+  const lastOtpAt = userObj?.last_otp_at || userObj?.lastOtpAt;
+  if (lastOtpAt) {
+    try {
+      const d = new Date(lastOtpAt);
+      if (!isNaN(d.getTime()) && getLocalDateString(d) === today) {
+        localStorage.setItem(`govserve_otp_date_${portal}_${cleanEmail}`, today);
+        return true;
+      }
+    } catch {}
+  }
+
+  return false;
+}
+
+/** Mark OTP as verified for today across local storage and cloud database */
+export function markOtpVerified(email: string, portal: 'citizen' | 'staff'): void {
+  if (typeof window === 'undefined') return;
+  const cleanEmail = (email || '').toLowerCase().trim();
+  const today = getLocalDateString();
+  const nowIso = new Date().toISOString();
+
+  localStorage.setItem(`govserve_otp_date_${portal}_${cleanEmail}`, today);
+  sessionStorage.setItem(`govserve_otp_verified_${portal}_${cleanEmail}`, 'true');
+
+  // Update eProvider cloud database
+  if (HAS_EPROVIDER) {
+    epPatch('users', `email=eq.${encodeURIComponent(cleanEmail)}`, {
+      last_otp_at: nowIso
+    }).catch(() => {});
+  }
+
+  // Asynchronously notify backend of last_otp_at
+  if (HAS_BACKEND) {
+    fetch(`${API_BASE}/auth/update-last-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: cleanEmail })
+    }).catch(() => {});
+  }
+}
+
+/** Clear active session OTP verification */
+export function clearSessionOtp(email: string, portal: 'citizen' | 'staff'): void {
+  if (typeof window === 'undefined') return;
+  const cleanEmail = (email || '').toLowerCase().trim();
+  sessionStorage.removeItem(`govserve_otp_verified_${portal}_${cleanEmail}`);
+}
+
+/** Verify user PIN matches (handles null or unset by falling back to 123456) */
+export function verifyUserPin(userPin: string | undefined | null, enteredPin: string): boolean {
+  const actualPin = String(userPin || '123456').trim();
+  return actualPin === String(enteredPin || '').trim();
+}
+
+/** Updates user 6-digit PIN across eProvider cloud, backend, and local storage */
+export async function updateUserPin(email: string, pin: string): Promise<{ success: boolean; message?: string }> {
+  const cleanEmail = (email || '').toLowerCase().trim();
+  const cleanPin = String(pin || '').trim();
+
+  if (cleanPin.length !== 6 || !/^\d{6}$/.test(cleanPin)) {
+    return { success: false, message: 'PIN must be exactly 6 numeric digits.' };
+  }
+
+  // 1. Update eProvider Cloud Database
+  if (HAS_EPROVIDER) {
+    try {
+      await epPatch('users', `email=eq.${encodeURIComponent(cleanEmail)}`, { pin: cleanPin });
+      console.log('✅ Updated PIN in eProvider Cloud Database for:', cleanEmail);
+    } catch (epErr) {
+      console.warn('eProvider update PIN error:', epErr);
+    }
+  }
+
+  // 2. Update Backend
+  if (HAS_BACKEND) {
+    try {
+      await fetch(`${API_BASE}/auth/set-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, pin: cleanPin })
+      });
+    } catch {}
+  }
+
+  // 3. Update localStorage fallback users
+  try {
+    const reg = getStore('registered_citizens', []);
+    const idx = reg.findIndex((u: any) => (u.email || '').toLowerCase() === cleanEmail);
+    if (idx !== -1) {
+      reg[idx].pin = cleanPin;
+      localStorage.setItem('registered_citizens', JSON.stringify(reg));
+    }
+  } catch {}
+
+  // 4. Update local mock fallback PIN storage
+  localStorage.setItem(`govserve_citizen_pin_${cleanEmail}`, cleanPin);
+  localStorage.setItem(`govserve_staff_pin_${cleanEmail}`, cleanPin);
+
+  // 5. Update current active user in session / localStorage if matching
+  try {
+    ['govserve_citizen_user', 'govserve_staff_user', 'govserve_user'].forEach(key => {
+      const item = sessionStorage.getItem(key) || localStorage.getItem(key);
+      if (item) {
+        const u = JSON.parse(item);
+        if ((u.email || '').toLowerCase() === cleanEmail) {
+          u.pin = cleanPin;
+          sessionStorage.setItem(key, JSON.stringify(u));
+          localStorage.setItem(key, JSON.stringify(u));
+        }
+      }
+    });
+  } catch {}
+
+  return { success: true, message: 'Security PIN set successfully!' };
+}
+
 

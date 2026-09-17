@@ -58,6 +58,8 @@ export async function initDatabase() {
         name VARCHAR(100) NOT NULL,
         email VARCHAR(100) UNIQUE NOT NULL,
         password VARCHAR(100) NOT NULL,
+        pin VARCHAR(6) DEFAULT '123456',
+        last_otp_at TIMESTAMP,
         role VARCHAR(50) NOT NULL,
         department VARCHAR(100) NOT NULL,
         avatar VARCHAR(255),
@@ -211,6 +213,11 @@ export async function initDatabase() {
       ALTER TABLE utility_requests ADD COLUMN IF NOT EXISTS citizen_id INT;
       ALTER TABLE utility_requests ADD COLUMN IF NOT EXISTS photo_url TEXT;
       ALTER TABLE utility_requests ADD COLUMN IF NOT EXISTS affected_households VARCHAR(100);
+
+      -- User 6-digit PIN and OTP tracking
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS pin VARCHAR(6) DEFAULT '123456';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_otp_at TIMESTAMP;
+      UPDATE users SET pin = '123456' WHERE pin IS NULL OR pin = '';
     `);
 
     console.log('✅ Schema verified with Columbarium Wall Grid, Asset Specs/Image & Multi-Cemetery support.');

@@ -957,6 +957,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid password.' });
     }
     const { password: _, ...userWithoutPass } = user;
+    userWithoutPass.pin = user.pin || '123456';
     res.json({ success: true, token: `jwt_user_${user.id}`, user: userWithoutPass });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -982,6 +983,7 @@ app.post('/api/auth/login-citizen', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid password.' });
     }
     const { password: _, ...userWithoutPass } = user;
+    userWithoutPass.pin = user.pin || '123456';
     res.json({ success: true, token: `jwt_citizen_${user.id}`, user: userWithoutPass });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -990,7 +992,7 @@ app.post('/api/auth/login-citizen', async (req, res) => {
 
 app.post('/api/auth/register-citizen', async (req, res) => {
   try {
-    const { name, email, phone, password } = req.body;
+    const { name, email, phone, password, pin } = req.body;
     const cleanEmail = (email || '').toLowerCase().trim();
 
     const existing = await pool.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1)', [cleanEmail]);
@@ -998,17 +1000,48 @@ app.post('/api/auth/register-citizen', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email is already registered.' });
     }
 
+    const initialPin = pin || '123456';
+
     const inserted = await pool.query(`
-      INSERT INTO users (name, email, password, phone, role, department, avatar)
-      VALUES ($1, $2, $3, $4, 'Citizen', 'Resident User', 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80')
-      RETURNING id, name, email, phone, role, department, avatar, created_at
-    `, [name, cleanEmail, password, phone]);
+      INSERT INTO users (name, email, password, phone, pin, role, department, avatar)
+      VALUES ($1, $2, $3, $4, $5, 'Citizen', 'Resident User', 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80')
+      RETURNING id, name, email, phone, pin, role, department, avatar, created_at
+    `, [name, cleanEmail, password, phone, initialPin]);
 
     res.json({
       success: true,
       message: 'Citizen account registered successfully!',
       user: inserted.rows[0]
     });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/auth/set-pin', async (req, res) => {
+  try {
+    const { email, pin } = req.body;
+    const cleanEmail = (email || '').toLowerCase().trim();
+    const cleanPin = String(pin || '').trim();
+    if (!cleanPin || cleanPin.length !== 6) {
+      return res.status(400).json({ success: false, message: 'PIN must be exactly 6 digits.' });
+    }
+    const result = await pool.query('UPDATE users SET pin = $1 WHERE LOWER(email) = LOWER($2) RETURNING id, pin', [cleanPin, cleanEmail]);
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+    res.json({ success: true, message: 'Security PIN updated successfully!', pin: cleanPin });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/auth/update-last-otp', async (req, res) => {
+  try {
+    const { email } = req.body;
+    const cleanEmail = (email || '').toLowerCase().trim();
+    await pool.query('UPDATE users SET last_otp_at = CURRENT_TIMESTAMP WHERE LOWER(email) = LOWER($1)', [cleanEmail]);
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

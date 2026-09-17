@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
 import { AppHeader } from './AppHeader';
 import { UserProfileModal } from '../profile/UserProfileModal';
+import { SessionTimeoutModal } from '../auth/SessionTimeoutModal';
+import { clearSessionOtp } from '../../lib/api';
 
 function getUser() {
   try {
@@ -53,6 +55,10 @@ function getUser() {
   }
 }
 
+// 30 Minutes Inactivity Timeout Constants
+const TIMEOUT_DURATION_MS = 30 * 60 * 1000; // 30 mins
+const WARNING_WINDOW_MS = 2 * 60 * 1000; // Warning shown at 28 mins (2 mins remaining)
+
 export function AppLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -67,12 +73,53 @@ export function AppLayout() {
   // Re-read user from localStorage or sessionStorage on every render
   const user = getUser();
   const isStaff = user ? user.role !== 'Citizen' : (location.pathname.startsWith('/admin') || location.pathname.startsWith('/staff') || location.pathname.startsWith('/reports') || sessionStorage.getItem('govserve_portal') === 'staff');
+  const portalKey = user?.role === 'Citizen' ? 'citizen' : 'staff';
 
-  // Stable callback refs — prevent handler recreation on data-event re-renders
+  // 30-Minute Inactivity Session Timeout State
+  const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
+  const [timeoutSecondsLeft, setTimeoutSecondsLeft] = useState(120);
+  const lastActivityRef = useRef<number>(Date.now());
+
+  // Stable callback refs
   const handleToggleSidebar = useCallback(() => setIsSidebarOpen(prev => !prev), []);
   const handleCloseSidebar = useCallback(() => setIsSidebarOpen(false), []);
   const handleOpenProfile = useCallback(() => setIsProfileOpen(true), []);
   const handleCloseProfile = useCallback(() => setIsProfileOpen(false), []);
+
+  /** Perform safe timeout logout */
+  const handleTimeoutLogout = useCallback(() => {
+    setShowTimeoutWarning(false);
+    const p = user?.role === 'Citizen' ? 'citizen' : 'staff';
+    if (user?.email) {
+      clearSessionOtp(user.email, p);
+    }
+
+    if (p === 'citizen') {
+      sessionStorage.removeItem('govserve_citizen_user');
+      localStorage.removeItem('govserve_citizen_user');
+      sessionStorage.removeItem('govserve_user');
+      sessionStorage.removeItem('govserve_portal');
+      sessionStorage.removeItem('govserve_resubmit_ticket');
+      window.dispatchEvent(new Event('govserve_data_updated'));
+      navigate('/login?timeout=1', { replace: true });
+    } else {
+      sessionStorage.removeItem('govserve_staff_user');
+      localStorage.removeItem('govserve_staff_user');
+      sessionStorage.removeItem('govserve_user');
+      sessionStorage.removeItem('govserve_portal');
+      window.dispatchEvent(new Event('govserve_data_updated'));
+      navigate('/admin/login?timeout=1', { replace: true });
+    }
+  }, [navigate, user]);
+
+  /** Extend / Keep active session */
+  const handleStayLoggedIn = useCallback(() => {
+    const now = Date.now();
+    lastActivityRef.current = now;
+    localStorage.setItem(`govserve_last_active_${portalKey}`, String(now));
+    setShowTimeoutWarning(false);
+    setTimeoutSecondsLeft(120);
+  }, [portalKey]);
 
   // Synchronize authentication status across tabs — isolated per portal
   useEffect(() => {
@@ -97,6 +144,56 @@ export function AppLayout() {
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
   }, [navigate, user?.role]);
+
+  // 30-Minute Inactivity Monitoring Engine
+  useEffect(() => {
+    if (!user) return;
+
+    // Initialize last active timestamp
+    const initialTime = Date.now();
+    lastActivityRef.current = initialTime;
+    localStorage.setItem(`govserve_last_active_${portalKey}`, String(initialTime));
+
+    let lastRecorded = initialTime;
+    const recordActivity = () => {
+      const now = Date.now();
+      // Throttle localStorage updates to at most once every 5 seconds
+      if (now - lastRecorded > 5000) {
+        lastRecorded = now;
+        lastActivityRef.current = now;
+        localStorage.setItem(`govserve_last_active_${portalKey}`, String(now));
+      }
+    };
+
+    const activityEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+    activityEvents.forEach((evt) => window.addEventListener(evt, recordActivity, { passive: true }));
+
+    // Interval checker running every second
+    const interval = setInterval(() => {
+      const storedTimeStr = localStorage.getItem(`govserve_last_active_${portalKey}`);
+      const lastActive = storedTimeStr ? parseInt(storedTimeStr, 10) : lastActivityRef.current;
+      const elapsed = Date.now() - lastActive;
+      const remainingMs = TIMEOUT_DURATION_MS - elapsed;
+
+      if (remainingMs <= 0) {
+        // Session fully expired after 30 minutes
+        clearInterval(interval);
+        handleTimeoutLogout();
+      } else if (remainingMs <= WARNING_WINDOW_MS) {
+        // Under 2 minutes remaining -> show countdown warning modal
+        setShowTimeoutWarning(true);
+        setTimeoutSecondsLeft(Math.ceil(remainingMs / 1000));
+      } else {
+        // More than 2 minutes remaining
+        setShowTimeoutWarning((prev) => (prev ? false : prev));
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      activityEvents.forEach((evt) => window.removeEventListener(evt, recordActivity));
+    };
+  }, [user, portalKey, handleTimeoutLogout]);
 
   // Not logged in → redirect to matching portal login
   if (!user) {
@@ -129,7 +226,7 @@ export function AppLayout() {
         />
 
         <main className="flex-1 overflow-y-auto">
-          <div className="p-3 sm:p-5 md:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+          <div className="p-3 sm:p-5 md:p-6 lg:p-8 w-full">
             <Outlet />
           </div>
         </main>
@@ -140,6 +237,14 @@ export function AppLayout() {
         isOpen={isProfileOpen}
         onClose={handleCloseProfile}
         user={user}
+      />
+
+      {/* 30-Minute Inactivity Session Timeout Modal */}
+      <SessionTimeoutModal
+        isOpen={showTimeoutWarning}
+        secondsRemaining={timeoutSecondsLeft}
+        onStayLoggedIn={handleStayLoggedIn}
+        onLogout={handleTimeoutLogout}
       />
     </div>
   );

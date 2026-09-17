@@ -108,7 +108,7 @@ export function LandingPage() {
               Integrated Municipal E-Services
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 mt-1.5">
-              Sign in with your citizen account to access automated scheduling, incident filing, and status tracking.
+              Access automated scheduling, incident filing, and municipal status tracking.
             </p>
           </div>
 
@@ -127,7 +127,7 @@ export function LandingPage() {
                     </div>
 
                     <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-600 group-hover:underline">
-                      <span>Sign In to Access</span>
+                      <span>Access Service</span>
                       <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                     </div>
                   </Card>

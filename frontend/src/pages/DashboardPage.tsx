@@ -33,7 +33,8 @@ import {
   Printer,
   Newspaper,
   Megaphone,
-  Sparkles
+  Sparkles,
+  Ticket
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -241,9 +242,222 @@ export function DashboardPage() {
       : filteredArticles;
 
     return (
-      <div className="space-y-6 animate-fade-in pb-12">
+      <div className="space-y-8 animate-fade-in pb-12">
+        {/* ═══════════════════════════════════════════════════════════════════════ */}
+        {/* ── SECTION 1: CITIZEN HERO BANNER ──                                  */}
+        {/* ═══════════════════════════════════════════════════════════════════════ */}
+        <div className="-mx-3 sm:-mx-5 md:-mx-6 lg:-mx-8 relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#0a1128] via-[#131f3f] to-[#1e3a8a] text-white px-8 sm:px-14 lg:px-24 py-20 sm:py-24 lg:py-28 min-h-[396px] flex flex-col justify-center shadow-xl border border-blue-500/30 ring-1 ring-white/10">
+          
+          {/* 
+            ═══════════════════════════════════════════════════════════════════════
+            📍 PINPOINT: PUT YOUR LOGO HERE
+            Replace src="/logoforinsidebothdashboardofcetizenandadminside.png" 
+            with your preferred seal/logo path (e.g. "/my-custom-seal.png").
+            ═══════════════════════════════════════════════════════════════════════
+          */}
+          <div 
+            id="pinpoint-citizen-hero-logo" 
+            className="absolute right-6 sm:right-10 lg:right-16 top-1/2 -translate-y-1/2 pointer-events-none opacity-15 select-none hidden md:block"
+          >
+            <img
+              src="/logoforinsidebothdashboardofcetizenandadminside.png"
+              alt="LGU Official Seal"
+              className="w-80 h-80 lg:w-[26rem] lg:h-[26rem] object-contain drop-shadow-2xl"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          </div>
+
+          <div className="relative z-10 flex flex-col md:flex-row md:items-start justify-between gap-10 lg:gap-24 w-full">
+            {/* Left side ("lefty"): Badge, Welcome heading, and Description */}
+            <div className="flex-1 w-full max-w-full space-y-4">
+              <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/20 text-blue-200 border border-blue-400/30 text-xs font-semibold backdrop-blur-md w-fit">
+                <Sparkles className="w-3.5 h-3.5 text-blue-300 shrink-0" />
+                GovServe Public Assets &amp; Facilities Portal • Help &amp; Service Guide
+              </span>
+
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black font-display tracking-tight text-white">
+                Welcome, {user?.name ? user.name.toUpperCase() : 'VALUED CITIZEN'}!
+              </h1>
+
+              <p className="text-blue-100/85 text-xs sm:text-sm leading-relaxed max-w-full">
+                Learn about available public facility reservations, parks &amp; green space permits, municipal cemetery services, utility repairs, and community asset borrowing before applying.
+              </p>
+            </div>
+
+            {/* Right side ("righty"): Track My Applications button */}
+            <div className="shrink-0 pt-1">
+              <Link to="/my-tickets">
+                <button
+                  type="button"
+                  className="bg-white/10 hover:bg-white/20 text-white border border-white/25 backdrop-blur-md font-bold px-4 py-2.5 rounded-xl transition-all shadow-sm flex items-center gap-2 text-xs sm:text-sm hover:scale-[1.02] active:scale-95 cursor-pointer"
+                >
+                  <Ticket className="w-4 h-4 text-blue-300" />
+                  <span>Track My Applications</span>
+                </button>
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════════════ */}
+        {/* ── SECTION 2: ALL SERVICES WE OFFER & HOW IT WORKS ──                  */}
+        {/* ═══════════════════════════════════════════════════════════════════════ */}
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-soft space-y-6">
+          <div className="text-center max-w-2xl mx-auto space-y-1">
+            <h2 className="text-xl sm:text-2xl font-black text-slate-900 font-display">
+              All Services We Offer &amp; How It Works
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500">
+              Browse all municipal services we offer and follow the four simple steps from application filing to approval and ticket release.
+            </p>
+          </div>
+
+          {/* 5 Clickable Service Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            {/* Service 1: Facility Booking */}
+            <Link
+              to="/facilities"
+              className="bg-slate-50/70 hover:bg-white border border-slate-200/80 hover:border-blue-300 rounded-2xl p-5 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 group flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="p-3 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 group-hover:scale-110 transition-transform">
+                    <Building className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-blue-100/70 text-blue-700">
+                    Venues
+                  </span>
+                </div>
+                <h3 className="font-extrabold text-base text-slate-900 group-hover:text-blue-600 transition-colors mt-3 mb-1.5">
+                  Facility Booking
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Reserve multi-purpose civic gymnasiums, covered sports courts, community amphitheaters, and meeting halls.
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-600 group-hover:text-blue-700">
+                <span>Book Facility</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </Link>
+
+            {/* Service 2: Parks & Green Spaces */}
+            <Link
+              to="/parks"
+              className="bg-slate-50/70 hover:bg-white border border-slate-200/80 hover:border-emerald-300 rounded-2xl p-5 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 group flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="p-3 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 group-hover:scale-110 transition-transform">
+                    <Trees className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-100/70 text-emerald-700">
+                    Eco &amp; Parks
+                  </span>
+                </div>
+                <h3 className="font-extrabold text-base text-slate-900 group-hover:text-emerald-600 transition-colors mt-3 mb-1.5">
+                  Parks &amp; Green Spaces
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Apply for outdoor park permits, tree pruning, jogging loop events, and botanical ground maintenance.
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-emerald-600 group-hover:text-emerald-700">
+                <span>Park Permits</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </Link>
+
+            {/* Service 3: Utilities & Repairs */}
+            <Link
+              to="/utilities"
+              className="bg-slate-50/70 hover:bg-white border border-slate-200/80 hover:border-amber-300 rounded-2xl p-5 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 group flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="p-3 rounded-xl bg-amber-50 text-amber-600 border border-amber-100 group-hover:scale-110 transition-transform">
+                    <Wrench className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-100/70 text-amber-700">
+                    Desk
+                  </span>
+                </div>
+                <h3 className="font-extrabold text-base text-slate-900 group-hover:text-amber-600 transition-colors mt-3 mb-1.5">
+                  Utilities &amp; Repairs
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Submit hazard reports, pipe leakage alerts, and drainage maintenance requests for rapid municipal crew dispatch.
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-amber-600 group-hover:text-amber-700">
+                <span>Report Issue</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </Link>
+
+            {/* Service 4: Public Cemetery */}
+            <Link
+              to="/cemetery"
+              className="bg-slate-50/70 hover:bg-white border border-slate-200/80 hover:border-purple-300 rounded-2xl p-5 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 group flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="p-3 rounded-xl bg-purple-50 text-purple-600 border border-purple-100 group-hover:scale-110 transition-transform">
+                    <Cross className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-purple-100/70 text-purple-700">
+                    Memorial
+                  </span>
+                </div>
+                <h3 className="font-extrabold text-base text-slate-900 group-hover:text-purple-600 transition-colors mt-3 mb-1.5">
+                  Public Cemetery
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Search columbarium niches, inquire about burial plots, process renewal permits, and memorial records.
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-purple-600 group-hover:text-purple-700">
+                <span>Cemetery Lots</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </Link>
+
+            {/* Service 5: View Assets Available */}
+            <Link
+              to="/assets"
+              className="bg-slate-50/70 hover:bg-white border border-slate-200/80 hover:border-cyan-300 rounded-2xl p-5 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 group flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="p-3 rounded-xl bg-cyan-50 text-cyan-600 border border-cyan-100 group-hover:scale-110 transition-transform">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-cyan-100/70 text-cyan-700">
+                    Logistics
+                  </span>
+                </div>
+                <h3 className="font-extrabold text-base text-slate-900 group-hover:text-cyan-600 transition-colors mt-3 mb-1.5">
+                  View Assets Available
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Browse municipal heavy equipment, disaster response vehicles, mobile water pumps, and emergency generators.
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-cyan-600 group-hover:text-cyan-700">
+                <span>View Assets Available</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </Link>
+          </div>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════════════ */}
+        {/* ── SECTION 3: QUEZON CITY OFFICIAL NEWS & ADVISORIES (BELOW HERO) ── */}
+        {/* ═══════════════════════════════════════════════════════════════════════ */}
         {/* Top Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-slate-200">
           <div>
             <div className="flex items-center gap-2.5">
               <div className="p-2.5 rounded-2xl bg-blue-600 text-white shadow-sm shadow-blue-600/30">

@@ -6,6 +6,8 @@ export interface User {
   department: string;
   phone?: string;
   avatar?: string;
+  pin?: string;
+  last_otp_at?: string;
   created_at: string;
 }
 

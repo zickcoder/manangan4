@@ -6,12 +6,21 @@
 -- Enable UUID extension if supported
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- ============================================================================
+-- SQL MIGRATION SCRIPT (Run this in eProvider / Supabase / PostgreSQL editor):
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS pin VARCHAR(6) DEFAULT '123456';
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS last_otp_at TIMESTAMP WITH TIME ZONE;
+-- UPDATE users SET pin = '123456' WHERE pin IS NULL OR pin = '';
+-- ============================================================================
+
 -- 1. USERS TABLE
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   email VARCHAR(100) UNIQUE NOT NULL,
   password VARCHAR(100) NOT NULL,
+  pin VARCHAR(6) DEFAULT '123456',
+  last_otp_at TIMESTAMP WITH TIME ZONE,
   role VARCHAR(50) NOT NULL DEFAULT 'Citizen',
   department VARCHAR(100) DEFAULT 'General Public',
   phone VARCHAR(50),
@@ -176,13 +185,13 @@ CREATE INDEX IF NOT EXISTS idx_assets_tag ON assets(asset_tag);
 -- ============================================================================
 
 -- Admin User
-INSERT INTO users (name, email, password, role, department, avatar) 
-VALUES ('Atty. Elena Ramos', 'admin@govserve.gov.ph', 'admin123', 'Super Admin', 'Municipal Executive Office', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80')
+INSERT INTO users (name, email, password, pin, role, department, avatar) 
+VALUES ('Atty. Elena Ramos', 'admin@govserve.gov.ph', 'admin123', '123456', 'Super Admin', 'Municipal Executive Office', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80')
 ON CONFLICT (email) DO NOTHING;
 
 -- Demo Citizen User
-INSERT INTO users (name, email, password, role, department, phone, avatar) 
-VALUES ('Juan M. Dela Cruz', 'juan.delacruz@citizen.gov.ph', 'citizen123', 'Citizen', 'Resident / Brgy. 178', '+63 917 123 4567', 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80')
+INSERT INTO users (name, email, password, pin, role, department, phone, avatar) 
+VALUES ('Juan M. Dela Cruz', 'juan.delacruz@citizen.gov.ph', 'citizen123', '123456', 'Citizen', 'Resident / Brgy. 178', '+63 917 123 4567', 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80')
 ON CONFLICT (email) DO NOTHING;
 
 -- Facilities & Parks

@@ -7,15 +7,11 @@ import {
   Cross, 
   Droplet, 
   Wrench, 
-  BarChart3, 
   ChevronRight, 
   LogOut, 
-  User,
-  ShieldCheck,
   FileText
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { AdminIcon } from '../ui/AdminIcon';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -129,12 +125,6 @@ export function AppSidebar({ isOpen, onClose, onOpenProfile }: SidebarProps) {
     return location.pathname === itemPath;
   };
 
-  const getInitials = (name: string) => {
-    if (!name) return 'U';
-    const parts = name.split(' ');
-    return parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : parts[0].slice(0, 2).toUpperCase();
-  };
-
   return (
     <aside
       className={clsx(
@@ -142,21 +132,24 @@ export function AppSidebar({ isOpen, onClose, onOpenProfile }: SidebarProps) {
         "fixed inset-y-0 left-0 z-40 md:static transition-all duration-300 ease-in-out shrink-0",
         isOpen
           ? "w-64 translate-x-0 shadow-2xl md:shadow-none opacity-100 pointer-events-auto"
-          : "-translate-x-full md:translate-x-0 md:w-0 md:overflow-hidden md:border-r-0 md:opacity-0 pointer-events-none"
+          : "-translate-x-full md:translate-x-0 md:w-20 opacity-100 pointer-events-auto"
       )}
     >
       {/* Brand Header */}
       <div>
-        <div className="p-4 flex items-center justify-between border-b border-[#1e293b]/70">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 flex items-center justify-center shrink-0 relative bg-white/10 rounded-xl p-1">
-              <img
-                src="/logoforinsidebothdashboardofcetizenandadminside.png"
-                alt="Logo"
-                className="w-full h-full object-contain drop-shadow-sm"
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-              />
-            </div>
+        <div className={clsx(
+          "p-4 flex items-center border-b border-[#1e293b]/70",
+          isOpen ? "justify-start gap-3" : "justify-center"
+        )}>
+          <div className="h-10 w-10 flex items-center justify-center shrink-0 relative bg-white/10 rounded-xl p-1">
+            <img
+              src="/logoforinsidebothdashboardofcetizenandadminside.png"
+              alt="Logo"
+              className="w-full h-full object-contain drop-shadow-sm"
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
+          </div>
+          {isOpen && (
             <div className="overflow-hidden">
               <div className="flex items-center gap-1.5">
                 <span className="font-black text-base tracking-widest font-display text-white uppercase">GOVSERVE</span>
@@ -164,18 +157,25 @@ export function AppSidebar({ isOpen, onClose, onOpenProfile }: SidebarProps) {
                   {isCitizen ? 'CITIZEN' : 'LGU'}
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 truncate mt-0.5">Public Assets & Facilities Portal</p>
+              <p className="text-[10px] text-slate-400 truncate mt-0.5">Public Assets &amp; Facilities Portal</p>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Navigation Menu */}
-        <div className="p-3 space-y-4 overflow-y-auto max-h-[calc(100vh-180px)]">
-          {navGroups.map((group) => (
+        <div className={clsx(
+          "space-y-4 overflow-y-auto max-h-[calc(100vh-180px)]",
+          isOpen ? "p-3" : "p-2"
+        )}>
+          {navGroups.map((group, groupIdx) => (
             <div key={group.label} className="space-y-1">
-              <div className="px-3 text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-1.5">
-                {group.label}
-              </div>
+              {isOpen ? (
+                <div className="px-3 text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-1.5">
+                  {group.label}
+                </div>
+              ) : (
+                groupIdx > 0 && <div className="border-t border-[#1e293b]/70 my-2 mx-2" />
+              )}
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const active = isItemActive(item.path);
@@ -183,17 +183,29 @@ export function AppSidebar({ isOpen, onClose, onOpenProfile }: SidebarProps) {
                   <NavLink
                     key={item.path}
                     to={item.path}
+                    title={item.name}
                     className={clsx(
-                      "flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all group relative",
+                      "flex items-center rounded-xl text-xs font-medium transition-all group relative",
+                      isOpen 
+                        ? "gap-3 px-3 py-2.5" 
+                        : "justify-center p-3",
                       active
                         ? "bg-blue-600 text-white shadow-md shadow-blue-600/30 font-semibold"
                         : "text-slate-300 hover:text-white hover:bg-slate-800/60"
                     )}
                   >
-                    <Icon className={clsx("w-4 h-4 shrink-0 transition-transform group-hover:scale-110", active ? "text-white" : "text-slate-400 group-hover:text-blue-400")} />
-                    <span className="flex-1 truncate">{item.name}</span>
-                    {active && (
-                      <ChevronRight className="w-3.5 h-3.5 opacity-80" />
+                    <Icon className={clsx(
+                      "shrink-0 transition-transform group-hover:scale-110",
+                      isOpen ? "w-4 h-4" : "w-5 h-5",
+                      active ? "text-white" : "text-slate-400 group-hover:text-blue-400"
+                    )} />
+                    {isOpen && (
+                      <>
+                        <span className="flex-1 truncate">{item.name}</span>
+                        {active && (
+                          <ChevronRight className="w-3.5 h-3.5 opacity-80" />
+                        )}
+                      </>
                     )}
                   </NavLink>
                 );
@@ -204,14 +216,23 @@ export function AppSidebar({ isOpen, onClose, onOpenProfile }: SidebarProps) {
       </div>
 
       {/* Sign Out Footer */}
-      <div className="p-3 border-t border-[#1e293b]/70 bg-slate-950/40">
+      <div className={clsx(
+        "border-t border-[#1e293b]/70 bg-slate-950/40",
+        isOpen ? "p-3" : "p-2"
+      )}>
         <button
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-slate-900/80 hover:bg-red-500/15 hover:border-red-500/30 border border-slate-800 transition-all cursor-pointer group shadow-sm"
+          className={clsx(
+            "w-full flex items-center rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-slate-900/80 hover:bg-red-500/15 hover:border-red-500/30 border border-slate-800 transition-all cursor-pointer group shadow-sm",
+            isOpen ? "justify-center gap-2.5 px-3 py-2.5" : "justify-center p-3"
+          )}
           title="Logout"
         >
-          <LogOut className="w-4 h-4 text-slate-400 group-hover:text-red-400 group-hover:-translate-x-0.5 transition-all" />
-          <span>Logout</span>
+          <LogOut className={clsx(
+            "text-slate-400 group-hover:text-red-400 group-hover:-translate-x-0.5 transition-all",
+            isOpen ? "w-4 h-4" : "w-5 h-5"
+          )} />
+          {isOpen && <span>Logout</span>}
         </button>
       </div>
     </aside>
