@@ -226,9 +226,15 @@ export function AppLayout() {
         />
 
         <main className="flex-1 overflow-y-auto">
-          <div className="p-3 sm:p-5 md:p-6 lg:p-8 max-w-7xl mx-auto w-full">
-            <Outlet />
-          </div>
+          {(!isStaff && (location.pathname === '/dashboard' || location.pathname === '/')) ? (
+            <div className="w-full">
+              <Outlet />
+            </div>
+          ) : (
+            <div className="p-3 sm:p-5 md:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+              <Outlet />
+            </div>
+          )}
         </main>
       </div>
 

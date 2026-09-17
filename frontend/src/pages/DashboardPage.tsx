@@ -242,11 +242,11 @@ export function DashboardPage() {
       : filteredArticles;
 
     return (
-      <div className="space-y-8 animate-fade-in pb-12">
+      <div className="animate-fade-in pb-12">
         {/* ═══════════════════════════════════════════════════════════════════════ */}
-        {/* ── SECTION 1: CITIZEN HERO BANNER ──                                  */}
+        {/* ── SECTION 1: CITIZEN HERO BANNER (CONNECTED TO SIDEBAR) ──           */}
         {/* ═══════════════════════════════════════════════════════════════════════ */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#0a1128] via-[#131f3f] to-[#1e3a8a] text-white p-6 sm:p-8 lg:p-10 shadow-xl border border-blue-500/30 ring-1 ring-white/10">
+        <div className="relative overflow-hidden bg-gradient-to-r from-[#0a1128] via-[#131f3f] to-[#1e3a8a] text-white px-6 sm:px-10 lg:px-16 py-16 sm:py-18 lg:py-22 min-h-[338px] flex flex-col justify-center shadow-lg border-b border-blue-500/30 ring-1 ring-white/10 w-full">
           
           {/* 
             ═══════════════════════════════════════════════════════════════════════
@@ -257,21 +257,21 @@ export function DashboardPage() {
           */}
           <div 
             id="pinpoint-citizen-hero-logo" 
-            className="absolute right-6 sm:right-10 top-1/2 -translate-y-1/2 pointer-events-none opacity-15 select-none hidden md:block"
+            className="absolute right-6 sm:right-10 lg:right-16 top-1/2 -translate-y-1/2 pointer-events-none opacity-15 select-none hidden md:block"
           >
             <img
               src="/logoforinsidebothdashboardofcetizenandadminside.png"
               alt="LGU Official Seal"
-              className="w-56 h-56 lg:w-72 lg:h-72 object-contain drop-shadow-2xl"
+              className="w-72 h-72 lg:w-96 lg:h-96 object-contain drop-shadow-2xl"
               onError={(e) => {
                 e.currentTarget.style.display = 'none';
               }}
             />
           </div>
 
-          <div className="relative z-10 flex flex-col md:flex-row md:items-start justify-between gap-6 sm:gap-8 w-full">
+          <div className="relative z-10 max-w-7xl mx-auto w-full flex flex-col md:flex-row md:items-start justify-between gap-8 lg:gap-16">
             {/* Left side ("lefty"): Badge, Welcome heading, and Description */}
-            <div className="flex-1 w-full max-w-full space-y-3">
+            <div className="flex-1 w-full max-w-3xl space-y-3.5">
               <span className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/20 text-blue-200 border border-blue-400/30 text-xs font-semibold backdrop-blur-md w-fit">
                 <Sparkles className="w-3.5 h-3.5 text-blue-300 shrink-0" />
                 GovServe Public Assets &amp; Facilities Portal • Help &amp; Service Guide
@@ -281,7 +281,7 @@ export function DashboardPage() {
                 Welcome, {user?.name ? user.name.toUpperCase() : 'VALUED CITIZEN'}!
               </h1>
 
-              <p className="text-blue-100/85 text-xs sm:text-sm leading-relaxed max-w-full">
+              <p className="text-blue-100/85 text-xs sm:text-sm leading-relaxed max-w-2xl">
                 Learn about available public facility reservations, parks &amp; green space permits, municipal cemetery services, utility repairs, and community asset borrowing before applying.
               </p>
             </div>
@@ -301,9 +301,11 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* ═══════════════════════════════════════════════════════════════════════ */}
-        {/* ── SECTION 2: ALL SERVICES WE OFFER & HOW IT WORKS ──                  */}
-        {/* ═══════════════════════════════════════════════════════════════════════ */}
+        {/* ── SECTIONS 2 & 3: NORMAL STANDARD CONTAINER (NOT STRETCHY) ── */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 mt-8">
+          {/* ═══════════════════════════════════════════════════════════════════════ */}
+          {/* ── SECTION 2: ALL SERVICES WE OFFER & HOW IT WORKS ──                  */}
+          {/* ═══════════════════════════════════════════════════════════════════════ */}
         <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-soft space-y-6">
           <div className="text-center max-w-2xl mx-auto space-y-1">
             <h2 className="text-xl sm:text-2xl font-black text-slate-900 font-display">
@@ -787,6 +789,7 @@ export function DashboardPage() {
             </Card>
           </div>
         </div>
+      </div>
 
         {/* Modal: Full Article Reader */}
         <Modal
