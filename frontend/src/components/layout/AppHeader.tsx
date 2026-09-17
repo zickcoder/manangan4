@@ -187,7 +187,8 @@ export function AppHeader({ onToggleSidebar, onOpenProfile, title, subtitle }: H
         <button
           onClick={onToggleSidebar}
           className="p-2 rounded-xl text-[#64748b] hover:text-[#0f172a] hover:bg-[#f1f5f9] transition-colors cursor-pointer"
-          title="Toggle Navigation"
+          title="Toggle Navigation Menu"
+          aria-label="Toggle Navigation Menu"
         >
           <Menu className="w-5 h-5" />
         </button>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
 import { AppHeader } from './AppHeader';
@@ -54,7 +54,12 @@ function getUser() {
 }
 
 export function AppLayout() {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 768;
+    }
+    return true;
+  });
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -63,10 +68,11 @@ export function AppLayout() {
   const user = getUser();
   const isStaff = user ? user.role !== 'Citizen' : (location.pathname.startsWith('/admin') || location.pathname.startsWith('/staff') || location.pathname.startsWith('/reports') || sessionStorage.getItem('govserve_portal') === 'staff');
 
-  // Close mobile sidebar on route change
-  useEffect(() => {
-    setIsSidebarOpen(false);
-  }, [location.pathname]);
+  // Stable callback refs — prevent handler recreation on data-event re-renders
+  const handleToggleSidebar = useCallback(() => setIsSidebarOpen(prev => !prev), []);
+  const handleCloseSidebar = useCallback(() => setIsSidebarOpen(false), []);
+  const handleOpenProfile = useCallback(() => setIsProfileOpen(true), []);
+  const handleCloseProfile = useCallback(() => setIsProfileOpen(false), []);
 
   // Synchronize authentication status across tabs — isolated per portal
   useEffect(() => {
@@ -99,27 +105,27 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-canvas">
-      {/* Mobile backdrop overlay */}
+      {/* Mobile backdrop overlay (clean dim, no blur) */}
       {isSidebarOpen && (
         <div
-          onClick={() => setIsSidebarOpen(false)}
-          className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-30 md:hidden"
+          onClick={handleCloseSidebar}
+          className="fixed inset-0 bg-slate-950/40 z-30 md:hidden"
         />
       )}
 
       {/* Dark navy sidebar */}
       <AppSidebar
         isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
-        onOpenProfile={() => setIsProfileOpen(true)}
+        onClose={handleCloseSidebar}
+        onToggle={handleToggleSidebar}
+        onOpenProfile={handleOpenProfile}
       />
 
       {/* Main content area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <AppHeader 
-          onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
-          onOpenProfile={() => setIsProfileOpen(true)}
+          onToggleSidebar={handleToggleSidebar} 
+          onOpenProfile={handleOpenProfile}
         />
 
         <main className="flex-1 overflow-y-auto">
@@ -132,7 +138,7 @@ export function AppLayout() {
       {/* User Profile Modal */}
       <UserProfileModal
         isOpen={isProfileOpen}
-        onClose={() => setIsProfileOpen(false)}
+        onClose={handleCloseProfile}
         user={user}
       />
     </div>

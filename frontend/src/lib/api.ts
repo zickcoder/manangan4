@@ -470,11 +470,13 @@ function getStore<T>(key: string, fallback: T): T {
   }
 }
 
-function setStore<T>(key: string, val: T): void {
+function setStore<T>(key: string, val: T, notify = true): void {
   try {
     if (typeof window !== 'undefined') {
       localStorage.setItem(`govserve_${key}`, JSON.stringify(val));
-      window.dispatchEvent(new Event('govserve_data_updated'));
+      if (notify) {
+        window.dispatchEvent(new Event('govserve_data_updated'));
+      }
     }
   } catch (e) {
     console.error('Storage error:', e);
@@ -483,15 +485,15 @@ function setStore<T>(key: string, val: T): void {
 
 export function initLocalStore() {
   if (typeof window !== 'undefined' && !localStorage.getItem('govserve_seeded')) {
-    setStore('facilities', DEFAULT_FACILITIES);
-    setStore('plots', generateInitialPlots());
-    setStore('burials', DEFAULT_BURIALS);
-    setStore('utilities', DEFAULT_UTILITIES);
-    setStore('assets', DEFAULT_ASSETS);
-    setStore('reservations', DEFAULT_RESERVATIONS);
+    setStore('facilities', DEFAULT_FACILITIES, false);
+    setStore('plots', generateInitialPlots(), false);
+    setStore('burials', DEFAULT_BURIALS, false);
+    setStore('utilities', DEFAULT_UTILITIES, false);
+    setStore('assets', DEFAULT_ASSETS, false);
+    setStore('reservations', DEFAULT_RESERVATIONS, false);
     setStore('logs', [
       { id: 1, user_name: 'Atty. Elena Ramos', action: 'System Initialization', module: 'System', details: 'All initial municipal datasets verified.', timestamp: new Date().toISOString() }
-    ]);
+    ], false);
     localStorage.setItem('govserve_seeded', 'true');
   }
 }
@@ -639,9 +641,68 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
 
   const localList = getStore('reservations', DEFAULT_RESERVATIONS);
   if (fetched && serverList.length > 0) {
-    // Server is the single source of truth — overwrite local, never merge stale data
-    list = serverList;
-    setStore('reservations', serverList);
+    // Apply category enrichment to server data
+    const allFacsMaster = getStore('facilities', DEFAULT_FACILITIES);
+    serverList = serverList.map((r: any) => {
+      // Check if there is a local match with category information
+      const localMatch = localList.find((l: any) =>
+        String(l.id) === String(r.id) ||
+        (l.reference_no && r.reference_no && String(l.reference_no).trim().toUpperCase() === String(r.reference_no).trim().toUpperCase())
+      );
+      let rName = r.facility_name || localMatch?.facility_name;
+      let rCat = r.facility_category || r.category || localMatch?.facility_category;
+      if ((!rName || !rCat) && r.facility_id) {
+        const matched = allFacsMaster.find((f: any) => Number(f.id) === Number(r.facility_id));
+        if (matched) {
+          rName = rName || matched.name;
+          rCat = rCat || matched.category;
+        }
+      }
+      if (!rCat && rName) {
+        const matched = allFacsMaster.find((f: any) => (f.name || '').trim().toLowerCase() === String(rName).trim().toLowerCase());
+        if (matched) rCat = matched.category;
+      }
+      if (!rCat) {
+        const n = (rName || '').toLowerCase();
+        rCat = (n.includes('park') || n.includes('amphitheater') || n.includes('plaza') || n.includes('grounds') || n.includes('recreation'))
+          ? 'Park & Recreation' : 'Government Facility';
+      }
+      return { ...r, facility_name: rName || 'Municipal Facility', facility_category: rCat };
+    });
+
+    // CRITICAL: Deduplicate by BOTH id AND reference_no so local Date.now() records are never duplicated against server records
+    const serverIds = new Set(serverList.map((r: any) => String(r.id)));
+    const serverRefs = new Set(
+      serverList
+        .map((r: any) => String(r.reference_no || '').trim().toUpperCase())
+        .filter(Boolean)
+    );
+
+    const localOnlyRecords = localList.filter((r: any) => {
+      const hasId = serverIds.has(String(r.id));
+      const ref = String(r.reference_no || '').trim().toUpperCase();
+      const hasRef = ref && serverRefs.has(ref);
+      return !hasId && !hasRef;
+    });
+
+    // Clean deduplicated combined list
+    const combined = [...serverList, ...localOnlyRecords];
+    const seenRefs = new Set<string>();
+    const seenIds = new Set<string>();
+    const deduplicated = combined.filter((r: any) => {
+      const idStr = String(r.id);
+      const refStr = String(r.reference_no || '').trim().toUpperCase();
+      if (refStr) {
+        if (seenRefs.has(refStr)) return false;
+        seenRefs.add(refStr);
+      }
+      if (seenIds.has(idStr)) return false;
+      seenIds.add(idStr);
+      return true;
+    });
+
+    setStore('reservations', deduplicated, false);
+    list = deduplicated;
   } else {
     list = localList;
   }
@@ -681,10 +742,11 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
     });
   }
 
-  // Strictly filter by category if not all
-  if (category !== 'all') {
+  // Strictly filter by category if not all — applied BEFORE saving to local store to prevent cross-contamination
+  function filterByCategory(records: any[], cat: string) {
+    if (cat === 'all') return records;
     const allFacs = getStore('facilities', DEFAULT_FACILITIES);
-    list = list.filter((r: any) => {
+    return records.filter((r: any) => {
       let rCat = (r.facility_category || r.category || '').toLowerCase().trim();
       if (!rCat && r.facility_id) {
         const matched = allFacs.find((f: any) => Number(f.id) === Number(r.facility_id));
@@ -702,8 +764,7 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
           rCat = 'government facility';
         }
       }
-
-      const target = category.toLowerCase().trim();
+      const target = cat.toLowerCase().trim();
       if (target.includes('park') || target.includes('recreation')) {
         return rCat.includes('park') || rCat.includes('recreation');
       }
@@ -714,7 +775,7 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
     });
   }
 
-  return list;
+  return filterByCategory(list, category);
 }
 
 export async function createReservation(payload: any) {
@@ -1596,7 +1657,7 @@ export async function fetchUtilities(status = 'all', service_type = 'all') {
     if (Array.isArray(data)) {
       serverList = data;
       fetched = true;
-      setStore('utilities', data);
+      setStore('utilities', data, false);
     }
   } catch (e) {
     console.warn('eProvider fetchUtilities error:', e);
@@ -1610,7 +1671,7 @@ export async function fetchUtilities(status = 'all', service_type = 'all') {
       if (Array.isArray(data?.data)) {
         serverList = data.data;
         fetched = true;
-        setStore('utilities', data.data);
+        setStore('utilities', data.data, false);
       }
     }
   } catch {}
@@ -1823,10 +1884,38 @@ export async function fetchAssets(category = 'all', condition = 'all') {
       if (category !== 'all') q += `&category=ilike.*${encodeURIComponent(category)}*`;
       if (condition !== 'all') q += `&current_condition=eq.${encodeURIComponent(condition)}`;
       const data = await epGet('assets', q);
-      if (Array.isArray(data)) {
-        list = data;
+      if (Array.isArray(data) && data.length > 0) {
+        const localAssets = getStore('assets', DEFAULT_ASSETS);
+        const serverIds = new Set(data.map((a: any) => String(a.id)));
+        const serverTags = new Set(data.map((a: any) => String(a.asset_tag || '').trim()).filter(Boolean));
+
+        // Merge server items with any locally updated fields (e.g., replaced image, updated condition)
+        const mergedData = data.map((s: any) => {
+          const loc = localAssets.find((a: any) =>
+            String(a.id) === String(s.id) ||
+            (a.asset_tag && s.asset_tag && String(a.asset_tag).trim() === String(s.asset_tag).trim())
+          );
+          if (!loc) return s;
+          return {
+            ...s,
+            // Preserve user-updated image if locally present
+            image_url: loc.image_url !== undefined && loc.image_url !== '' ? loc.image_url : (s.image_url || ''),
+            current_condition: loc.current_condition || s.current_condition,
+            next_maintenance_due: loc.next_maintenance_due || s.next_maintenance_due,
+            ai_maintenance_alert: loc.ai_maintenance_alert !== undefined ? loc.ai_maintenance_alert : s.ai_maintenance_alert,
+          };
+        });
+
+        // Preserve any locally-created new assets not yet on server
+        const localOnlyNew = localAssets.filter((a: any) => {
+          const hasId = serverIds.has(String(a.id));
+          const hasTag = a.asset_tag && serverTags.has(String(a.asset_tag).trim());
+          return !hasId && !hasTag;
+        });
+
+        list = [...mergedData, ...localOnlyNew];
         fetched = true;
-        setStore('assets', data);
+        setStore('assets', list, false);
       }
     } catch (e) {
       console.warn('eProvider fetchAssets error:', e);
@@ -1842,7 +1931,7 @@ export async function fetchAssets(category = 'all', condition = 'all') {
         if (Array.isArray(data?.data)) {
           list = data.data;
           fetched = true;
-          setStore('assets', data.data);
+          setStore('assets', data.data, false);
         }
       }
     } catch {}
@@ -1893,11 +1982,11 @@ export async function createAsset(payload: any) {
   // 1. Save to eProvider Cloud Database (Primary)
   if (HAS_EPROVIDER) {
     try {
-      const inserted = await epPost('assets', dbPayload);
+      const inserted = await epPost('assets', dbPayload, 3000);
       if (Array.isArray(inserted) && inserted[0]?.id) {
         newAsset.id = inserted[0].id;
         newAsset.asset_tag = inserted[0].asset_tag || newAsset.asset_tag;
-        setStore('assets', assets);
+        setStore('assets', assets, false);
       }
     } catch (e) {
       console.warn('eProvider createAsset error:', e);
@@ -1907,17 +1996,17 @@ export async function createAsset(payload: any) {
   // 2. Sync to Render Backend (Secondary)
   if (HAS_BACKEND) {
     try {
-      const res = await fetch(`${API_BASE}/assets`, {
+      const res = await fastFetch(`${API_BASE}/assets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dbPayload)
-      });
+      }, 3000);
       if (res.ok) {
         const data = await res.json();
         if (data?.data) {
           newAsset.id = data.data.id || newAsset.id;
           newAsset.asset_tag = data.data.asset_tag || newAsset.asset_tag;
-          setStore('assets', assets);
+          setStore('assets', assets, false);
         }
       }
     } catch {}
@@ -1961,17 +2050,10 @@ export async function deleteAsset(id: number) {
 export async function updateAssetCondition(id: number, current_condition: string, next_maintenance_due?: string, ai_maintenance_alert?: string, image_url?: string) {
   // Resolve image: '__clear__' means remove the image
   const resolvedImage = image_url === '__clear__' ? '' : image_url;
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/assets/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ current_condition, next_maintenance_due, ai_maintenance_alert, image_url: resolvedImage }),
-    });
-    if (res.ok) return await res.json();
-  } catch {}
 
+  // 1. ALWAYS update local store immediately so UI reflects change at once
   const assets = getStore('assets', DEFAULT_ASSETS);
-  const item = assets.find((a: any) => a.id === id);
+  const item = assets.find((a: any) => a.id === id || String(a.id) === String(id));
   if (item) {
     item.current_condition = current_condition;
     if (next_maintenance_due) item.next_maintenance_due = next_maintenance_due;
@@ -1979,8 +2061,33 @@ export async function updateAssetCondition(id: number, current_condition: string
     if (resolvedImage !== undefined) item.image_url = resolvedImage;
     setStore('assets', assets);
   }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('govserve_data_updated'));
+  }
+
+  // 2. Non-blocking backend + eProvider sync
+  (async () => {
+    if (HAS_BACKEND) try {
+      await fastFetch(`${API_BASE}/assets/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_condition, next_maintenance_due, ai_maintenance_alert, image_url: resolvedImage }),
+      }, 5000);
+    } catch {}
+
+    if (HAS_EPROVIDER) try {
+      const patchBody: any = { current_condition };
+      if (next_maintenance_due !== undefined) patchBody.next_maintenance_due = next_maintenance_due;
+      if (ai_maintenance_alert !== undefined) patchBody.ai_maintenance_alert = ai_maintenance_alert;
+      if (resolvedImage !== undefined) patchBody.image_url = resolvedImage;
+      await epPatch('assets', `id=eq.${id}`, patchBody, 5000);
+    } catch {}
+  })();
+
   return { success: true };
 }
+
 
 export async function trackUniversalReference(refNo: string) {
   if (HAS_BACKEND) try {

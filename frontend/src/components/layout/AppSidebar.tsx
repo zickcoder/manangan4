@@ -10,7 +10,6 @@ import {
   BarChart3, 
   ChevronRight, 
   LogOut, 
-  X,
   User,
   ShieldCheck,
   FileText
@@ -140,8 +139,10 @@ export function AppSidebar({ isOpen, onClose, onOpenProfile }: SidebarProps) {
     <aside
       className={clsx(
         "gradient-sidebar text-slate-100 flex flex-col justify-between border-r border-[#1e293b] select-none",
-        "fixed inset-y-0 left-0 z-40 w-64 md:static md:translate-x-0 transition-transform duration-300 ease-in-out",
-        isOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full md:translate-x-0"
+        "fixed inset-y-0 left-0 z-40 md:static transition-all duration-300 ease-in-out shrink-0",
+        isOpen
+          ? "w-64 translate-x-0 shadow-2xl md:shadow-none opacity-100 pointer-events-auto"
+          : "-translate-x-full md:translate-x-0 md:w-0 md:overflow-hidden md:border-r-0 md:opacity-0 pointer-events-none"
       )}
     >
       {/* Brand Header */}
@@ -166,13 +167,6 @@ export function AppSidebar({ isOpen, onClose, onOpenProfile }: SidebarProps) {
               <p className="text-[10px] text-slate-400 truncate mt-0.5">Public Assets & Facilities Portal</p>
             </div>
           </div>
-
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 md:hidden"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {/* Navigation Menu */}
@@ -189,7 +183,6 @@ export function AppSidebar({ isOpen, onClose, onOpenProfile }: SidebarProps) {
                   <NavLink
                     key={item.path}
                     to={item.path}
-                    onClick={onClose}
                     className={clsx(
                       "flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all group relative",
                       active

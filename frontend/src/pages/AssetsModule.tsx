@@ -62,6 +62,12 @@ export function AssetsModule() {
 
   useEffect(() => {
     loadData();
+    // Listen for data updates (e.g. from other modules or sync events)
+    const handleExternalUpdate = () => loadData();
+    window.addEventListener('govserve_data_updated', handleExternalUpdate);
+    return () => {
+      window.removeEventListener('govserve_data_updated', handleExternalUpdate);
+    };
   }, [categoryFilter]);
 
   const handleDeleteAsset = async (id: number) => {
@@ -78,9 +84,16 @@ export function AssetsModule() {
   const handleUpdate = async () => {
     if (!selectedAsset) return;
     try {
-      await updateAssetCondition(selectedAsset.id, newCondition, nextDue, maintenanceAlert, maintenanceImage || selectedAsset.image_url);
+      const resolvedImage = maintenanceImage === '__clear__' ? '' : (maintenanceImage || selectedAsset.image_url);
+      // Optimistic update: update local state immediately
+      setAssets(prev => prev.map(a =>
+        (a.id === selectedAsset.id || String(a.id) === String(selectedAsset.id))
+          ? { ...a, current_condition: newCondition, next_maintenance_due: nextDue, ai_maintenance_alert: maintenanceAlert, image_url: resolvedImage }
+          : a
+      ));
       setIsUpdateModalOpen(false);
-      loadData();
+      // Background sync (non-blocking)
+      updateAssetCondition(selectedAsset.id, newCondition, nextDue, maintenanceAlert, resolvedImage);
     } catch (e) {
       alert('Failed to update asset');
     }
@@ -94,17 +107,37 @@ export function AssetsModule() {
       setMaintenanceImage(compressed);
     } catch {
       alert('Could not process image file.');
+    } finally {
+      e.target.value = '';
     }
   };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await createAsset(newForm);
+      const result = await createAsset(newForm);
+      // Optimistic: add to state immediately so it appears even before server sync
+      if (result?.data) {
+        setAssets(prev => [result.data, ...prev]);
+      }
       setIsNewModalOpen(false);
-      loadData();
+      // Reset form
+      setNewForm({
+        name: '',
+        category: 'Service Vehicle',
+        serial_no: '',
+        purchase_date: new Date().toISOString().split('T')[0],
+        purchase_cost: '1500000',
+        current_condition: 'Operational',
+        assigned_department: 'Disaster & Utility Response',
+        next_maintenance_due: new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0],
+        image_url: '',
+        specs: '',
+      });
+      // Refresh from store after a short delay to pick up any server-synced ID
+      setTimeout(() => loadData(), 1500);
     } catch (e) {
-      alert('Failed to register asset');
+      alert('Failed to register asset. Please check your connection and try again.');
     }
   };
 
@@ -292,48 +325,68 @@ export function AssetsModule() {
             </div>
 
             {/* Asset Image Edit */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-[#334155]">Asset Image (Edit / Replace)</label>
-              {(maintenanceImage || selectedAsset.image_url) ? (
-                <div className="relative w-full h-32 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
-                  <img
-                    src={maintenanceImage || selectedAsset.image_url}
-                    alt="Asset"
-                    className="w-full h-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setMaintenanceImage('__clear__')}
-                    className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center bg-black/60 hover:bg-black text-white rounded-full text-xs"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
+            {(() => {
+              const effectiveImage = maintenanceImage === '__clear__' ? '' : (maintenanceImage || selectedAsset.image_url || '');
+              return (
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-[#334155]">Asset Image (Preview & Replace)</label>
+                  {effectiveImage ? (
+                    <div className="space-y-2">
+                      <div className="relative w-full h-36 rounded-xl overflow-hidden border border-slate-200 bg-slate-900/5 shadow-xs">
+                        <img
+                          src={effectiveImage}
+                          alt="Asset preview"
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setMaintenanceImage('__clear__')}
+                          className="absolute top-2 right-2 p-1.5 flex items-center justify-center bg-black/70 hover:bg-black text-white rounded-lg text-xs shadow-md transition-all cursor-pointer"
+                          title="Remove Image"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-xl text-xs font-bold cursor-pointer transition-colors shadow-xs">
+                          <Upload className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Replace Image...</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleMaintenanceImageUpload}
+                            className="hidden"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setMaintenanceImage('__clear__')}
+                          className="px-2.5 py-1.5 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded-xl transition-colors font-medium cursor-pointer"
+                        >
+                          Remove Photo
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="flex items-center gap-2.5 p-3 border-2 border-dashed border-amber-300 rounded-xl bg-amber-50/40 hover:bg-amber-50 cursor-pointer text-slate-700 transition-all">
+                      <div className="p-1.5 rounded-lg bg-amber-100 text-amber-700">
+                        <Upload className="w-4 h-4" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-xs font-bold text-slate-800">Upload new asset image...</p>
+                        <p className="text-[10px] text-slate-500">JPG, PNG or WEBP (auto-compressed)</p>
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleMaintenanceImageUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
                 </div>
-              ) : (
-                <label className="flex items-center gap-2 p-2.5 border border-dashed border-slate-300 rounded-xl bg-slate-50 hover:bg-slate-100 cursor-pointer text-slate-600">
-                  <Upload className="w-4 h-4 text-amber-500" />
-                  <span className="text-xs font-medium">Upload new asset image...</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleMaintenanceImageUpload}
-                    className="hidden"
-                  />
-                </label>
-              )}
-              {(maintenanceImage || selectedAsset.image_url) && maintenanceImage !== '__clear__' && (
-                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-semibold cursor-pointer transition-colors">
-                  <Upload className="w-3.5 h-3.5" />
-                  Replace Image
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleMaintenanceImageUpload}
-                    className="hidden"
-                  />
-                </label>
-              )}
-            </div>
+              );
+            })()}
 
             <div>
               <label className="block text-xs font-semibold text-[#334155] mb-1">Operational Condition</label>
@@ -448,30 +501,39 @@ export function AssetsModule() {
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold text-[#334155]">Asset Unit Image</label>
             {newForm.image_url ? (
-              <div className="relative w-full h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+              <div className="relative w-full h-28 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 shadow-xs">
                 <img src={newForm.image_url} alt="Asset preview" className="w-full h-full object-cover" />
                 <button
                   type="button"
                   onClick={() => setNewForm(prev => ({ ...prev, image_url: '' }))}
-                  className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center bg-black/60 hover:bg-black text-white rounded-full text-xs font-bold"
+                  className="absolute top-1.5 right-1.5 w-6 h-6 flex items-center justify-center bg-black/70 hover:bg-black text-white rounded-full text-xs font-bold shadow-sm cursor-pointer"
+                  title="Remove Image"
                 >
                   ✕
                 </button>
               </div>
             ) : (
-              <label className="flex items-center gap-2 p-2.5 border border-dashed border-slate-300 rounded-xl bg-slate-50 hover:bg-slate-100 cursor-pointer text-slate-600">
-                <Upload className="w-4 h-4 text-amber-500" />
-                <span className="text-xs font-medium">Upload asset image from computer...</span>
+              <label className="flex items-center gap-2.5 p-3 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 hover:bg-slate-100 cursor-pointer text-slate-600 transition-all">
+                <Upload className="w-4 h-4 text-amber-500 shrink-0" />
+                <div>
+                  <span className="text-xs font-semibold text-slate-800 block">Upload asset image...</span>
+                  <span className="text-[10px] text-slate-400">JPG, PNG, WEBP (auto-compressed)</span>
+                </div>
                 <input
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      const reader = new FileReader();
-                      reader.onload = () => setNewForm(prev => ({ ...prev, image_url: reader.result as string }));
-                      reader.readAsDataURL(file);
+                      try {
+                        const compressed = await compressImage(file);
+                        setNewForm(prev => ({ ...prev, image_url: compressed }));
+                      } catch {
+                        alert('Could not process image file.');
+                      } finally {
+                        e.target.value = '';
+                      }
                     }
                   }}
                 />

@@ -195,12 +195,11 @@ export function FacilitiesModule() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 2500);
+    // Event-driven refresh only — no polling interval to prevent ghost flicker & cross-contamination
     const handleUpdate = () => loadData();
     window.addEventListener('govserve_data_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
     return () => {
-      clearInterval(interval);
       window.removeEventListener('govserve_data_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
     };
