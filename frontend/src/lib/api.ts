@@ -1896,10 +1896,14 @@ export async function fetchAssets(category = 'all', condition = 'all') {
             (a.asset_tag && s.asset_tag && String(a.asset_tag).trim() === String(s.asset_tag).trim())
           );
           if (!loc) return s;
+          // Server image takes priority if it exists (it is persistent across devices).
+          // Fall back to local image only if server has none — this preserves freshly
+          // uploaded images that may not have synced yet.
+          const serverImg = s.image_url || '';
+          const localImg = loc.image_url || '';
           return {
             ...s,
-            // Preserve user-updated image if locally present
-            image_url: loc.image_url !== undefined && loc.image_url !== '' ? loc.image_url : (s.image_url || ''),
+            image_url: serverImg !== '' ? serverImg : localImg,
             current_condition: loc.current_condition || s.current_condition,
             next_maintenance_due: loc.next_maintenance_due || s.next_maintenance_due,
             ai_maintenance_alert: loc.ai_maintenance_alert !== undefined ? loc.ai_maintenance_alert : s.ai_maintenance_alert,
@@ -1982,10 +1986,13 @@ export async function createAsset(payload: any) {
   // 1. Save to eProvider Cloud Database (Primary)
   if (HAS_EPROVIDER) {
     try {
-      const inserted = await epPost('assets', dbPayload, 3000);
-      if (Array.isArray(inserted) && inserted[0]?.id) {
-        newAsset.id = inserted[0].id;
-        newAsset.asset_tag = inserted[0].asset_tag || newAsset.asset_tag;
+      const inserted = await epPost('assets', dbPayload, 5000);
+      if (Array.isArray(inserted) && inserted[0]) {
+        const row = inserted[0];
+        newAsset.id = row.id || newAsset.id;
+        newAsset.asset_tag = row.asset_tag || newAsset.asset_tag;
+        // If eProvider echoes back an image_url, keep it in sync
+        if (row.image_url) newAsset.image_url = row.image_url;
         setStore('assets', assets, false);
       }
     } catch (e) {
@@ -2000,12 +2007,13 @@ export async function createAsset(payload: any) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dbPayload)
-      }, 3000);
+      }, 5000);
       if (res.ok) {
         const data = await res.json();
         if (data?.data) {
           newAsset.id = data.data.id || newAsset.id;
           newAsset.asset_tag = data.data.asset_tag || newAsset.asset_tag;
+          if (data.data.image_url) newAsset.image_url = data.data.image_url;
           setStore('assets', assets, false);
         }
       }
@@ -2058,6 +2066,7 @@ export async function updateAssetCondition(id: number, current_condition: string
     item.current_condition = current_condition;
     if (next_maintenance_due) item.next_maintenance_due = next_maintenance_due;
     if (ai_maintenance_alert !== undefined) item.ai_maintenance_alert = ai_maintenance_alert;
+    // resolvedImage = '' means cleared (remove photo), undefined means unchanged
     if (resolvedImage !== undefined) item.image_url = resolvedImage;
     setStore('assets', assets);
   }
@@ -2080,8 +2089,9 @@ export async function updateAssetCondition(id: number, current_condition: string
       const patchBody: any = { current_condition };
       if (next_maintenance_due !== undefined) patchBody.next_maintenance_due = next_maintenance_due;
       if (ai_maintenance_alert !== undefined) patchBody.ai_maintenance_alert = ai_maintenance_alert;
-      if (resolvedImage !== undefined) patchBody.image_url = resolvedImage;
-      await epPatch('assets', `id=eq.${id}`, patchBody, 5000);
+      // Always include image_url in patch so it persists on the server (even when clearing it)
+      if (resolvedImage !== undefined) patchBody.image_url = resolvedImage === '' ? null : resolvedImage;
+      await epPatch('assets', `id=eq.${id}`, patchBody, 8000);
     } catch {}
   })();
 
