@@ -101,21 +101,25 @@ export function AssetsModule() {
   }, [categoryFilter]);
 
   // ─── Validate & create new asset ────────────────────────────────────────────
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreate = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setNewFormError('');
 
     // Required field validation
-    if (!newForm.name.trim()) {
+    const name = newForm.name.trim();
+    const dept = newForm.assigned_department.trim();
+    const cost = parseFloat(String(newForm.purchase_cost));
+
+    if (!name) {
       setNewFormError('Asset / Equipment Name is required.');
       return;
     }
-    if (!newForm.assigned_department.trim()) {
+    if (!dept) {
       setNewFormError('Assigned Department is required.');
       return;
     }
-    if (!newForm.purchase_cost || parseFloat(newForm.purchase_cost) <= 0) {
-      setNewFormError('Please enter a valid Acquisition Cost.');
+    if (!newForm.purchase_cost || isNaN(cost) || cost <= 0) {
+      setNewFormError('Please enter a valid Acquisition Cost (must be greater than 0).');
       return;
     }
     if (!newForm.purchase_date) {
@@ -129,18 +133,22 @@ export function AssetsModule() {
 
     setCreatingAsset(true);
     try {
-      const result = await createAsset(newForm);
-      // Optimistic: add to state immediately
-      if (result?.data) {
-        setAssets(prev => [result.data, ...prev]);
-      }
+      const result = await createAsset({ ...newForm, name, assigned_department: dept, purchase_cost: cost });
+      const assetName = name;
       setIsNewModalOpen(false);
-      setNewForm(BLANK_FORM);
-      showToast(`✅ Asset "${newForm.name}" registered successfully!`);
-      // Reload after short delay to pick up server-assigned ID / tag
-      setTimeout(() => loadData(), 2000);
+      setNewForm(BLANK_FORM());
+      setNewFormError('');
+      // Add to UI immediately
+      if (result?.data) {
+        setAssets(prev => {
+          const exists = prev.some(a => String(a.id) === String(result.data.id) || a.asset_tag === result.data.asset_tag);
+          return exists ? prev : [result.data, ...prev];
+        });
+      }
+      showToast(`✅ Asset "${assetName}" registered successfully!`);
     } catch (e) {
-      showToast('Failed to register asset. Please check your connection and try again.', 'error');
+      console.error('createAsset error:', e);
+      showToast('Failed to register asset. Please try again.', 'error');
     } finally {
       setCreatingAsset(false);
     }
@@ -241,7 +249,7 @@ export function AssetsModule() {
           variant="primary"
           className="bg-amber-500 hover:bg-amber-600 font-bold text-white"
           leftIcon={<Plus className="w-4 h-4" />}
-          onClick={() => { setNewForm(BLANK_FORM); setNewFormError(''); setIsNewModalOpen(true); }}
+          onClick={() => { setNewForm(BLANK_FORM()); setNewFormError(''); setIsNewModalOpen(true); }}
         >
           Register Asset Unit
         </Button>
@@ -375,7 +383,7 @@ export function AssetsModule() {
                 <div className="pt-2 flex items-center justify-end gap-2">
                   <Button
                     size="sm"
-                    variant="destructive"
+                    variant="danger"
                     leftIcon={<Trash2 className="w-3.5 h-3.5" />}
                     onClick={() => handleDeleteAsset(asset.id)}
                   >
@@ -526,7 +534,7 @@ export function AssetsModule() {
         title="Register Government Asset Unit"
         description="Complete all required fields (*) to add a municipal asset to the inventory."
       >
-        <form onSubmit={handleCreate} className="space-y-3 text-xs">
+        <form onSubmit={handleCreate} noValidate className="space-y-3 text-xs">
           {/* Error banner */}
           {newFormError && (
             <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-semibold">

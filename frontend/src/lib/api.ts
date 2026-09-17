@@ -83,7 +83,7 @@ async function epGet(table: string, query = '', timeoutMs = 2500) {
 async function epPost(table: string, body: any, timeoutMs = 2500) {
   const res = await fastFetch(`${EP_REST}/${table}`, {
     method: 'POST',
-    headers: EP_HEADERS,
+    headers: { ...EP_HEADERS, 'Prefer': 'return=representation' },
     body: JSON.stringify(body)
   }, timeoutMs);
   if (!res.ok) throw new Error(`eProvider POST ${table} failed: ${res.status}`);
@@ -478,7 +478,12 @@ function setStore<T>(key: string, val: T, notify = true): void {
         window.dispatchEvent(new Event('govserve_data_updated'));
       }
     }
-  } catch (e) {
+  } catch (e: any) {
+    // Re-throw quota errors so callers know the write failed
+    if (e?.name === 'QuotaExceededError' || e?.code === 22 || e?.code === 1014) {
+      console.error('localStorage QuotaExceeded for key:', key);
+      throw e;
+    }
     console.error('Storage error:', e);
   }
 }
@@ -1889,21 +1894,18 @@ export async function fetchAssets(category = 'all', condition = 'all') {
         const serverIds = new Set(data.map((a: any) => String(a.id)));
         const serverTags = new Set(data.map((a: any) => String(a.asset_tag || '').trim()).filter(Boolean));
 
-        // Merge server items with any locally updated fields (e.g., replaced image, updated condition)
+        // Merge server items with any locally updated fields
         const mergedData = data.map((s: any) => {
           const loc = localAssets.find((a: any) =>
             String(a.id) === String(s.id) ||
             (a.asset_tag && s.asset_tag && String(a.asset_tag).trim() === String(s.asset_tag).trim())
           );
           if (!loc) return s;
-          // Server image takes priority if it exists (it is persistent across devices).
-          // Fall back to local image only if server has none — this preserves freshly
-          // uploaded images that may not have synced yet.
           const serverImg = s.image_url || '';
           const localImg = loc.image_url || '';
           return {
             ...s,
-            image_url: serverImg !== '' ? serverImg : localImg,
+            image_url: serverImg !== '' ? serverImg : (localImg || ''),
             current_condition: loc.current_condition || s.current_condition,
             next_maintenance_due: loc.next_maintenance_due || s.next_maintenance_due,
             ai_maintenance_alert: loc.ai_maintenance_alert !== undefined ? loc.ai_maintenance_alert : s.ai_maintenance_alert,
@@ -1919,7 +1921,9 @@ export async function fetchAssets(category = 'all', condition = 'all') {
 
         list = [...mergedData, ...localOnlyNew];
         fetched = true;
-        setStore('assets', list, false);
+        try {
+          setStore('assets', list, false);
+        } catch { /* ignore if quota exceeded */ }
       }
     } catch (e) {
       console.warn('eProvider fetchAssets error:', e);
@@ -1957,7 +1961,18 @@ export async function fetchAssets(category = 'all', condition = 'all') {
 
 export async function createAsset(payload: any) {
   const assets = getStore('assets', DEFAULT_ASSETS);
-  const assetTag = `AST-${new Date().getFullYear()}-${String(assets.length + 1).padStart(3, '0')}`;
+  
+  // Generate a guaranteed unique collision-proof asset tag
+  const year = new Date().getFullYear();
+  const existingTags = new Set(assets.map((a: any) => String(a.asset_tag || '').trim()));
+  let seq = assets.length + 1;
+  let assetTag = `AST-${year}-${String(seq).padStart(3, '0')}`;
+  while (existingTags.has(assetTag)) {
+    seq++;
+    assetTag = `AST-${year}-${String(seq).padStart(3, '0')}`;
+  }
+
+  const effectiveImage = payload.image_url || '';
 
   const dbPayload = {
     asset_tag: assetTag,
@@ -1972,57 +1987,74 @@ export async function createAsset(payload: any) {
     next_maintenance_due: payload.next_maintenance_due || null,
     ai_maintenance_alert: payload.ai_maintenance_alert || null,
     specs: payload.specs || null,
-    image_url: payload.image_url || null
+    image_url: effectiveImage || null
   };
 
-  const newAsset = {
+  const newAsset: any = {
     id: Date.now(),
     ...dbPayload,
+    image_url: effectiveImage,
     created_at: new Date().toISOString()
   };
+
+  // 1. Immediately save to local store so UI and list update right away
   assets.unshift(newAsset);
-  setStore('assets', assets);
-
-  // 1. Save to eProvider Cloud Database (Primary)
-  if (HAS_EPROVIDER) {
-    try {
-      const inserted = await epPost('assets', dbPayload, 5000);
-      if (Array.isArray(inserted) && inserted[0]) {
-        const row = inserted[0];
-        newAsset.id = row.id || newAsset.id;
-        newAsset.asset_tag = row.asset_tag || newAsset.asset_tag;
-        // If eProvider echoes back an image_url, keep it in sync
-        if (row.image_url) newAsset.image_url = row.image_url;
-        setStore('assets', assets, false);
-      }
-    } catch (e) {
-      console.warn('eProvider createAsset error:', e);
-    }
-  }
-
-  // 2. Sync to Render Backend (Secondary)
-  if (HAS_BACKEND) {
-    try {
-      const res = await fastFetch(`${API_BASE}/assets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dbPayload)
-      }, 5000);
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.data) {
-          newAsset.id = data.data.id || newAsset.id;
-          newAsset.asset_tag = data.data.asset_tag || newAsset.asset_tag;
-          if (data.data.image_url) newAsset.image_url = data.data.image_url;
-          setStore('assets', assets, false);
-        }
-      }
-    } catch {}
+  try {
+    setStore('assets', assets, false);
+  } catch (err) {
+    console.warn('localStorage save warning:', err);
   }
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('govserve_data_updated'));
   }
+
+  // 2. Non-blocking background sync to cloud (matching updateAssetCondition pattern)
+  (async () => {
+    if (HAS_EPROVIDER) {
+      try {
+        const inserted = await epPost('assets', dbPayload, 6000);
+        if (Array.isArray(inserted) && inserted[0]) {
+          const row = inserted[0];
+          newAsset.id = row.id || newAsset.id;
+          newAsset.asset_tag = row.asset_tag || newAsset.asset_tag;
+          if (row.image_url) newAsset.image_url = row.image_url;
+          const current = getStore('assets', DEFAULT_ASSETS);
+          const idx = current.findIndex((a: any) => a.asset_tag === assetTag || a.id === newAsset.id);
+          if (idx !== -1) {
+            current[idx] = { ...current[idx], ...row };
+            try { setStore('assets', current, false); } catch {}
+          }
+        }
+      } catch (e) {
+        console.warn('eProvider createAsset error:', e);
+      }
+    }
+
+    if (HAS_BACKEND) {
+      try {
+        const res = await fastFetch(`${API_BASE}/assets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(dbPayload)
+        }, 6000);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.data) {
+            newAsset.id = data.data.id || newAsset.id;
+            newAsset.asset_tag = data.data.asset_tag || newAsset.asset_tag;
+            if (data.data.image_url) newAsset.image_url = data.data.image_url;
+            const current = getStore('assets', DEFAULT_ASSETS);
+            const idx = current.findIndex((a: any) => a.asset_tag === assetTag || a.id === newAsset.id);
+            if (idx !== -1) {
+              current[idx] = { ...current[idx], ...data.data };
+              try { setStore('assets', current, false); } catch {}
+            }
+          }
+        }
+      } catch {}
+    }
+  })();
 
   return { success: true, asset_tag: newAsset.asset_tag, data: newAsset };
 }
