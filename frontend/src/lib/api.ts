@@ -467,7 +467,9 @@ function prepareFacilityForDb(payload: any) {
   const mRate = payload.morning_rate !== undefined ? Number(payload.morning_rate) : baseRate;
   const aRate = payload.afternoon_rate !== undefined ? Number(payload.afternoon_rate) : baseRate;
 
-  // STRICTLY only include existing columns in eProvider / PostgreSQL
+  // STRICTLY only include columns that exist in the eProvider cloud DB.
+  // NOTE: image_url_2 does NOT exist as a column in eProvider — it is stored
+  // inside __FAC_META__ in the amenities field. Do NOT add it here or PATCH/POST will fail with 400.
   const dbPayload: any = {
     name: payload.name,
     category: payload.category || 'Government Facility',
@@ -478,15 +480,16 @@ function prepareFacilityForDb(payload: any) {
     location: payload.location || 'Municipal Complex',
     amenities: baseAmenities,
     status: payload.status || 'Available',
-    image_url: payload.image_url || null,
-    image_url_2: payload.image_url_2 || null
+    image_url: payload.image_url || null
   };
   return dbPayload;
 }
 
 function parseFacilityFromDb(f: any) {
+  // image_url comes from the DB column (authoritative)
   let img1 = f.image_url || '';
-  let img2 = f.image_url_2 || '';
+  // image_url_2 has NO DB column in eProvider — always read from __FAC_META__
+  let img2 = '';
   let cleanAmenities = f.amenities || '';
   let morningRate = f.morning_rate !== undefined && f.morning_rate !== null ? Number(f.morning_rate) : undefined;
   let afternoonRate = f.afternoon_rate !== undefined && f.afternoon_rate !== null ? Number(f.afternoon_rate) : undefined;
@@ -496,9 +499,10 @@ function parseFacilityFromDb(f: any) {
       const parts = cleanAmenities.split('__FAC_META__');
       cleanAmenities = parts[0].trim();
       const meta = JSON.parse(parts[1]);
-      // DB columns are authoritative — only use meta as fallback when DB column is empty
+      // image_url: DB column is authoritative, meta is fallback only
       if (!img1 && meta.image_url !== undefined) img1 = meta.image_url || '';
-      if (!img2 && meta.image_url_2 !== undefined) img2 = meta.image_url_2 || '';
+      // image_url_2: always from meta since there is no DB column
+      if (meta.image_url_2 !== undefined) img2 = meta.image_url_2 || '';
       if (meta.morning_rate !== undefined && morningRate === undefined) morningRate = Number(meta.morning_rate);
       if (meta.afternoon_rate !== undefined && afternoonRate === undefined) afternoonRate = Number(meta.afternoon_rate);
     } catch {}
