@@ -478,7 +478,8 @@ function prepareFacilityForDb(payload: any) {
     location: payload.location || 'Municipal Complex',
     amenities: baseAmenities,
     status: payload.status || 'Available',
-    image_url: payload.image_url || null
+    image_url: payload.image_url || null,
+    image_url_2: payload.image_url_2 || null
   };
   return dbPayload;
 }
@@ -495,8 +496,9 @@ function parseFacilityFromDb(f: any) {
       const parts = cleanAmenities.split('__FAC_META__');
       cleanAmenities = parts[0].trim();
       const meta = JSON.parse(parts[1]);
-      if (meta.image_url !== undefined) img1 = meta.image_url || '';
-      if (meta.image_url_2 !== undefined) img2 = meta.image_url_2 || '';
+      // DB columns are authoritative — only use meta as fallback when DB column is empty
+      if (!img1 && meta.image_url !== undefined) img1 = meta.image_url || '';
+      if (!img2 && meta.image_url_2 !== undefined) img2 = meta.image_url_2 || '';
       if (meta.morning_rate !== undefined && morningRate === undefined) morningRate = Number(meta.morning_rate);
       if (meta.afternoon_rate !== undefined && afternoonRate === undefined) afternoonRate = Number(meta.afternoon_rate);
     } catch {}
