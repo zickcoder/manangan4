@@ -468,8 +468,12 @@ function prepareFacilityForDb(payload: any) {
   const aRate = payload.afternoon_rate !== undefined ? Number(payload.afternoon_rate) : baseRate;
 
   // STRICTLY only include columns that exist in the eProvider cloud DB.
-  // NOTE: image_url_2 does NOT exist as a column in eProvider — it is stored
-  // inside __FAC_META__ in the amenities field. Do NOT add it here or PATCH/POST will fail with 400.
+  // IMPORTANT: image_url in eProvider is VARCHAR(255) — Base64 images are 50k+ chars
+  // and will cause a 400 error. Store images ONLY in __FAC_META__ (amenities TEXT column).
+  // For image_url DB column, only store it if it's a real short URL (not base64).
+  const isBase64 = (s: string) => s.startsWith('data:');
+  const safeImg1 = payload.image_url && !isBase64(payload.image_url) ? payload.image_url : null;
+
   const dbPayload: any = {
     name: payload.name,
     category: payload.category || 'Government Facility',
@@ -480,13 +484,13 @@ function prepareFacilityForDb(payload: any) {
     location: payload.location || 'Municipal Complex',
     amenities: baseAmenities,
     status: payload.status || 'Available',
-    image_url: payload.image_url || null
+    image_url: safeImg1
   };
   return dbPayload;
 }
 
 function parseFacilityFromDb(f: any) {
-  // image_url comes from the DB column (authoritative)
+  // Start with DB column values (may be real HTTP URLs or null)
   let img1 = f.image_url || '';
   // image_url_2 has NO DB column in eProvider — always read from __FAC_META__
   let img2 = '';
@@ -499,9 +503,9 @@ function parseFacilityFromDb(f: any) {
       const parts = cleanAmenities.split('__FAC_META__');
       cleanAmenities = parts[0].trim();
       const meta = JSON.parse(parts[1]);
-      // image_url: DB column is authoritative, meta is fallback only
-      if (!img1 && meta.image_url !== undefined) img1 = meta.image_url || '';
-      // image_url_2: always from meta since there is no DB column
+      // __FAC_META__ is authoritative for images since Base64 is stored there
+      // (DB image_url column is VARCHAR(255) and can't hold Base64)
+      if (meta.image_url !== undefined) img1 = meta.image_url || img1;
       if (meta.image_url_2 !== undefined) img2 = meta.image_url_2 || '';
       if (meta.morning_rate !== undefined && morningRate === undefined) morningRate = Number(meta.morning_rate);
       if (meta.afternoon_rate !== undefined && afternoonRate === undefined) afternoonRate = Number(meta.afternoon_rate);
@@ -522,6 +526,7 @@ function parseFacilityFromDb(f: any) {
     afternoon_rate: afternoonRate
   };
 }
+
 
 export async function fetchFacilities(category = 'all') {
   const edgeResult = await edgeFetch(`/facilities?category=${encodeURIComponent(category)}`);
