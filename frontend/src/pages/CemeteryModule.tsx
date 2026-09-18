@@ -10,7 +10,10 @@ import {
   User,
   Calendar,
   Phone,
-  Tag
+  Tag,
+  Trash2,
+  AlertTriangle,
+  ExternalLink
 } from 'lucide-react';
 import { Card, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -25,6 +28,8 @@ import {
   createBurial, 
   createBatchPlots,
   updateBurialStatus,
+  deleteBurial,
+  clearAllBurials,
   format12HourDateTime 
 } from '../lib/api';
 import { CemeteryPlot, BurialRecord } from '../types';
@@ -616,11 +621,11 @@ export function CemeteryModule() {
         <Card className="border-slate-200">
           {/* Search & Status Filter Header for Burials */}
           <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 items-center justify-between">
-            <div className="relative w-full md:w-80">
+            <div className="relative w-full md:w-72">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search deceased name, reference no, or permit code..."
+                placeholder="Search deceased name, reference no..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/30 bg-white font-medium"
@@ -641,6 +646,26 @@ export function CemeteryModule() {
                   {status === 'Pending Payment' ? 'Waiting for Payment' : status}
                 </button>
               ))}
+
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!window.confirm('⚠️ WARNING: This will permanently DELETE ALL burial records and reset all cemetery plots to Available. This cannot be undone. Proceed?')) return;
+                  setAnimModal({ isOpen: true, type: 'loading', title: 'Clearing All Burial Records...', message: 'Deleting all burials from the database and resetting cemetery plots.' });
+                  try {
+                    await clearAllBurials();
+                    await loadData();
+                    setAnimModal({ isOpen: true, type: 'success', title: 'All Burials Cleared', message: 'All burial records deleted and all cemetery plots are now Available.' });
+                  } catch {
+                    setAnimModal({ isOpen: true, type: 'rejected', title: 'Clear Failed', message: 'Could not clear all burials. Please try again.' });
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
+                title="Clear All Burials & Tickets"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear All
+              </button>
             </div>
           </div>
 
@@ -684,37 +709,51 @@ export function CemeteryModule() {
                         <p className="text-[10px] text-slate-500">{b.contact_phone}</p>
                       </td>
                       <td className="py-3.5 px-4">
-                        <Badge variant={b.status === 'Paid' || b.status === 'Approved' ? 'success' : (b.status === 'Pending Payment' || b.status === 'Waiting for Payment') ? 'info' : b.status === 'Rejected' ? 'danger' : 'warning'}>
+                        <Badge variant={b.status === 'Paid' || b.status === 'Approved' ? 'success' : (b.status === 'Pending Payment' || b.status === 'Waiting for Payment') ? 'info' : b.status === 'Rejected' ? 'destructive' : 'warning'}>
                           {b.status === 'Pending Payment' ? 'Waiting for Payment' : b.status}
                         </Badge>
                       </td>
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        {b.status !== 'Paid' ? (
-                          <Button
-                            size="sm"
-                            variant="primary"
-                            className="text-xs bg-purple-600 hover:bg-purple-700 font-bold"
-                            onClick={() => {
-                              setSelectedReviewBurial(b);
-                              setIsReviewModalOpen(true);
+                        <div className="flex items-center gap-1.5 justify-end">
+                          {b.status !== 'Paid' ? (
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              className="text-xs bg-purple-600 hover:bg-purple-700 font-bold"
+                              onClick={() => {
+                                setSelectedReviewBurial(b);
+                                setIsReviewModalOpen(true);
+                              }}
+                            >
+                              Review
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="text-xs font-bold"
+                              leftIcon={<FileText className="w-3.5 h-3.5" />}
+                              onClick={() => {
+                                setSelectedBurial(b);
+                                setIsPermitModalOpen(true);
+                              }}
+                            >
+                              Permit
+                            </Button>
+                          )}
+                          <button
+                            type="button"
+                            title="Delete this burial record"
+                            onClick={async () => {
+                              if (!window.confirm(`Delete burial record for ${b.deceased_name} (${b.reference_no})? This cannot be undone.`)) return;
+                              await deleteBurial(b.id);
+                              await loadData();
                             }}
+                            className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 border border-red-200 transition-colors"
                           >
-                            Review Application
-                          </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="text-xs font-bold"
-                            leftIcon={<FileText className="w-3.5 h-3.5" />}
-                            onClick={() => {
-                              setSelectedBurial(b);
-                              setIsPermitModalOpen(true);
-                            }}
-                          >
-                            View Permit
-                          </Button>
-                        )}
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1096,35 +1135,79 @@ export function CemeteryModule() {
             <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
               <h4 className="font-bold text-slate-900 border-b border-slate-200 pb-1 uppercase tracking-wider text-[11px]">📄 Attached Mandatory Citizen Documents</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="font-bold text-slate-800 block text-[11px]">Attach PSA Death Cert *</span>
-                    <span className="text-[10px] text-emerald-600 font-bold">✓ Verified Document Logged</span>
-                  </div>
-                  <a
-                    href="https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=500&auto=format&fit=crop&q=80"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-2.5 py-1 bg-purple-50 text-purple-700 rounded-lg text-[10px] font-bold border border-purple-200 hover:bg-purple-100"
-                  >
-                    View File
-                  </a>
-                </div>
+                {/* PSA Death Certificate */}
+                {(() => {
+                  const certUrl = (selectedReviewBurial as any).death_certificate_url || (selectedReviewBurial as any).death_cert_url || '';
+                  const certName = (selectedReviewBurial as any).death_cert_name || 'PSA_Death_Certificate';
+                  return (
+                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {certUrl.startsWith('data:image') ? (
+                          <img src={certUrl} alt="Death Cert" className="w-10 h-10 rounded-lg object-cover shrink-0 border border-slate-200" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0 text-[9px] font-black">PDF</div>
+                        )}
+                        <div className="min-w-0">
+                          <span className="font-bold text-slate-800 block text-[11px] truncate">PSA Death Certificate</span>
+                          {certUrl ? (
+                            <span className="text-[10px] text-emerald-600 font-bold">✓ Submitted by Citizen</span>
+                          ) : (
+                            <span className="text-[10px] text-amber-600 font-bold">⚠ Not uploaded</span>
+                          )}
+                        </div>
+                      </div>
+                      {certUrl ? (
+                        <a
+                          href={certUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-1 bg-purple-50 text-purple-700 rounded-lg text-[10px] font-bold border border-purple-200 hover:bg-purple-100 flex items-center gap-1 shrink-0"
+                        >
+                          <ExternalLink className="w-3 h-3" /> View
+                        </a>
+                      ) : (
+                        <span className="px-2.5 py-1 bg-slate-100 text-slate-400 rounded-lg text-[10px] font-bold border border-slate-200 shrink-0">No File</span>
+                      )}
+                    </div>
+                  );
+                })()}
 
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="font-bold text-slate-800 block text-[11px]">Attach Valid Gov ID *</span>
-                    <span className="text-[10px] text-emerald-600 font-bold">✓ Verified Document Logged</span>
-                  </div>
-                  <a
-                    href="https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=500&auto=format&fit=crop&q=80"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-2.5 py-1 bg-purple-50 text-purple-700 rounded-lg text-[10px] font-bold border border-purple-200 hover:bg-purple-100"
-                  >
-                    View File
-                  </a>
-                </div>
+                {/* Valid Government ID */}
+                {(() => {
+                  const idUrl = (selectedReviewBurial as any).valid_id_url || '';
+                  const idName = (selectedReviewBurial as any).valid_id_name || 'Government_ID';
+                  return (
+                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {idUrl.startsWith('data:image') ? (
+                          <img src={idUrl} alt="Gov ID" className="w-10 h-10 rounded-lg object-cover shrink-0 border border-slate-200" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 text-[9px] font-black">ID</div>
+                        )}
+                        <div className="min-w-0">
+                          <span className="font-bold text-slate-800 block text-[11px] truncate">Valid Gov't ID</span>
+                          {idUrl ? (
+                            <span className="text-[10px] text-emerald-600 font-bold">✓ Submitted by Citizen</span>
+                          ) : (
+                            <span className="text-[10px] text-amber-600 font-bold">⚠ Not uploaded</span>
+                          )}
+                        </div>
+                      </div>
+                      {idUrl ? (
+                        <a
+                          href={idUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-bold border border-blue-200 hover:bg-blue-100 flex items-center gap-1 shrink-0"
+                        >
+                          <ExternalLink className="w-3 h-3" /> View
+                        </a>
+                      ) : (
+                        <span className="px-2.5 py-1 bg-slate-100 text-slate-400 rounded-lg text-[10px] font-bold border border-slate-200 shrink-0">No File</span>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -1157,7 +1240,7 @@ export function CemeteryModule() {
             {(selectedReviewBurial.status === 'Pending Payment' || selectedReviewBurial.status === 'Waiting for Payment') && (
               <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 text-amber-950 space-y-1">
                 <p className="font-bold text-xs">⏳ Awaiting Treasury Cash Settlement:</p>
-                <p className="text-[11px]">Notice issued to citizen. Payment due date: <strong>{selectedReviewBurial.payment_due_date || reviewDueDate}</strong>. Plot <strong>{selectedReviewBurial.plot_code}</strong> is currently Reserved. When resident pays at the Treasury Desk, click "Approve Payment (Cash Received)" below.</p>
+                <p className="text-[11px]">Notice issued to citizen. Payment due date: <strong>{(selectedReviewBurial as any).payment_due_date || reviewDueDate}</strong>. Plot <strong>{selectedReviewBurial.plot_code}</strong> is currently Reserved. When resident pays at the Treasury Desk, click "Approve Payment (Cash Received)" below.</p>
               </div>
             )}
 

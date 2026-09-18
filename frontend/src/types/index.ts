@@ -17,10 +17,13 @@ export interface Facility {
   category: 'Government Facility' | 'Park & Recreation';
   capacity: number;
   hourly_rate: number;
+  morning_rate?: number;
+  afternoon_rate?: number;
   location: string;
   amenities: string;
   status: 'Available' | 'Maintenance' | 'Reserved';
   image_url?: string;
+  image_url_2?: string;
 }
 
 export interface FacilityReservation {

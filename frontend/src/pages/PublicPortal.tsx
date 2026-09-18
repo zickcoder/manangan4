@@ -31,7 +31,9 @@ import {
   ShieldCheck,
   Truck,
   Check,
-  FileCheck
+  FileCheck,
+  Edit,
+  ExternalLink
 } from 'lucide-react';
 import { PublicNavbar } from '../components/layout/PublicNavbar';
 import { Button } from '../components/ui/Button';
@@ -52,7 +54,8 @@ import {
   trackUniversalReference,
   fetchAssets,
   calculateBookingHours,
-  calculateFacilityFee
+  calculateFacilityFee,
+  calculateSlotFee
 } from '../lib/api';
 import { Facility, CemeteryPlot, Asset } from '../types';
 import { compressImage } from '../lib/imageCompressor';
@@ -110,10 +113,13 @@ export function PublicPortal() {
     special_equipment: [] as string[],
     remarks: '',
   });
+  const [zoomImage, setZoomImage] = useState<{ src: string; label: string } | null>(null);
   const [aiConflict, setAiConflict] = useState<any>(null);
   const [aiChecking, setAiChecking] = useState(false);
   const [appliedAlternativeSlot, setAppliedAlternativeSlot] = useState<string | null>(null);
   const [reservationSuccess, setReservationSuccess] = useState<any>(null);
+  const [resubmittingTicket, setResubmittingTicket] = useState<any | null>(null);
+  const [viewingRecognizedTicket, setViewingRecognizedTicket] = useState<any | null>(null);
 
   // 3. Water & Drainage Request State
   const HOUSEHOLD_OPTIONS = [
@@ -257,16 +263,67 @@ export function PublicPortal() {
   };
 
   const selectedFacilityObj = facilities.find(f => f.id === selectedFacilityId) || facilities[0];
-  const bookingHours = calculateBookingHours(reserveForm.start_time, reserveForm.end_time);
-  const bookingTotalFee = calculateFacilityFee(reserveForm.start_time, reserveForm.end_time, selectedFacilityObj?.hourly_rate || 0);
+  const slotCalculation = calculateSlotFee(reserveForm.start_time, reserveForm.end_time, selectedFacilityObj);
+  const bookingHours = slotCalculation.hours;
+  const bookingTotalFee = slotCalculation.fee;
 
   // Pax Limit Check
   const currentAttendees = parseInt(reserveForm.attendees, 10) || 0;
   const isPaxExceeded = selectedFacilityObj ? currentAttendees > selectedFacilityObj.capacity : false;
 
+  const handleStartResubmitFromBooking = (booking: any) => {
+    if (!booking) return;
+    const refNo = booking.reference_no || booking.ref_no;
+    const originalId = booking.id || booking.originalId;
+
+    let sTime = booking.start_time || '08:00 AM';
+    let eTime = booking.end_time || '12:00 PM';
+    if (!booking.start_time && booking.time && booking.time.includes('-')) {
+      const parts = booking.time.split('-').map((s: string) => s.trim());
+      if (parts[0]) sTime = parts[0];
+      if (parts[1]) eTime = parts[1];
+    }
+
+    let equipList: string[] = [];
+    if (Array.isArray(booking.special_equipment)) {
+      equipList = booking.special_equipment;
+    } else if (typeof booking.special_equipment === 'string') {
+      equipList = booking.special_equipment.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+
+    const isoDate = (booking.event_date || booking.date || '').split('T')[0];
+
+    setReserveForm(prev => ({
+      ...prev,
+      applicant_name: booking.applicant_name || booking.applicant || prev.applicant_name,
+      applicant_email: booking.applicant_email || booking.citizen_email || prev.applicant_email,
+      applicant_phone: booking.applicant_phone || booking.contact || prev.applicant_phone,
+      purpose: booking.purpose || booking.details || prev.purpose,
+      attendees: booking.attendees ? String(booking.attendees) : prev.attendees,
+      special_equipment: equipList,
+      event_date: isoDate && !isoDate.includes('N/A') ? isoDate : prev.event_date,
+      start_time: sTime,
+      end_time: eTime,
+    }));
+
+    setResubmittingTicket({
+      originalId,
+      ref_no: refNo,
+      reference_no: refNo,
+      ...booking
+    });
+
+    setAiConflict(null);
+    setViewingRecognizedTicket(null);
+  };
+
   // Automatic real-time check when date or time or facility changes
   useEffect(() => {
     if (!selectedFacilityObj || !reserveForm.event_date) {
+      setAiConflict(null);
+      return;
+    }
+    if (resubmittingTicket) {
       setAiConflict(null);
       return;
     }
@@ -281,20 +338,21 @@ export function PublicPortal() {
       undefined,
       selectedFacilityObj?.category
     ).then((bookingCheck) => {
-      if (bookingCheck.hasConflict) {
-        setAiConflict({
-          hasConflict: true,
-          isOwnSchedule: false,
-          aiAnalysis: bookingCheck.message,
-          alternativeSlots: bookingCheck.suggestedSlots || [`${reserveForm.event_date} (02:00 PM - 06:00 PM)`]
-        });
-      } else if ((bookingCheck as any).isOwnSchedule) {
+      if ((bookingCheck as any).isOwnSchedule) {
+        // Own booking detected — show amber warning, not red conflict
         setAiConflict({
           hasConflict: false,
           isOwnSchedule: true,
           aiAnalysis: bookingCheck.message,
           existingBooking: (bookingCheck as any).existingBooking,
           alternativeSlots: []
+        });
+      } else if (bookingCheck.hasConflict) {
+        setAiConflict({
+          hasConflict: true,
+          isOwnSchedule: false,
+          aiAnalysis: bookingCheck.message,
+          alternativeSlots: bookingCheck.suggestedSlots || [`${reserveForm.event_date} (02:00 PM - 06:00 PM)`]
         });
       } else {
         setAiConflict(null);
@@ -317,20 +375,21 @@ export function PublicPortal() {
         selectedFacilityObj?.category
       );
 
-      if (bookingCheck.hasConflict) {
-        setAiConflict({
-          hasConflict: true,
-          isOwnSchedule: false,
-          aiAnalysis: bookingCheck.message,
-          alternativeSlots: bookingCheck.suggestedSlots || [`${reserveForm.event_date} (02:00 PM - 06:00 PM)`]
-        });
-      } else if ((bookingCheck as any).isOwnSchedule) {
+      if ((bookingCheck as any).isOwnSchedule) {
+        // Own booking detected — amber warning
         setAiConflict({
           hasConflict: false,
           isOwnSchedule: true,
           aiAnalysis: bookingCheck.message,
           existingBooking: (bookingCheck as any).existingBooking,
           alternativeSlots: []
+        });
+      } else if (bookingCheck.hasConflict) {
+        setAiConflict({
+          hasConflict: true,
+          isOwnSchedule: false,
+          aiAnalysis: bookingCheck.message,
+          alternativeSlots: bookingCheck.suggestedSlots || [`${reserveForm.event_date} (02:00 PM - 06:00 PM)`]
         });
       } else {
         const res = await checkFacilityAI(
@@ -369,16 +428,43 @@ export function PublicPortal() {
     });
   };
 
-  const handleReserveSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleApplyAlternativeSlot = (slot: string) => {
+    let newStart = '02:00 PM';
+    let newEnd = '06:00 PM';
+    const timeMatch = slot.match(/(\d{1,2}:\d{2}\s*(?:AM|PM))\s*-\s*(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
+    if (timeMatch) {
+      newStart = timeMatch[1];
+      newEnd = timeMatch[2];
+    }
+    const dateMatch = slot.match(/\b\d{4}-\d{2}-\d{2}\b/);
+    const newDate = dateMatch ? dateMatch[0] : reserveForm.event_date;
+
+    setReserveForm(prev => ({
+      ...prev,
+      event_date: newDate,
+      start_time: newStart,
+      end_time: newEnd,
+    }));
+
+    setAiConflict(null);
+    setAppliedAlternativeSlot(slot);
+  };
+
+  const handleReserveSubmit = async (e?: React.FormEvent, overrideSchedule?: { event_date?: string; start_time?: string; end_time?: string }) => {
+    if (e) e.preventDefault();
+
+    const activeDate = overrideSchedule?.event_date || reserveForm.event_date;
+    const activeStart = overrideSchedule?.start_time || reserveForm.start_time;
+    const activeEnd = overrideSchedule?.end_time || reserveForm.end_time;
+
     if (
       !reserveForm.applicant_name?.trim() ||
       !reserveForm.applicant_email?.trim() ||
       !reserveForm.applicant_phone?.trim() ||
       !reserveForm.purpose?.trim() ||
-      !reserveForm.event_date?.trim() ||
-      !reserveForm.start_time?.trim() ||
-      !reserveForm.end_time?.trim()
+      !activeDate?.trim() ||
+      !activeStart?.trim() ||
+      !activeEnd?.trim()
     ) {
       alert('Please fill out all required fields: Applicant Name, Email, Phone, Purpose, Date, and Time slots.');
       return;
@@ -394,12 +480,12 @@ export function PublicPortal() {
       return;
     }
 
-    if (aiConflict?.isOwnSchedule) {
+    if (!overrideSchedule && aiConflict?.isOwnSchedule && !resubmittingTicket) {
       alert('You already booked this date and time. Please click "Book Another Date" to select a different schedule.');
       return;
     }
 
-    if (aiConflict?.hasConflict) {
+    if (!overrideSchedule && aiConflict?.hasConflict && !resubmittingTicket) {
       alert('Cannot submit reservation: ' + (aiConflict.aiAnalysis || 'Schedule slot conflict detected. Please select an alternative slot.'));
       return;
     }
@@ -408,9 +494,16 @@ export function PublicPortal() {
       ? reserveForm.custom_purpose
       : reserveForm.purpose;
 
+    const slotFeeInfo = calculateSlotFee(activeStart, activeEnd, selectedFacilityObj);
+    const durationHours = slotFeeInfo.hours;
+    const activeFee = slotFeeInfo.fee;
+
     try {
       const res = await createReservation({
         ...reserveForm,
+        event_date: activeDate.trim(),
+        start_time: activeStart.trim(),
+        end_time: activeEnd.trim(),
         applicant_name: reserveForm.applicant_name.trim(),
         applicant_email: reserveForm.applicant_email.trim(),
         applicant_phone: reserveForm.applicant_phone.trim(),
@@ -419,12 +512,15 @@ export function PublicPortal() {
         facility_name: selectedFacilityObj?.name,
         facility_category: selectedFacilityObj?.category,
         hourly_rate: selectedFacilityObj?.hourly_rate || 0,
-        hours: bookingHours,
-        fee_amount: bookingTotalFee,
-        attendees: currentAttendees
+        hours: durationHours,
+        fee_amount: activeFee,
+        attendees: currentAttendees,
+        ...(resubmittingTicket ? { resubmitId: resubmittingTicket.originalId, reference_no: resubmittingTicket.reference_no } : {})
       });
       if (res.success) {
         setReservationSuccess(res.data);
+        setResubmittingTicket(null);
+        setAiConflict(null);
       }
     } catch (e) {
       alert('Failed to submit reservation. Please try again.');
@@ -540,7 +636,7 @@ export function PublicPortal() {
       if (res.success) {
         setBurialSuccess(res.data || res);
       } else {
-        setBurialError(res.message || 'Submission failed. Please try again.');
+        setBurialError((res as any).message || 'Submission failed. Please try again.');
       }
     } catch (err) {
       setBurialError('Failed to submit burial application. Please check your connection.');
@@ -780,10 +876,15 @@ export function PublicPortal() {
                   </Button>
 
                   {selectedFacilityObj && (
-                    <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Selected Venue Specs:</span>
-                      <p className="font-bold text-slate-900">{selectedFacilityObj.name}</p>
-                      <p className="text-[11px] text-slate-600 font-medium">Max Capacity: <span className="text-blue-700 font-bold">{selectedFacilityObj.capacity} Attendees</span></p>
+                    <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Selected Venue Specs:</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
+                          {selectedFacilityObj.category}
+                        </span>
+                      </div>
+                      <p className="font-bold text-slate-900 text-sm leading-tight">{selectedFacilityObj.name}</p>
+                      <p className="text-[11px] text-slate-600 font-medium">Max Capacity: <span className="text-blue-700 font-bold">{selectedFacilityObj.capacity} Attendees</span> • Rate: <span className="font-bold text-slate-800">₱{selectedFacilityObj.hourly_rate}/hr</span></p>
                       <p className="text-[10px] text-slate-500">{selectedFacilityObj.amenities}</p>
                     </div>
                   )}
@@ -797,6 +898,75 @@ export function PublicPortal() {
                       <CardDescription>Select predefined event purpose, special equipment, and verify capacity.</CardDescription>
                     </CardHeader>
                     <CardContent>
+                      {/* Top Visual Preview Ribbon (2 Images) */}
+                      {selectedFacilityObj && (
+                        <div className="mb-4 p-3.5 bg-gradient-to-r from-slate-50 to-slate-100/80 rounded-2xl border border-slate-200 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <ImageIcon className="w-4 h-4 text-blue-600" />
+                              <span className="text-xs font-bold text-slate-900">Venue Visual Preview: {selectedFacilityObj.name}</span>
+                            </div>
+                            <span className="text-[10px] font-semibold text-slate-500">2 Photos Available</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div
+                              className="relative h-36 rounded-xl overflow-hidden border border-slate-300/80 bg-slate-900 group shadow-xs cursor-zoom-in"
+                              onClick={() => selectedFacilityObj.image_url && setZoomImage({ src: selectedFacilityObj.image_url, label: `${selectedFacilityObj.name} — Photo 1: Exterior / Entrance` })}
+                            >
+                              {selectedFacilityObj.image_url ? (
+                                <img
+                                  src={selectedFacilityObj.image_url}
+                                  alt={`${selectedFacilityObj.name} View 1`}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs bg-slate-800/80">
+                                  <ImageIcon className="w-6 h-6 mb-1 opacity-50 text-slate-400" />
+                                  <span className="font-medium text-slate-300">No photo display yet</span>
+                                </div>
+                              )}
+                              {selectedFacilityObj.image_url && (
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                  <span className="bg-white/90 text-slate-900 text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-lg">
+                                    <Eye className="w-3 h-3" /> Click to Zoom
+                                  </span>
+                                </div>
+                              )}
+                              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-white">
+                                <span className="text-[10px] font-extrabold uppercase tracking-wide block">Photo 1 • Exterior / Entrance</span>
+                              </div>
+                            </div>
+
+                            <div
+                              className="relative h-36 rounded-xl overflow-hidden border border-slate-300/80 bg-slate-900 group shadow-xs cursor-zoom-in"
+                              onClick={() => selectedFacilityObj.image_url_2 && setZoomImage({ src: selectedFacilityObj.image_url_2, label: `${selectedFacilityObj.name} — Photo 2: Interior / Amenities` })}
+                            >
+                              {selectedFacilityObj.image_url_2 ? (
+                                <img
+                                  src={selectedFacilityObj.image_url_2}
+                                  alt={`${selectedFacilityObj.name} View 2`}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs bg-slate-800/80">
+                                  <ImageIcon className="w-6 h-6 mb-1 opacity-50 text-slate-400" />
+                                  <span className="font-medium text-slate-300">No photo display yet</span>
+                                </div>
+                              )}
+                              {selectedFacilityObj.image_url_2 && (
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                  <span className="bg-white/90 text-slate-900 text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-lg">
+                                    <Eye className="w-3 h-3" /> Click to Zoom
+                                  </span>
+                                </div>
+                              )}
+                              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-white">
+                                <span className="text-[10px] font-extrabold uppercase tracking-wide block">Photo 2 • Interior / Amenities</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <form onSubmit={handleReserveSubmit} className="space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <Input
@@ -870,73 +1040,176 @@ export function PublicPortal() {
                           )}
                         </div>
 
+                        {/* RESUBMIT APPLICATION BANNER */}
+                        {resubmittingTicket && (
+                          <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between">
+                            <div>
+                              <p className="font-bold text-xs text-blue-900">
+                                ✏️ Re-editing Reservation: <span className="font-mono">{resubmittingTicket.reference_no || resubmittingTicket.ref_no}</span>
+                              </p>
+                              <p className="text-[11px] text-blue-700">Modify your date, slots, or details, then click "Confirm & Resubmit Reservation".</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setResubmittingTicket(null)}
+                              className="text-xs text-blue-700 hover:text-blue-900 font-bold px-2.5 py-1 bg-white rounded-lg border border-blue-200 cursor-pointer"
+                            >
+                              Cancel Edit
+                            </button>
+                          </div>
+                        )}
+
                         {/* DATE AND TIME */}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <Input
-                            label="Event Date *"
-                            type="date"
-                            required
-                            value={reserveForm.event_date}
-                            onChange={(e) => setReserveForm({ ...reserveForm, event_date: e.target.value })}
-                          />
-                          <div>
-                            <label className="block text-xs font-semibold text-[#334155] mb-1.5">Start Time *</label>
-                            <select
-                              value={reserveForm.start_time}
-                              onChange={(e) => setReserveForm({ ...reserveForm, start_time: e.target.value })}
-                              className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm"
-                            >
-                              <option value="06:00 AM">06:00 AM</option>
-                              <option value="07:00 AM">07:00 AM</option>
-                              <option value="08:00 AM">08:00 AM</option>
-                              <option value="09:00 AM">09:00 AM</option>
-                              <option value="10:00 AM">10:00 AM</option>
-                              <option value="11:00 AM">11:00 AM</option>
-                              <option value="12:00 PM">12:00 PM</option>
-                              <option value="01:00 PM">01:00 PM</option>
-                              <option value="02:00 PM">02:00 PM</option>
-                              <option value="03:00 PM">03:00 PM</option>
-                              <option value="04:00 PM">04:00 PM</option>
-                              <option value="05:00 PM">05:00 PM</option>
-                              <option value="06:00 PM">06:00 PM</option>
-                              <option value="07:00 PM">07:00 PM</option>
-                              <option value="08:00 PM">08:00 PM</option>
-                            </select>
+                        <div className="space-y-4">
+                          <div className="max-w-xs">
+                            <Input
+                              label="Event Date *"
+                              type="date"
+                              required
+                              value={reserveForm.event_date}
+                              onChange={(e) => setReserveForm({ ...reserveForm, event_date: e.target.value })}
+                            />
                           </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-[#334155] mb-1.5">End Time *</label>
-                            <select
-                              value={reserveForm.end_time}
-                              onChange={(e) => setReserveForm({ ...reserveForm, end_time: e.target.value })}
-                              className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm"
-                            >
-                              <option value="08:00 AM">08:00 AM</option>
-                              <option value="09:00 AM">09:00 AM</option>
-                              <option value="10:00 AM">10:00 AM</option>
-                              <option value="11:00 AM">11:00 AM</option>
-                              <option value="12:00 PM">12:00 PM</option>
-                              <option value="01:00 PM">01:00 PM</option>
-                              <option value="02:00 PM">02:00 PM</option>
-                              <option value="03:00 PM">03:00 PM</option>
-                              <option value="04:00 PM">04:00 PM</option>
-                              <option value="05:00 PM">05:00 PM</option>
-                              <option value="06:00 PM">06:00 PM</option>
-                              <option value="07:00 PM">07:00 PM</option>
-                              <option value="08:00 PM">08:00 PM</option>
-                              <option value="09:00 PM">09:00 PM</option>
-                              <option value="10:00 PM">10:00 PM</option>
-                            </select>
-                          </div>
+
+                          {/* 2 Fixed 4-Hour Time Slot Selection Checklist */}
+                          {(() => {
+                            const isMorningSelected = reserveForm.start_time === '08:00 AM' && (reserveForm.end_time === '12:00 PM' || reserveForm.end_time === '05:00 PM');
+                            const isAfternoonSelected = (reserveForm.start_time === '01:00 PM' && reserveForm.end_time === '05:00 PM') || (reserveForm.start_time === '08:00 AM' && reserveForm.end_time === '05:00 PM');
+                            const isBothSelected = isMorningSelected && isAfternoonSelected;
+
+                            const mPrice = Number(selectedFacilityObj?.morning_rate ?? selectedFacilityObj?.hourly_rate ?? 0);
+                            const aPrice = Number(selectedFacilityObj?.afternoon_rate ?? selectedFacilityObj?.hourly_rate ?? 0);
+
+                            const handleToggleSlot = (slot: 'morning' | 'afternoon') => {
+                              if (slot === 'morning') {
+                                if (isMorningSelected) {
+                                  if (isAfternoonSelected) {
+                                    setReserveForm(prev => ({ ...prev, start_time: '01:00 PM', end_time: '05:00 PM' }));
+                                  }
+                                } else {
+                                  if (isAfternoonSelected) {
+                                    setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
+                                  } else {
+                                    setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
+                                  }
+                                }
+                              } else {
+                                if (isAfternoonSelected) {
+                                  if (isMorningSelected) {
+                                    setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
+                                  }
+                                } else {
+                                  if (isMorningSelected) {
+                                    setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
+                                  } else {
+                                    setReserveForm(prev => ({ ...prev, start_time: '01:00 PM', end_time: '05:00 PM' }));
+                                  }
+                                }
+                              }
+                            };
+
+                            const handleSelectBoth = () => {
+                              if (isBothSelected) {
+                                setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
+                              } else {
+                                setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
+                              }
+                            };
+
+                            return (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <label className="block text-xs font-bold text-[#334155] uppercase tracking-wider">
+                                    Select Time Slot (4 Hours Each) *
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={handleSelectBoth}
+                                    className={`text-[11px] font-bold px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                                      isBothSelected
+                                        ? 'bg-blue-600 text-white shadow-sm'
+                                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                    }`}
+                                  >
+                                    {isBothSelected ? '✓ Both Slots Selected (Full Day: 08:00 AM – 05:00 PM)' : '+ Book Both Slots (Full Day: 08:00 AM – 05:00 PM)'}
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  {/* Morning Slot Box */}
+                                  <div
+                                    onClick={() => handleToggleSlot('morning')}
+                                    className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 select-none ${
+                                      isMorningSelected
+                                        ? 'bg-blue-50/90 border-blue-500 text-blue-950 shadow-sm ring-1 ring-blue-500/30'
+                                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <div className="pt-0.5 shrink-0">
+                                      {isMorningSelected ? (
+                                        <CheckSquare className="w-5 h-5 text-blue-600" />
+                                      ) : (
+                                        <Square className="w-5 h-5 text-slate-400" />
+                                      )}
+                                    </div>
+                                    <div className="space-y-0.5 flex-1">
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-extrabold text-xs sm:text-sm">Morning Slot</span>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isMorningSelected ? 'bg-blue-200 text-blue-900' : 'bg-slate-100 text-slate-600'}`}>
+                                          4 Hours
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-slate-500 font-medium">08:00 AM – 12:00 PM</p>
+                                      <p className="text-xs font-bold text-emerald-600 pt-1">
+                                        ₱{mPrice.toLocaleString()}.00 <span className="text-[10px] font-normal text-slate-500">/ slot</span>
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {/* Afternoon Slot Box */}
+                                  <div
+                                    onClick={() => handleToggleSlot('afternoon')}
+                                    className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 select-none ${
+                                      isAfternoonSelected
+                                        ? 'bg-blue-50/90 border-blue-500 text-blue-950 shadow-sm ring-1 ring-blue-500/30'
+                                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <div className="pt-0.5 shrink-0">
+                                      {isAfternoonSelected ? (
+                                        <CheckSquare className="w-5 h-5 text-blue-600" />
+                                      ) : (
+                                        <Square className="w-5 h-5 text-slate-400" />
+                                      )}
+                                    </div>
+                                    <div className="space-y-0.5 flex-1">
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-extrabold text-xs sm:text-sm">Afternoon Slot</span>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isAfternoonSelected ? 'bg-blue-200 text-blue-900' : 'bg-slate-100 text-slate-600'}`}>
+                                          4 Hours
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-slate-500 font-medium">01:00 PM – 05:00 PM</p>
+                                      <p className="text-xs font-bold text-emerald-600 pt-1">
+                                        ₱{aPrice.toLocaleString()}.00 <span className="text-[10px] font-normal text-slate-500">/ slot</span>
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         {/* Live Calculated Fee & Duration Banner */}
                         <div className="p-3.5 rounded-2xl border bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 text-blue-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                           <div className="space-y-0.5">
                             <span className="text-[10px] font-bold uppercase tracking-wider block text-blue-700">
-                              ⏱️ Computed Duration & Rate:
+                              ⏱️ Scheduled Slot & Duration:
                             </span>
                             <p className="font-semibold text-slate-800">
-                              <strong>{bookingHours} {bookingHours === 1 ? 'Hour' : 'Hours'}</strong> ({reserveForm.start_time} – {reserveForm.end_time}) • <span className="text-slate-600">Rate: ₱{(selectedFacilityObj?.hourly_rate || 0).toLocaleString()}.00 / hr</span>
+                              <strong>{bookingHours} {bookingHours === 1 ? 'Hour' : 'Hours'}</strong> ({reserveForm.start_time} – {reserveForm.end_time})
+                              {bookingHours === 8 && <span className="ml-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">Both Slots Combined (slot price × 2)</span>}
                             </p>
                           </div>
                           <div className="sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 border-blue-200/60">
@@ -1009,10 +1282,41 @@ export function PublicPortal() {
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    const existing = aiConflict.existingBooking;
+                                    handleStartResubmitFromBooking(existing);
+                                  }}
+                                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                  Re-edit / Resubmit Ticket
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setViewingRecognizedTicket(aiConflict.existingBooking || {
+                                      reference_no: aiConflict.existingBooking?.reference_no || 'RES-SCHEDULE',
+                                      facility_name: selectedFacilityObj?.name,
+                                      event_date: reserveForm.event_date,
+                                      start_time: reserveForm.start_time,
+                                      end_time: reserveForm.end_time,
+                                      status: 'Pending Review',
+                                      purpose: reserveForm.purpose,
+                                      applicant_name: reserveForm.applicant_name,
+                                      applicant_phone: reserveForm.applicant_phone
+                                    });
+                                  }}
+                                  className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                                  View Ticket
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
                                     setReserveForm(prev => ({ ...prev, event_date: '', start_time: '08:00 AM', end_time: '12:00 PM' }));
                                     setAiConflict(null);
                                   }}
-                                  className="px-3.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/40 text-amber-200 border border-amber-400/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+                                  className="px-3.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/40 text-amber-200 border border-amber-400/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                                 >
                                   <Calendar className="w-3.5 h-3.5" />
                                   Book Another Date
@@ -1027,10 +1331,10 @@ export function PublicPortal() {
                                       navigate('/my-tickets');
                                     }
                                   }}
-                                  className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+                                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                                 >
-                                  <FileCheck className="w-3.5 h-3.5 text-emerald-400" />
-                                  View Your Existing Ticket
+                                  <FileCheck className="w-3.5 h-3.5" />
+                                  My Tickets
                                 </button>
                               </div>
                             )}
@@ -1045,12 +1349,7 @@ export function PublicPortal() {
                                       <button
                                         key={idx}
                                         type="button"
-                                        onClick={() => {
-                                          if (slot.includes('02:00 PM')) {
-                                            setReserveForm(prev => ({ ...prev, start_time: '02:00 PM', end_time: '06:00 PM' }));
-                                          }
-                                          setAppliedAlternativeSlot(slot);
-                                        }}
+                                        onClick={() => handleApplyAlternativeSlot(slot)}
                                         className="bg-white/10 hover:bg-white/25 hover:border-emerald-400/50 hover:text-white text-indigo-200 px-3.5 py-1.5 rounded-xl border border-white/20 text-xs font-mono transition-all flex items-center gap-2 cursor-pointer shadow-sm group"
                                       >
                                         <span className="font-semibold">{slot}</span>
@@ -1077,8 +1376,27 @@ export function PublicPortal() {
                             AI Conflict Check & Alternate Finder
                           </Button>
 
-                          <Button type="submit" size="md" className="w-full sm:w-auto px-8 font-bold">
-                            Submit Reservation Request
+                          <Button
+                            type="submit"
+                            size="md"
+                            disabled={(Boolean(aiConflict?.hasConflict) || (Boolean(aiConflict?.isOwnSchedule))) && !resubmittingTicket || isPaxExceeded}
+                            className={`w-full sm:w-auto px-8 font-bold ${
+                              (aiConflict?.hasConflict || aiConflict?.isOwnSchedule) && !resubmittingTicket || isPaxExceeded
+                                ? 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300'
+                                : resubmittingTicket
+                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md'
+                                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
+                            }`}
+                          >
+                            {isPaxExceeded
+                              ? `🚫 Exceeds Max Capacity (${selectedFacilityObj?.capacity} Pax)`
+                              : resubmittingTicket
+                              ? 'Confirm & Resubmit Reservation'
+                              : aiConflict?.hasConflict
+                              ? '🚫 Slot Already Booked — Pick Another'
+                              : aiConflict?.isOwnSchedule
+                              ? '🚫 You Already Booked This Slot'
+                              : 'Submit Reservation Request'}
                           </Button>
                         </div>
                       </form>
@@ -1961,6 +2279,113 @@ export function PublicPortal() {
         )}
       </Modal>
 
+      {/* Popout Modal: View Own Recognized Ticket */}
+      <Modal
+        isOpen={Boolean(viewingRecognizedTicket)}
+        onClose={() => setViewingRecognizedTicket(null)}
+        title="Your Existing Reservation Ticket"
+        description="This is your currently active booking for this date and slot."
+        maxWidth="md"
+      >
+        {viewingRecognizedTicket && (
+          <div className="space-y-4 text-xs">
+            {/* Dark voucher header */}
+            <div className="p-4 bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white rounded-xl border border-blue-500/30 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                  Reservation Voucher
+                </span>
+                <Badge variant="info" className="bg-blue-500/20 text-blue-200 border-blue-400/40 text-[10px] py-0.5 font-bold">
+                  {viewingRecognizedTicket.status || 'Pending Review'}
+                </Badge>
+              </div>
+              <h4 className="text-base font-extrabold text-white">
+                {viewingRecognizedTicket.facility_name || selectedFacilityObj?.name || 'Municipal Facility'}
+              </h4>
+              <p className="font-mono text-blue-300 text-xs font-bold">
+                {viewingRecognizedTicket.reference_no || '—'}
+              </p>
+            </div>
+
+            {/* Ticket body */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 text-slate-800">
+              <p className="font-bold text-xs uppercase text-slate-500 tracking-wider">Booking Details</p>
+              <div className="grid grid-cols-2 gap-3 text-[11px]">
+                <div className="p-2.5 bg-white rounded-lg border border-slate-200/80">
+                  <span className="text-slate-400 block text-[10px] font-medium">Event Date</span>
+                  <span className="font-bold text-slate-800">{viewingRecognizedTicket.event_date || reserveForm.event_date}</span>
+                </div>
+                <div className="p-2.5 bg-white rounded-lg border border-blue-200 bg-blue-50/40">
+                  <span className="text-blue-700 block text-[10px] font-medium">Time Slot</span>
+                  <span className="font-bold text-blue-800">
+                    {viewingRecognizedTicket.start_time || reserveForm.start_time} – {viewingRecognizedTicket.end_time || reserveForm.end_time}
+                  </span>
+                </div>
+                <div className="p-2.5 bg-white rounded-lg border border-slate-200/80">
+                  <span className="text-slate-400 block text-[10px] font-medium">Applicant</span>
+                  <span className="font-bold text-slate-800">{viewingRecognizedTicket.applicant_name || reserveForm.applicant_name}</span>
+                </div>
+                <div className="p-2.5 bg-white rounded-lg border border-slate-200/80">
+                  <span className="text-slate-400 block text-[10px] font-medium">Purpose</span>
+                  <span className="font-bold text-slate-800 truncate block">{viewingRecognizedTicket.purpose || reserveForm.purpose}</span>
+                </div>
+              </div>
+              {(viewingRecognizedTicket.fee_amount > 0 || viewingRecognizedTicket.hourly_rate > 0) && (
+                <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center justify-between">
+                  <span className="text-emerald-700 text-[10px] font-bold uppercase">Total Fee</span>
+                  <span className="font-extrabold text-emerald-900 font-mono text-sm">
+                    ₱{Number(viewingRecognizedTicket.fee_amount || 0).toLocaleString()}.00
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="pt-3 flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setViewingRecognizedTicket(null)}
+                className="text-slate-500 hover:text-slate-700 text-xs font-semibold py-1.5 px-3 transition-colors"
+              >
+                Close
+              </button>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-blue-700 border-blue-300 hover:bg-blue-50 font-bold text-xs"
+                  onClick={() => {
+                    handleStartResubmitFromBooking(viewingRecognizedTicket);
+                    setViewingRecognizedTicket(null);
+                  }}
+                >
+                  <Edit className="w-3.5 h-3.5 mr-1" />
+                  Re-edit / Resubmit Ticket
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4"
+                  onClick={() => {
+                    const ref = viewingRecognizedTicket.reference_no;
+                    setViewingRecognizedTicket(null);
+                    if (ref) {
+                      setTrackRef(ref);
+                      setActiveTab('status');
+                      handleTrack(ref);
+                    }
+                  }}
+                >
+                  <ExternalLink className="w-3.5 h-3.5 mr-1" />
+                  Track Status
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* Popout Modal for Applied Alternative Slot */}
       <Modal
         isOpen={Boolean(appliedAlternativeSlot)}
@@ -1998,28 +2423,76 @@ export function PublicPortal() {
                 </div>
                 <div className="p-2.5 bg-white rounded-lg border border-emerald-300 bg-emerald-50/40">
                   <span className="text-emerald-700 block text-[10px] font-medium">New Time Window</span>
-                  <span className="font-bold text-emerald-800">02:00 PM - 06:00 PM</span>
+                  <span className="font-bold text-emerald-800">{reserveForm.start_time} - {reserveForm.end_time}</span>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-emerald-700 pt-1 font-medium">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>The schedule conflict is resolved. You can proceed with completing your reservation.</span>
+                <span>The schedule conflict is resolved. Click below to continue and complete your reservation.</span>
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-end border-t border-slate-100">
+            <div className="pt-3 flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setAppliedAlternativeSlot(null);
+                  setAiConflict(null);
+                }}
+                className="text-slate-500 hover:text-slate-700 text-xs font-semibold py-1.5 px-3 transition-colors"
+              >
+                Review Form Details
+              </button>
               <Button
                 size="sm"
                 variant="primary"
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5"
-                onClick={() => setAppliedAlternativeSlot(null)}
+                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 shadow-sm"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  const targetDate = reserveForm.event_date;
+                  const targetStart = reserveForm.start_time;
+                  const targetEnd = reserveForm.end_time;
+                  setAppliedAlternativeSlot(null);
+                  setAiConflict(null);
+                  await handleReserveSubmit(undefined, {
+                    event_date: targetDate,
+                    start_time: targetStart,
+                    end_time: targetEnd
+                  });
+                }}
               >
-                Continue Reservation
+                Continue & Submit Reservation
               </Button>
             </div>
           </div>
         )}
       </Modal>
+
+      {/* Image Zoom Lightbox */}
+      {zoomImage && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/90 flex flex-col items-center justify-center p-4 animate-fade-in"
+          onClick={() => setZoomImage(null)}
+        >
+          <div className="relative max-w-5xl w-full max-h-[90vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => setZoomImage(null)}
+              className="absolute -top-10 right-0 text-white/70 hover:text-white text-sm font-bold flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl transition-colors z-10"
+            >
+              <X className="w-4 h-4" /> Close
+            </button>
+            <img
+              src={zoomImage.src}
+              alt={zoomImage.label}
+              className="max-h-[80vh] max-w-full w-auto object-contain rounded-2xl shadow-2xl border border-white/10"
+            />
+            <p className="text-white/80 text-xs font-bold mt-3 text-center bg-black/40 px-4 py-1.5 rounded-full">
+              {zoomImage.label}
+            </p>
+          </div>
+          <p className="text-white/40 text-[11px] mt-4">Click anywhere outside to close</p>
+        </div>
+      )}
     </div>
   );
 }

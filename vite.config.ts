@@ -26,9 +26,9 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/eprov-rest': {
-        target: 'https://supa.eprovider.site/rest',
+        target: 'https://supa.eprovider.site',
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/eprov-rest/, ''),
+        rewrite: (p) => p.replace(/^\/eprov-rest/, '/rest'),
       },
     },
   },

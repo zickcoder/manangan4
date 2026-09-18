@@ -39,9 +39,11 @@ CREATE TABLE IF NOT EXISTS facilities (
   location VARCHAR(255) NOT NULL,
   amenities TEXT DEFAULT 'Sound System, Aircon, Chairs, Stage',
   status VARCHAR(50) DEFAULT 'Available',
-  image_url VARCHAR(255),
+  image_url TEXT,
+  image_url_2 TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+-- MIGRATION: ALTER TABLE facilities ADD COLUMN IF NOT EXISTS image_url_2 TEXT;
 
 -- 3. FACILITY RESERVATIONS TABLE
 CREATE TABLE IF NOT EXISTS facility_reservations (
@@ -115,8 +117,13 @@ CREATE TABLE IF NOT EXISTS burial_records (
   payment_method VARCHAR(50),
   paid_at TIMESTAMP WITH TIME ZONE,
   payment_due_date DATE,
+  -- Citizen-uploaded document URLs for admin review
+  death_certificate_url TEXT,
+  valid_id_url TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+-- MIGRATION: ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS death_certificate_url TEXT;
+-- MIGRATION: ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS valid_id_url TEXT;
 
 -- 6. UTILITY REQUESTS TABLE
 CREATE TABLE IF NOT EXISTS utility_requests (

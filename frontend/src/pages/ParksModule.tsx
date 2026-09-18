@@ -15,8 +15,12 @@ import {
   Trash2,
   Package,
   Save,
-  X
+  X,
+  Upload,
+  Image as ImageIcon,
+  MapPin
 } from 'lucide-react';
+import { compressImage } from '../lib/imageCompressor';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -32,7 +36,8 @@ import {
   updateFacility,
   deleteFacility,
   calculateBookingHours,
-  calculateFacilityFee
+  calculateFacilityFee,
+  calculateSlotFee
 } from '../lib/api';
 import { Facility, FacilityReservation } from '../types';
 
@@ -52,12 +57,16 @@ export function ParksModule() {
   const [isParkFormOpen, setIsParkFormOpen] = useState(false);
   const [editingPark, setEditingPark] = useState<Facility | null>(null);
   const [parkForm, setParkForm] = useState({
-    name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', status: 'Available', amenities: ''
+    name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0',
+    morning_rate: '0', afternoon_rate: '0',
+    status: 'Available', amenities: '',
+    image_url: '',
+    image_url_2: ''
   });
 
   const openAddPark = () => {
     setEditingPark(null);
-    setParkForm({ name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', status: 'Available', amenities: '' });
+    setParkForm({ name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', morning_rate: '0', afternoon_rate: '0', status: 'Available', amenities: '', image_url: '', image_url_2: '' });
     setIsParkFormOpen(true);
   };
 
@@ -68,29 +77,64 @@ export function ParksModule() {
       category: p.category,
       capacity: String(p.capacity),
       hourly_rate: String(p.hourly_rate),
+      morning_rate: String((p as any).morning_rate ?? p.hourly_rate ?? 0),
+      afternoon_rate: String((p as any).afternoon_rate ?? p.hourly_rate ?? 0),
       status: (p as any).status === 'Not Available' ? 'Not Available' : 'Available',
-      amenities: p.amenities || ''
+      amenities: p.amenities || '',
+      image_url: p.image_url || '',
+      image_url_2: p.image_url_2 || ''
     });
     setIsParkFormOpen(true);
   };
 
+  const handleParkImageUpload = async (file: File, imageKey: 'image_url' | 'image_url_2') => {
+    try {
+      const compressed = await compressImage(file);
+      setParkForm(prev => ({ ...prev, [imageKey]: compressed }));
+    } catch {
+      alert('Failed to process image file. Please try another image.');
+    }
+  };
+
+  const [isSavingPark, setIsSavingPark] = useState(false);
+
   const handleSavePark = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = {
-      ...parkForm,
-      location: editingPark?.location || 'Public Recreation Ground Sector',
-      amenities: parkForm.amenities.trim() || 'Standard Park & Recreation Amenities',
-      image_url: editingPark?.image_url || null,
-      capacity: parseInt(parkForm.capacity) || 100,
-      hourly_rate: parseFloat(parkForm.hourly_rate) || 0
-    };
-    if (editingPark) {
-      await updateFacility(editingPark.id, payload);
-    } else {
-      await createFacility(payload);
+    setIsSavingPark(true);
+    try {
+      const morningRate = parseFloat(parkForm.morning_rate) || 0;
+      const afternoonRate = parseFloat(parkForm.afternoon_rate) || 0;
+      const payload = {
+        ...parkForm,
+        location: editingPark?.location || 'Public Recreation Ground Sector',
+        amenities: parkForm.amenities.trim() || 'Standard Park & Recreation Amenities',
+        image_url: parkForm.image_url || null,
+        image_url_2: parkForm.image_url_2 || null,
+        capacity: parseInt(parkForm.capacity) || 100,
+        hourly_rate: morningRate,
+        morning_rate: morningRate,
+        afternoon_rate: afternoonRate
+      };
+      if (editingPark) {
+        await updateFacility(editingPark.id, payload);
+      } else {
+        await createFacility(payload);
+      }
+      setIsParkFormOpen(false);
+      // govserve_data_updated event will trigger loadData automatically — no need to call it here
+      setAnimModal({
+        isOpen: true,
+        type: 'success',
+        title: editingPark ? '✓ Changes Saved' : '✓ Park Added',
+        message: `${parkForm.name} has been successfully ${ editingPark ? 'updated' : 'added'}.`
+      });
+    } catch (err) {
+      console.error('Error saving park:', err);
+      setIsParkFormOpen(false);
+      loadData();
+    } finally {
+      setIsSavingPark(false);
     }
-    setIsParkFormOpen(false);
-    loadData();
   };
 
   const handleDeletePark = async (p: Facility) => {
@@ -168,8 +212,9 @@ export function ParksModule() {
 
   const saveEquipment = (list: string[]) => {
     setEquipmentList(list);
+    // Store equipment locally only — do NOT dispatch govserve_data_updated
+    // to avoid triggering unnecessary loadData network calls
     localStorage.setItem('govserve_equipment_parks', JSON.stringify(list));
-    window.dispatchEvent(new Event('govserve_data_updated'));
   };
 
   const addEquipItem = () => {
@@ -220,13 +265,18 @@ export function ParksModule() {
 
   useEffect(() => {
     loadData();
-    // Event-driven refresh only — no polling interval to prevent ghost flicker & cross-contamination
-    const handleUpdate = () => loadData();
+    // Debounced event-driven refresh — prevents multiple rapid loadData calls
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const handleUpdate = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => loadData(), 300);
+    };
     window.addEventListener('govserve_data_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
     return () => {
       window.removeEventListener('govserve_data_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
+      if (debounceTimer) clearTimeout(debounceTimer);
     };
   }, [statusFilter]);
 
@@ -253,7 +303,7 @@ export function ParksModule() {
       );
 
       setIsReviewModalOpen(false);
-      loadData();
+      // govserve_data_updated event from updateReservationStatus triggers debounced loadData automatically
 
       setTimeout(() => {
         if (status === 'Paid') {
@@ -306,7 +356,18 @@ export function ParksModule() {
         message: 'Verifying park schedule for conflicts.'
       });
 
-      const parkObj = parks.find(p => p.id === Number(newForm.facility_id)) || parks[0];
+      const durationHours = calculateBookingHours(newForm.start_time, newForm.end_time);
+      if (durationHours < 1 || newForm.start_time.trim().toLowerCase() === newForm.end_time.trim().toLowerCase()) {
+        setAnimModal({
+          isOpen: true,
+          type: 'rejected',
+          title: 'Invalid Booking Duration',
+          message: 'Start Time and End Time cannot be the same. The reservation duration must be at least 1 hour (e.g. 08:00 AM to 09:00 AM).'
+        });
+        return;
+      }
+
+      const parkObj = parks.find(p => p.id === Number(newForm.facility_id));
 
       // Double booking check
       if (parkObj && newForm.event_date && newForm.start_time && newForm.end_time) {
@@ -347,7 +408,7 @@ export function ParksModule() {
         hourly_rate: parkObj?.hourly_rate
       });
       setIsNewModalOpen(false);
-      loadData();
+      // govserve_data_updated event from createReservation will trigger debounced loadData automatically
 
       setTimeout(() => {
         setAnimModal({
@@ -404,42 +465,106 @@ export function ParksModule() {
 
       {/* Parks Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {parks.map((p) => (
-          <Card key={p.id} hoverEffect className="border-[#cbd5e1] p-5 space-y-2 bg-gradient-to-br from-emerald-50/40 to-white">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-bold text-emerald-700 uppercase bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
-                Capacity: {p.capacity} Pax
-              </span>
-              <div className="flex items-center gap-2">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                  ((p as any).status || 'Available') === 'Available'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : 'bg-rose-50 text-rose-700 border-rose-200'
-                }`}>
-                  {((p as any).status || 'Available') === 'Available' ? '● Available' : '○ Not Available'}
-                </span>
-                <span className="text-xs font-bold text-slate-900">₱{p.hourly_rate} / hr</span>
+        {parks.map((p) => {
+          const mRate = Number((p as any).morning_rate ?? p.hourly_rate ?? 0);
+          const aRate = Number((p as any).afternoon_rate ?? p.hourly_rate ?? 0);
+          const isAvail = ((p as any).status || 'Available') === 'Available';
+          return (
+            <Card key={p.id} hoverEffect className="border-slate-200/90 p-0 overflow-hidden bg-white shadow-soft rounded-2xl flex flex-col justify-between transition-all">
+              <div>
+                {p.image_url ? (
+                  <div className="relative h-36 w-full overflow-hidden bg-slate-900 group">
+                    <img
+                      src={p.image_url}
+                      alt={p.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-black/20" />
+                    <div className="absolute top-2.5 left-2.5">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs ${
+                        isAvail ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
+                      }`}>
+                        {isAvail ? '● Available' : '○ Unavailable'}
+                      </span>
+                    </div>
+                    <div className="absolute top-2.5 right-2.5">
+                      <span className="text-[10px] font-bold text-white bg-black/60 backdrop-blur-xs px-2 py-0.5 rounded-lg border border-white/20">
+                        {p.capacity} Pax
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative h-32 w-full bg-slate-100/90 border-b border-slate-200/80 flex flex-col items-center justify-center p-3 text-center">
+                    <div className="flex flex-col items-center gap-1 text-slate-400">
+                      <ImageIcon className="w-6 h-6 opacity-50 text-emerald-600" />
+                      <span className="text-[11px] font-medium text-slate-500">No photo display yet</span>
+                    </div>
+                    <div className="absolute top-2.5 left-2.5">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs ${
+                        isAvail ? 'bg-emerald-600 text-white' : 'bg-rose-500 text-white'
+                      }`}>
+                        {isAvail ? '● Available' : '○ Unavailable'}
+                      </span>
+                    </div>
+                    <div className="absolute top-2.5 right-2.5">
+                      <span className="text-[10px] font-bold text-slate-700 bg-white/95 px-2 py-0.5 rounded-lg border border-slate-200 shadow-xs">
+                        {p.capacity} Pax
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-4 space-y-2">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 leading-snug line-clamp-1">{p.name}</h3>
+                    <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                      <MapPin className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                      <span className="truncate">{p.location}</span>
+                    </p>
+                  </div>
+
+                  {p.amenities && (
+                    <p className="text-[11px] text-slate-500 line-clamp-1 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                      {p.amenities}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-            <h3 className="text-base font-bold text-slate-900 leading-tight">{p.name}</h3>
-            <p className="text-xs text-slate-600">{p.location}</p>
-            <p className="text-[11px] text-slate-500 border-t border-slate-100 pt-2">{p.amenities}</p>
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => openEditPark(p)}
-                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
-              >
-                <Pencil className="w-3 h-3" /> Edit
-              </button>
-              <button
-                onClick={() => handleDeletePark(p)}
-                className="flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
-              >
-                <Trash2 className="w-3 h-3" /> Delete
-              </button>
-            </div>
-          </Card>
-        ))}
+
+              <div className="p-4 pt-0 space-y-3">
+                <div className="pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-2">
+                  <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-100/90 flex flex-col">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Morning Rate</span>
+                    <span className="text-xs font-black text-emerald-900 mt-0.5">
+                      {mRate > 0 ? `₱${mRate.toLocaleString()}` : 'Free'}
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-100/90 flex flex-col">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Afternoon Rate</span>
+                    <span className="text-xs font-black text-emerald-900 mt-0.5">
+                      {aRate > 0 ? `₱${aRate.toLocaleString()}` : 'Free'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => openEditPark(p)}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5" /> Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeletePark(p)}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                  </button>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Parks Equipment Manager Section */}
@@ -793,7 +918,7 @@ export function ParksModule() {
             onChange={(e) => setNewForm({ ...newForm, purpose: e.target.value })}
           />
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="space-y-3">
             <Input
               label="Date *"
               type="date"
@@ -801,18 +926,80 @@ export function ParksModule() {
               value={newForm.event_date}
               onChange={(e) => { setNewForm({ ...newForm, event_date: e.target.value }); setAiResult(null); }}
             />
-            <Input
-              label="Start Time *"
-              required
-              value={newForm.start_time}
-              onChange={(e) => { setNewForm({ ...newForm, start_time: e.target.value }); setAiResult(null); }}
-            />
-            <Input
-              label="End Time *"
-              required
-              value={newForm.end_time}
-              onChange={(e) => { setNewForm({ ...newForm, end_time: e.target.value }); setAiResult(null); }}
-            />
+            {/* 2-Slot Checklist */}
+            {(() => {
+              const isMorning = newForm.start_time === '08:00 AM' && (newForm.end_time === '12:00 PM' || newForm.end_time === '05:00 PM');
+              const isAfternoon = (newForm.start_time === '01:00 PM' && newForm.end_time === '05:00 PM') || (newForm.start_time === '08:00 AM' && newForm.end_time === '05:00 PM');
+              const isBoth = isMorning && isAfternoon;
+              const selPark = parks.find(p => p.id === Number(newForm.facility_id));
+              const mPrice = Number((selPark as any)?.morning_rate ?? selPark?.hourly_rate ?? 0);
+              const aPrice = Number((selPark as any)?.afternoon_rate ?? selPark?.hourly_rate ?? 0);
+              const slotInfo = selPark ? calculateSlotFee(newForm.start_time, newForm.end_time, selPark) : { hours: 4, fee: 0 };
+
+              const toggle = (slot: 'morning' | 'afternoon') => {
+                if (slot === 'morning') {
+                  if (isMorning) {
+                    setNewForm(prev => ({ ...prev, start_time: '01:00 PM', end_time: '05:00 PM' }));
+                  } else if (isAfternoon) {
+                    setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
+                  } else {
+                    setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
+                  }
+                } else {
+                  if (isAfternoon) {
+                    setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
+                  } else if (isMorning) {
+                    setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
+                  } else {
+                    setNewForm(prev => ({ ...prev, start_time: '01:00 PM', end_time: '05:00 PM' }));
+                  }
+                }
+                setAiResult(null);
+              };
+
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-[#334155] uppercase tracking-wider">Select Time Slot *</label>
+                    <button type="button"
+                      onClick={() => {
+                        isBoth
+                          ? setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }))
+                          : setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
+                        setAiResult(null);
+                      }}
+                      className={`text-[11px] font-bold px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                        isBoth ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      {isBoth ? '✓ Both (Full Day)' : '+ Book Both Slots (Full Day)'}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div onClick={() => toggle('morning')}
+                      className={`p-3 rounded-xl border cursor-pointer select-none transition-all ${
+                        isMorning ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-400/30' : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}>
+                      <p className="font-bold text-xs">{isMorning ? '✓ ' : ''}Morning</p>
+                      <p className="text-[11px] text-slate-500">08:00 AM – 12:00 PM</p>
+                      <p className="text-[11px] font-bold text-emerald-600">₱{mPrice.toLocaleString()}</p>
+                    </div>
+                    <div onClick={() => toggle('afternoon')}
+                      className={`p-3 rounded-xl border cursor-pointer select-none transition-all ${
+                        isAfternoon ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-400/30' : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}>
+                      <p className="font-bold text-xs">{isAfternoon ? '✓ ' : ''}Afternoon</p>
+                      <p className="text-[11px] text-slate-500">01:00 PM – 05:00 PM</p>
+                      <p className="text-[11px] font-bold text-emerald-600">₱{aPrice.toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-xs flex items-center justify-between">
+                    <span className="text-emerald-700 font-semibold">{slotInfo.hours} hrs: {newForm.start_time} – {newForm.end_time}</span>
+                    <span className="font-extrabold text-emerald-900 font-mono">₱{slotInfo.fee.toLocaleString()}.00</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* AI Double-Booking Checker */}
@@ -907,7 +1094,7 @@ export function ParksModule() {
             onChange={e => setParkForm({ ...parkForm, name: e.target.value })}
             placeholder="e.g. Camarin Green Urban Recreation Park"
           />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-[#334155] mb-1">Maximum Capacity (Pax) *</label>
               <input type="number" required min="1" value={parkForm.capacity}
@@ -916,11 +1103,20 @@ export function ParksModule() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-[#334155] mb-1">Price Per Hour (₱/hr) *</label>
-              <input type="number" required min="0" step="0.01" value={parkForm.hourly_rate}
-                onChange={e => setParkForm({ ...parkForm, hourly_rate: e.target.value })}
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Morning Slot Rate (₱) *</label>
+              <input type="number" required min="0" step="1" value={parkForm.morning_rate}
+                onChange={e => setParkForm({ ...parkForm, morning_rate: e.target.value, hourly_rate: e.target.value })}
                 className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-emerald-600"
               />
+              <p className="text-[10px] text-slate-400 mt-0.5">08:00 AM – 12:00 PM</p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#334155] mb-1">Afternoon Slot Rate (₱) *</label>
+              <input type="number" required min="0" step="1" value={parkForm.afternoon_rate}
+                onChange={e => setParkForm({ ...parkForm, afternoon_rate: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 p-2 text-xs focus:outline-none focus:border-emerald-600"
+              />
+              <p className="text-[10px] text-slate-400 mt-0.5">01:00 PM – 05:00 PM</p>
             </div>
           </div>
           <div>
@@ -947,13 +1143,106 @@ export function ParksModule() {
               <option value="Not Available">Not Available (Hidden from Citizens)</option>
             </select>
           </div>
+
+          {/* 2 Image Uploads for Citizen Viewing */}
+          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+              <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />
+                Park Grounds Images for Citizen Viewing (2 Images)
+              </span>
+              <span className="text-[10px] text-slate-500">Citizens see these during ticket booking</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Photo 1: Main Grounds / Entrance */}
+              <div className="space-y-1.5 bg-white p-2.5 rounded-xl border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-700 block">Photo 1: Main Grounds / Panorama</span>
+                {parkForm.image_url ? (
+                  <div className="relative rounded-lg overflow-hidden border border-slate-200 h-24 bg-slate-100 group">
+                    <img src={parkForm.image_url} alt="Photo 1" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setParkForm(prev => ({ ...prev, image_url: '' }))}
+                      className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-md text-[10px] hover:bg-red-700 shadow"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-emerald-400 rounded-lg p-3 text-center cursor-pointer bg-slate-50 transition-colors">
+                    <Upload className="w-5 h-5 text-slate-400 mb-1" />
+                    <span className="text-[10px] font-bold text-emerald-600">Upload Photo 1</span>
+                    <span className="text-[9px] text-slate-400">JPG, PNG (Auto-compressed)</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleParkImageUpload(file, 'image_url');
+                      }}
+                    />
+                  </label>
+                )}
+                <input
+                  type="text"
+                  placeholder="Or paste Image 1 URL..."
+                  value={parkForm.image_url}
+                  onChange={e => setParkForm({ ...parkForm, image_url: e.target.value })}
+                  className="w-full p-1.5 text-[10px] border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {/* Photo 2: Amenities / Pavilion / Playground */}
+              <div className="space-y-1.5 bg-white p-2.5 rounded-xl border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-700 block">Photo 2: Amenities / Pavilion / Stage</span>
+                {parkForm.image_url_2 ? (
+                  <div className="relative rounded-lg overflow-hidden border border-slate-200 h-24 bg-slate-100 group">
+                    <img src={parkForm.image_url_2} alt="Photo 2" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setParkForm(prev => ({ ...prev, image_url_2: '' }))}
+                      className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-md text-[10px] hover:bg-red-700 shadow"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-emerald-400 rounded-lg p-3 text-center cursor-pointer bg-slate-50 transition-colors">
+                    <Upload className="w-5 h-5 text-slate-400 mb-1" />
+                    <span className="text-[10px] font-bold text-emerald-600">Upload Photo 2</span>
+                    <span className="text-[9px] text-slate-400">JPG, PNG (Auto-compressed)</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleParkImageUpload(file, 'image_url_2');
+                      }}
+                    />
+                  </label>
+                )}
+                <input
+                  type="text"
+                  placeholder="Or paste Image 2 URL..."
+                  value={parkForm.image_url_2}
+                  onChange={e => setParkForm({ ...parkForm, image_url_2: e.target.value })}
+                  className="w-full p-1.5 text-[10px] border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+          </div>
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
             <button type="button" onClick={() => setIsParkFormOpen(false)}
               className="px-4 py-1.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-50"
             >Cancel</button>
-            <button type="submit"
-              className="px-5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition-colors"
-            >{editingPark ? 'Save Changes' : 'Add Park / Ground'}</button>
+            <button type="submit" disabled={isSavingPark}
+              className="px-5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-sm transition-colors flex items-center gap-1.5"
+            >
+              {isSavingPark ? 'Saving...' : editingPark ? 'Save Changes' : 'Add Park / Ground'}
+            </button>
           </div>
         </form>
       </Modal>

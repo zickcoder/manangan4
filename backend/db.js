@@ -194,6 +194,9 @@ export async function initDatabase() {
       ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
       ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP;
       ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS payment_due_date DATE;
+      -- Citizen-uploaded document URLs for admin review
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS death_certificate_url TEXT;
+      ALTER TABLE burial_records ADD COLUMN IF NOT EXISTS valid_id_url TEXT;
 
       -- Asset images and specifications
       ALTER TABLE assets ADD COLUMN IF NOT EXISTS image_url TEXT;
@@ -218,6 +221,9 @@ export async function initDatabase() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS pin VARCHAR(6) DEFAULT '123456';
       ALTER TABLE users ADD COLUMN IF NOT EXISTS last_otp_at TIMESTAMP;
       UPDATE users SET pin = '123456' WHERE pin IS NULL OR pin = '';
+
+      -- Venue second image column for Government Facilities & Parks
+      ALTER TABLE facilities ADD COLUMN IF NOT EXISTS image_url_2 TEXT;
     `);
 
     console.log('✅ Schema verified with Columbarium Wall Grid, Asset Specs/Image & Multi-Cemetery support.');

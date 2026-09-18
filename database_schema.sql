@@ -11,6 +11,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS pin VARCHAR(6) DEFAULT '123456';
 -- ALTER TABLE users ADD COLUMN IF NOT EXISTS last_otp_at TIMESTAMP WITH TIME ZONE;
 -- UPDATE users SET pin = '123456' WHERE pin IS NULL OR pin = '';
+-- ALTER TABLE facilities ADD COLUMN IF NOT EXISTS morning_rate NUMERIC(10, 2) DEFAULT 0;
+-- ALTER TABLE facilities ADD COLUMN IF NOT EXISTS afternoon_rate NUMERIC(10, 2) DEFAULT 0;
+-- UPDATE facilities SET morning_rate = hourly_rate, afternoon_rate = hourly_rate WHERE (morning_rate IS NULL OR morning_rate = 0) AND hourly_rate > 0;
 -- ============================================================================
 
 -- 1. USERS TABLE
@@ -36,10 +39,13 @@ CREATE TABLE IF NOT EXISTS facilities (
   category VARCHAR(50) NOT NULL,
   capacity INT DEFAULT 50,
   hourly_rate NUMERIC(10, 2) DEFAULT 0,
+  morning_rate NUMERIC(10, 2) DEFAULT 0,
+  afternoon_rate NUMERIC(10, 2) DEFAULT 0,
   location VARCHAR(255) NOT NULL,
   amenities TEXT DEFAULT 'Sound System, Aircon, Chairs, Stage',
   status VARCHAR(50) DEFAULT 'Available',
   image_url VARCHAR(255),
+  image_url_2 VARCHAR(255),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -195,17 +201,17 @@ VALUES ('Juan M. Dela Cruz', 'juan.delacruz@citizen.gov.ph', 'citizen123', '1234
 ON CONFLICT (email) DO NOTHING;
 
 -- Facilities & Parks
-INSERT INTO facilities (name, category, capacity, hourly_rate, location, amenities, status, image_url) 
+INSERT INTO facilities (name, category, capacity, hourly_rate, morning_rate, afternoon_rate, location, amenities, status, image_url) 
 VALUES
-('Barangay 178 Multi-Purpose Civic Center', 'Government Facility', 350, 500.00, 'Civic Complex, Mindanao Ave.', 'Central Aircon, Full PA Sound System, Stage, 300 Chairs, Generator Backup', 'Available', 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=500&auto=format&fit=crop&q=80'),
-('Camarin Green Urban Recreation Park', 'Park & Recreation', 500, 0.00, 'Camarin Road Sector 3', 'Jogging Trail, Children Playground, Gazebo, Covered Picnic Sheds, Solar Lights', 'Available', 'https://images.unsplash.com/photo-1519331379826-f10be5486c6f?w=500&auto=format&fit=crop&q=80'),
-('Purok 7 Community Amphitheater & Plaza', 'Park & Recreation', 400, 250.00, 'Purok 7 Hillsview', 'Open-Air Stage, Tiered Seating, Ambient Garden Lighting, Perimeter Fence', 'Available', 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=500&auto=format&fit=crop&q=80')
+('Barangay 178 Multi-Purpose Civic Center', 'Government Facility', 350, 500.00, 500.00, 500.00, 'Civic Complex, Mindanao Ave.', 'Central Aircon, Full PA Sound System, Stage, 300 Chairs, Generator Backup', 'Available', 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=500&auto=format&fit=crop&q=80'),
+('Camarin Green Urban Recreation Park', 'Park & Recreation', 500, 0.00, 0.00, 0.00, 'Camarin Road Sector 3', 'Jogging Trail, Children Playground, Gazebo, Covered Picnic Sheds, Solar Lights', 'Available', 'https://images.unsplash.com/photo-1519331379826-f10be5486c6f?w=500&auto=format&fit=crop&q=80'),
+('Purok 7 Community Amphitheater & Plaza', 'Park & Recreation', 400, 250.00, 250.00, 250.00, 'Purok 7 Hillsview', 'Open-Air Stage, Tiered Seating, Ambient Garden Lighting, Perimeter Fence', 'Available', 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=500&auto=format&fit=crop&q=80')
 ON CONFLICT DO NOTHING;
 
--- Columbarium Niches (8 Rows x 10 Columns = 80 Niches)
+-- Columbarium Niches (9 Rows x 10 Columns = 90 Niches in Columbarium Wall Alpha)
 DO $$
 BEGIN
-  FOR r IN 1..8 LOOP
+  FOR r IN 1..9 LOOP
     FOR c IN 1..10 LOOP
       DECLARE
         row_str VARCHAR(10) := CASE WHEN r < 10 THEN 'R0' || r ELSE 'R' || r END;
@@ -213,9 +219,9 @@ BEGIN
         p_code VARCHAR(50) := 'COL-' || row_str || '-' || col_str;
         p_status VARCHAR(50) := 'Available';
       BEGIN
-        IF (r = 1 AND c = 2) OR (r = 2 AND c = 5) OR (r = 3 AND c = 8) OR (r = 5 AND c = 6) OR (r = 7 AND c = 9) THEN
+        IF (r = 1 AND c = 2) OR (r = 2 AND c = 5) OR (r = 3 AND c = 8) OR (r = 5 AND c = 6) OR (r = 7 AND c = 9) OR (r = 9 AND c IN (1, 2, 3)) THEN
           p_status := 'Occupied';
-        ELSIF (r = 1 AND c = 4) OR (r = 4 AND c = 7) OR (r = 6 AND c = 3) THEN
+        ELSIF (r = 1 AND c = 4) OR (r = 4 AND c = 7) OR (r = 6 AND c = 3) OR (r = 9 AND c = 4) THEN
           p_status := 'Reserved';
         END IF;
 
@@ -224,21 +230,6 @@ BEGIN
         ON CONFLICT (plot_code) DO NOTHING;
       END;
     END LOOP;
-  END LOOP;
-END $$;
-
--- Section A Lawn Lots
-DO $$
-BEGIN
-  FOR i IN 1..10 LOOP
-    DECLARE
-      p_code VARCHAR(50) := 'SEC-A-B01-L' || CASE WHEN i < 10 THEN '0' || i ELSE '' || i END;
-      p_status VARCHAR(50) := CASE WHEN i <= 3 THEN 'Occupied' WHEN i = 4 THEN 'Reserved' ELSE 'Available' END;
-    BEGIN
-      INSERT INTO cemetery_plots (cemetery_name, plot_code, section, block_no, lot_no, plot_type, status, price)
-      VALUES ('Barangay 178 Municipal Cemetery', p_code, 'Section A - St. Peter Lawn', 'Block 1', 'Lot ' || i, 'Lawn Lot', p_status, 25000.00)
-      ON CONFLICT (plot_code) DO NOTHING;
-    END;
   END LOOP;
 END $$;
 

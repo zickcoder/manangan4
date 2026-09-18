@@ -14,8 +14,7 @@ import {
   Search,
   ShieldCheck,
   Bot,
-  LogIn,
-  UserPlus
+  LogIn
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -83,16 +82,10 @@ export function LandingPage() {
             </p>
 
             {/* Action Buttons */}
-            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
+            <div className="pt-2 flex justify-center">
               <Link to="/login" className="w-full sm:w-auto">
-                <Button size="lg" className="w-full font-bold shadow-blue shadow-lg" rightIcon={<LogIn className="w-4 h-4" />}>
+                <Button size="lg" className="w-full sm:w-auto font-bold shadow-blue shadow-lg px-8" rightIcon={<LogIn className="w-4 h-4" />}>
                   Citizen Sign In to Access Services
-                </Button>
-              </Link>
-
-              <Link to="/register" className="w-full sm:w-auto">
-                <Button size="lg" variant="outline" className="w-full font-bold" leftIcon={<UserPlus className="w-4 h-4" />}>
-                  Register Citizen Account
                 </Button>
               </Link>
             </div>

@@ -27,7 +27,8 @@ import {
   ArrowRight,
   ExternalLink,
   FileText,
-  Calendar
+  Calendar,
+  Edit
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -46,7 +47,9 @@ import {
   createUtilityRequest, 
   fetchAssets,
   calculateBookingHours,
-  calculateFacilityFee
+  calculateFacilityFee,
+  calculateSlotFee,
+  parse12HToMinutes
 } from '../lib/api';
 import { Facility, CemeteryPlot, Asset } from '../types';
 import { compressImage } from '../lib/imageCompressor';
@@ -99,6 +102,8 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
   const [selectedFacilityId, setSelectedFacilityId] = useState<number>(1);
   const [isSeeMoreFacilitiesOpen, setIsSeeMoreFacilitiesOpen] = useState(false);
   const [facilitySearchQuery, setFacilitySearchQuery] = useState('');
+  // Lightbox for zoomable venue images
+  const [zoomImage, setZoomImage] = useState<{ src: string; label: string } | null>(null);
   const [facilityCategoryFilter, setFacilityCategoryFilter] = useState('all');
 
   const PURPOSE_OPTIONS = [
@@ -174,7 +179,7 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
         ...prev,
         applicant_name: prev.applicant_name || currentUser.name || '',
         applicant_email: prev.applicant_email || currentUser.email || '',
-        applicant_phone: prev.applicant_phone || cleanPhone || ''
+        applicant_phone: prev.applicant_phone || cleanPhone || '09171234567'
       }));
       setUtilityForm(prev => ({
         ...prev,
@@ -385,16 +390,31 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     return () => window.removeEventListener('govserve_data_updated', handleDataUpdate);
   }, []);
 
-  useEffect(() => {
+  const refreshPlots = () => {
     fetchCemeteryPlots('all', 'all', 'all').then((plotList) => {
       setPlots(plotList);
-      const firstAvail = plotList.find((p: CemeteryPlot) => p.status === 'Available') || null;
-      if (firstAvail && !selectedPlot) {
+    }).catch(console.error);
+  };
+
+  useEffect(() => {
+    refreshPlots();
+    // Refresh every 10s while on cemetery tab so newly-submitted burials appear
+    const plotInterval = setInterval(() => {
+      if (activeTab === 'cemetery') refreshPlots();
+    }, 10000);
+    return () => clearInterval(plotInterval);
+  }, [selectedCemetery, activeTab]);
+
+  // Auto-select first available plot whenever plots array changes (handles slow eProvider response)
+  useEffect(() => {
+    if (plots.length > 0 && !selectedPlot) {
+      const firstAvail = plots.find((p: CemeteryPlot) => p.status === 'Available') || null;
+      if (firstAvail) {
         setSelectedPlot(firstAvail);
         setBurialForm(prev => ({ ...prev, plot_id: firstAvail.id }));
       }
-    }).catch(console.error);
-  }, [selectedCemetery]);
+    }
+  }, [plots]);
 
   const isParksMode = activeTab === 'parks';
 
@@ -442,8 +462,9 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     location: 'Civic Complex, Mindanao Ave.',
     amenities: 'Central Aircon, Full PA Sound System, Stage, Chairs'
   });
-  const bookingHours = calculateBookingHours(reserveForm.start_time, reserveForm.end_time);
-  const bookingTotalFee = calculateFacilityFee(reserveForm.start_time, reserveForm.end_time, selectedFacilityObj?.hourly_rate || 0);
+  const slotCalculation = calculateSlotFee(reserveForm.start_time, reserveForm.end_time, selectedFacilityObj);
+  const bookingHours = slotCalculation.hours;
+  const bookingTotalFee = slotCalculation.fee;
   const currentAttendees = parseInt(reserveForm.attendees, 10) || 0;
   const isPaxExceeded = selectedFacilityObj ? currentAttendees > selectedFacilityObj.capacity : false;
 
@@ -456,6 +477,58 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
       const exists = prev.includes(item);
       return exists ? prev.filter(e => e !== item) : [...prev, item];
     });
+  };
+
+  const handleStartResubmitFromBooking = (booking: any) => {
+    if (!booking) return;
+    const refNo = booking.reference_no || booking.ref_no;
+    const originalId = booking.id || booking.originalId;
+
+    let sTime = booking.start_time || '08:00 AM';
+    let eTime = booking.end_time || '12:00 PM';
+    if (!booking.start_time && booking.time && booking.time.includes('-')) {
+      const parts = booking.time.split('-').map((s: string) => s.trim());
+      if (parts[0]) sTime = parts[0];
+      if (parts[1]) eTime = parts[1];
+    }
+
+    let equipList: string[] = [];
+    if (Array.isArray(booking.special_equipment)) {
+      equipList = booking.special_equipment;
+    } else if (typeof booking.special_equipment === 'string') {
+      equipList = booking.special_equipment.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+
+    if (isParksMode) {
+      setParksEquipment(equipList);
+    } else {
+      setFacilityEquipment(equipList);
+    }
+
+    const isoDate = (booking.event_date || booking.date || '').split('T')[0];
+
+    setReserveForm(prev => ({
+      ...prev,
+      applicant_name: booking.applicant_name || booking.applicant || prev.applicant_name,
+      applicant_phone: booking.applicant_phone || booking.contact || prev.applicant_phone,
+      purpose: booking.purpose || booking.details || prev.purpose,
+      attendees: booking.attendees ? String(booking.attendees) : prev.attendees,
+      event_date: isoDate && !isoDate.includes('N/A') ? isoDate : prev.event_date,
+      start_time: sTime,
+      end_time: eTime,
+    }));
+
+    setResubmittingTicket({
+      originalId,
+      ref_no: refNo,
+      reference_no: refNo,
+      category: 'facility',
+      facility_category: isParksMode ? 'Park & Recreation' : 'Government Facility',
+      ...booking
+    });
+
+    setAiConflict(null);
+    setViewingRecognizedTicket(null);
   };
 
   // Immediately clear conflict state when switching venues or tabs
@@ -486,15 +559,8 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
       undefined,
       category
     ).then((res) => {
-      if (res.hasConflict) {
-        setAiConflict({
-          hasConflict: true,
-          isOwnSchedule: false,
-          aiAnalysis: res.message,
-          existingBooking: null,
-          alternativeSlots: res.suggestedSlots
-        });
-      } else if ((res as any).isOwnSchedule) {
+      if ((res as any).isOwnSchedule) {
+        // Own booking detected — show amber warning, do NOT block with red conflict
         setAiConflict({
           hasConflict: false,
           isOwnSchedule: true,
@@ -502,25 +568,61 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
           existingBooking: (res as any).existingBooking,
           alternativeSlots: []
         });
+      } else if (res.hasConflict) {
+        // Foreign conflict — block submission
+        setAiConflict({
+          hasConflict: true,
+          isOwnSchedule: false,
+          aiAnalysis: res.message,
+          existingBooking: null,
+          alternativeSlots: res.suggestedSlots
+        });
       } else {
         setAiConflict(null);
       }
     }).catch(console.error);
   }, [selectedFacilityObj?.id, selectedFacilityObj?.name, isParksMode, reserveForm.event_date, reserveForm.start_time, reserveForm.end_time, reserveForm.applicant_email, reserveForm.applicant_name, activeResubmit]);
 
-  const handleFacilityReserve = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleApplyAlternativeSlot = (slot: string) => {
+    let newStart = '02:00 PM';
+    let newEnd = '06:00 PM';
+    const timeMatch = slot.match(/(\d{1,2}:\d{2}\s*(?:AM|PM))\s*-\s*(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
+    if (timeMatch) {
+      newStart = timeMatch[1];
+      newEnd = timeMatch[2];
+    }
+    const dateMatch = slot.match(/\b\d{4}-\d{2}-\d{2}\b/);
+    const newDate = dateMatch ? dateMatch[0] : reserveForm.event_date;
+
+    setReserveForm(prev => ({
+      ...prev,
+      event_date: newDate,
+      start_time: newStart,
+      end_time: newEnd,
+    }));
+
+    // Clear conflict state immediately so submit button and form are completely unblocked
+    setAiConflict(null);
+    setAppliedAlternativeSlot(slot);
+  };
+
+  const handleFacilityReserve = async (e?: React.FormEvent, overrideSchedule?: { event_date?: string; start_time?: string; end_time?: string }) => {
+    if (e) e.preventDefault();
     if (reserveSubmitting) return;
     setReserveError('');
+
+    const activeDate = overrideSchedule?.event_date || reserveForm.event_date;
+    const activeStart = overrideSchedule?.start_time || reserveForm.start_time;
+    const activeEnd = overrideSchedule?.end_time || reserveForm.end_time;
 
     if (
       !reserveForm.applicant_name?.trim() ||
       !reserveForm.applicant_email?.trim() ||
       !reserveForm.applicant_phone?.trim() ||
       !reserveForm.purpose?.trim() ||
-      !reserveForm.event_date?.trim() ||
-      !reserveForm.start_time?.trim() ||
-      !reserveForm.end_time?.trim()
+      !activeDate?.trim() ||
+      !activeStart?.trim() ||
+      !activeEnd?.trim()
     ) {
       setReserveError('Please fill out all required fields: Applicant Name, Email, Contact Number, Event Purpose, Date, and Time Slots.');
       return;
@@ -531,17 +633,21 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
       return;
     }
 
-    if (!/^09\d{9}$/.test(reserveForm.applicant_phone.trim())) {
+    const rawPhone = reserveForm.applicant_phone?.trim() || '';
+    const cleanDigits = rawPhone.replace(/\D/g, '');
+    const normalizedPhone = cleanDigits.startsWith('639') ? '0' + cleanDigits.slice(2) : cleanDigits;
+
+    if (!/^09\d{9}$/.test(normalizedPhone)) {
       setReserveError('Contact number must be exactly 11 digits and start with 09 (e.g. 09171234567).');
       return;
     }
 
-    if (aiConflict?.hasConflict && !activeResubmit) {
+    if (!overrideSchedule && aiConflict?.hasConflict && !activeResubmit) {
       setReserveError('Cannot submit reservation: ' + (aiConflict.aiAnalysis || 'Schedule slot conflict detected. Please select an alternative slot.'));
       return;
     }
 
-    if (aiConflict?.isOwnSchedule && !activeResubmit) {
+    if (!overrideSchedule && aiConflict?.isOwnSchedule && !activeResubmit) {
       setReserveError('You already booked this date and time. Please click "Book Another Date" to select a different schedule.');
       return;
     }
@@ -553,10 +659,13 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
 
     // Enforce 3-day-ahead booking constraint (not for resubmissions which already own the slot)
     if (!activeResubmit) {
-      const minDate = new Date();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const minDate = new Date(today);
       minDate.setDate(minDate.getDate() + 3);
-      minDate.setHours(0, 0, 0, 0);
-      const chosenDate = new Date(reserveForm.event_date);
+
+      const [y, m, d] = activeDate.split('-').map(Number);
+      const chosenDate = new Date(y, m - 1, d, 0, 0, 0, 0);
       if (chosenDate < minDate) {
         const minDateStr = minDate.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' });
         setReserveError(`Bookings must be made at least 3 days in advance. Earliest bookable date is ${minDateStr}.`);
@@ -564,23 +673,30 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
       }
     }
 
+    const slotFeeInfo = calculateSlotFee(activeStart, activeEnd, selectedFacilityObj);
+    const durationHours = slotFeeInfo.hours;
+    const activeFee = slotFeeInfo.fee;
+
     setReserveSubmitting(true);
     try {
       const payload = {
         ...reserveForm,
+        event_date: activeDate.trim(),
+        start_time: activeStart.trim(),
+        end_time: activeEnd.trim(),
         citizen_id: currentUser?.id || undefined,
         citizen_email: currentUser?.email || reserveForm.applicant_email.trim(),
         applicant_name: reserveForm.applicant_name.trim(),
         applicant_email: reserveForm.applicant_email.trim(),
-        applicant_phone: reserveForm.applicant_phone.trim(),
+        applicant_phone: normalizedPhone,
         purpose: reserveForm.purpose.trim(),
         facility_id: selectedFacilityObj.id,
         facility_name: selectedFacilityObj.name,
         facility_category: isParksMode ? 'Park & Recreation' : 'Government Facility',
         facility_location: selectedFacilityObj.location,
         hourly_rate: selectedFacilityObj.hourly_rate,
-        hours: bookingHours,
-        fee_amount: bookingTotalFee,
+        hours: durationHours,
+        fee_amount: activeFee,
         attendees: currentAttendees,
         special_equipment: activeSelectedEquipment,
         ...(activeResubmit ? { resubmitId: resubmittingTicket.originalId, reference_no: resubmittingTicket.ref_no } : {})
@@ -592,7 +708,7 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
         sessionStorage.removeItem('govserve_resubmit_ticket');
         setAiConflict(null);
       } else {
-        setReserveError(res.message || 'Failed to submit reservation.');
+        setReserveError((res as any).message || 'Failed to submit reservation.');
       }
     } catch (e) {
       setReserveError('Error submitting reservation request.');
@@ -717,12 +833,18 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
         plot_code: selectedPlot.plot_code,
         section: selectedPlot.section,
         cemetery_name: selectedCemetery,
+        // Pass uploaded document URLs for admin viewing
+        death_certificate_url: burialForm.death_cert_url || '',
+        death_cert_url: burialForm.death_cert_url || '',
+        death_cert_name: burialForm.death_cert_name || '',
+        valid_id_url: burialForm.valid_id_url || '',
+        valid_id_name: burialForm.valid_id_name || '',
       };
       const res = await createBurial(payload);
       if (res.success) {
         setBurialSuccess(res.data || res);
       } else {
-        setBurialError(res.message || 'Failed to submit application.');
+        setBurialError((res as any).message || 'Failed to submit application.');
       }
     } catch (err) {
       setBurialError('Submission error occurred.');
@@ -849,10 +971,15 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                 </div>
 
                 {selectedFacilityObj && (
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Selected Venue Specs:</span>
-                    <p className="font-bold text-slate-900">{selectedFacilityObj.name}</p>
-                    <p className="text-[11px] text-slate-600 font-medium">Max Capacity: <span className="text-blue-700 font-bold">{selectedFacilityObj.capacity} Pax</span></p>
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Selected Venue Specs:</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${isParksMode ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
+                        {isParksMode ? 'Park Grounds' : 'Gov Facility'}
+                      </span>
+                    </div>
+                    <p className="font-bold text-slate-900 text-sm leading-tight">{selectedFacilityObj.name}</p>
+                    <p className="text-[11px] text-slate-600 font-medium">Max Capacity: <span className="text-blue-700 font-bold">{selectedFacilityObj.capacity} Pax</span> • Rate: <span className="font-bold text-slate-800">₱{selectedFacilityObj.hourly_rate}/hr</span></p>
                     <p className="text-[10px] text-slate-500">{selectedFacilityObj.amenities}</p>
                   </div>
                 )}
@@ -866,6 +993,75 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                     <CardDescription>{isParksMode ? 'Select recreation purpose, special equipment, and confirm park schedule' : 'Select event purpose, special equipment, and verify schedule'}</CardDescription>
                   </CardHeader>
                   <CardContent>
+                    {/* Top Visual Preview Ribbon (2 Images) */}
+                    {selectedFacilityObj && (
+                      <div className="mb-4 p-3.5 bg-gradient-to-r from-slate-50 to-slate-100/80 rounded-2xl border border-slate-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <ImageIcon className="w-4 h-4 text-blue-600" />
+                            <span className="text-xs font-bold text-slate-900">Venue Visual Preview: {selectedFacilityObj.name}</span>
+                          </div>
+                          <span className="text-[10px] font-semibold text-slate-500">2 Venue Photos</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div
+                            className="relative h-36 rounded-xl overflow-hidden border border-slate-300/80 bg-slate-900 group shadow-xs cursor-zoom-in"
+                            onClick={() => (selectedFacilityObj as any).image_url && setZoomImage({ src: (selectedFacilityObj as any).image_url, label: `${selectedFacilityObj.name} — Photo 1: Exterior / Entrance` })}
+                          >
+                            {(selectedFacilityObj as any).image_url ? (
+                              <img
+                                src={(selectedFacilityObj as any).image_url}
+                                alt={`${selectedFacilityObj.name} View 1`}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs bg-slate-800/80">
+                                <ImageIcon className="w-6 h-6 mb-1 opacity-50 text-slate-400" />
+                                <span className="font-medium text-slate-300">No photo display yet</span>
+                              </div>
+                            )}
+                            {(selectedFacilityObj as any).image_url && (
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                <span className="bg-white/90 text-slate-900 text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-lg">
+                                  <Eye className="w-3 h-3" /> Click to Zoom
+                                </span>
+                              </div>
+                            )}
+                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-white">
+                              <span className="text-[10px] font-extrabold uppercase tracking-wide block">Photo 1 • Exterior / Entrance</span>
+                            </div>
+                          </div>
+
+                          <div
+                            className="relative h-36 rounded-xl overflow-hidden border border-slate-300/80 bg-slate-900 group shadow-xs cursor-zoom-in"
+                            onClick={() => (selectedFacilityObj as any).image_url_2 && setZoomImage({ src: (selectedFacilityObj as any).image_url_2, label: `${selectedFacilityObj.name} — Photo 2: Interior / Amenities` })}
+                          >
+                            {(selectedFacilityObj as any).image_url_2 ? (
+                              <img
+                                src={(selectedFacilityObj as any).image_url_2}
+                                alt={`${selectedFacilityObj.name} View 2`}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs bg-slate-800/80">
+                                <ImageIcon className="w-6 h-6 mb-1 opacity-50 text-slate-400" />
+                                <span className="font-medium text-slate-300">No photo display yet</span>
+                              </div>
+                            )}
+                            {(selectedFacilityObj as any).image_url_2 && (
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                <span className="bg-white/90 text-slate-900 text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-lg">
+                                  <Eye className="w-3 h-3" /> Click to Zoom
+                                </span>
+                              </div>
+                            )}
+                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-white">
+                              <span className="text-[10px] font-extrabold uppercase tracking-wide block">Photo 2 • Interior / Amenities</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {activeResubmit && (
                       <div className="mb-4 p-3 bg-blue-50 border border-blue-300 rounded-2xl flex items-center justify-between text-blue-950 text-xs animate-fade-in">
                         <div className="flex items-center gap-2.5">
@@ -960,8 +1156,8 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                         minDate.setDate(minDate.getDate() + 3);
                         const minBookingDate = minDate.toISOString().split('T')[0];
                         return (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div>
+                          <div className="space-y-4">
+                            <div className="max-w-xs">
                               <label className="block text-xs font-semibold text-[#334155] mb-1.5">Event Date *</label>
                               <input
                                 type="date"
@@ -975,54 +1171,143 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                                 <p className="text-[10px] text-slate-400 mt-0.5">📅 Earliest: {minDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                               )}
                             </div>
-                            <div>
-                              <label className="block text-xs font-semibold text-[#334155] mb-1.5">Start Time *</label>
-                              <select
-                            value={reserveForm.start_time}
-                            onChange={(e) => setReserveForm({ ...reserveForm, start_time: e.target.value })}
-                            className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm"
-                          >
-                            <option value="06:00 AM">06:00 AM</option>
-                            <option value="07:00 AM">07:00 AM</option>
-                            <option value="08:00 AM">08:00 AM</option>
-                            <option value="09:00 AM">09:00 AM</option>
-                            <option value="10:00 AM">10:00 AM</option>
-                            <option value="11:00 AM">11:00 AM</option>
-                            <option value="12:00 PM">12:00 PM</option>
-                            <option value="01:00 PM">01:00 PM</option>
-                            <option value="02:00 PM">02:00 PM</option>
-                            <option value="03:00 PM">03:00 PM</option>
-                            <option value="04:00 PM">04:00 PM</option>
-                            <option value="05:00 PM">05:00 PM</option>
-                            <option value="06:00 PM">06:00 PM</option>
-                            <option value="07:00 PM">07:00 PM</option>
-                            <option value="08:00 PM">08:00 PM</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-[#334155] mb-1.5">End Time *</label>
-                          <select
-                            value={reserveForm.end_time}
-                            onChange={(e) => setReserveForm({ ...reserveForm, end_time: e.target.value })}
-                            className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm"
-                          >
-                            <option value="08:00 AM">08:00 AM</option>
-                            <option value="09:00 AM">09:00 AM</option>
-                            <option value="10:00 AM">10:00 AM</option>
-                            <option value="11:00 AM">11:00 AM</option>
-                            <option value="12:00 PM">12:00 PM</option>
-                            <option value="01:00 PM">01:00 PM</option>
-                            <option value="02:00 PM">02:00 PM</option>
-                            <option value="03:00 PM">03:00 PM</option>
-                            <option value="04:00 PM">04:00 PM</option>
-                            <option value="05:00 PM">05:00 PM</option>
-                            <option value="06:00 PM">06:00 PM</option>
-                            <option value="07:00 PM">07:00 PM</option>
-                            <option value="08:00 PM">08:00 PM</option>
-                            <option value="09:00 PM">09:00 PM</option>
-                            <option value="10:00 PM">10:00 PM</option>
-                          </select>
-                        </div>
+
+                            {/* 2 Fixed 4-Hour Time Slot Selection Checklist */}
+                            {(() => {
+                              const isMorningSelected = reserveForm.start_time === '08:00 AM' && (reserveForm.end_time === '12:00 PM' || reserveForm.end_time === '05:00 PM');
+                              const isAfternoonSelected = (reserveForm.start_time === '01:00 PM' && reserveForm.end_time === '05:00 PM') || (reserveForm.start_time === '08:00 AM' && reserveForm.end_time === '05:00 PM');
+                              const isBothSelected = isMorningSelected && isAfternoonSelected;
+
+                              const mPrice = Number((selectedFacilityObj as any)?.morning_rate ?? selectedFacilityObj?.hourly_rate ?? 0);
+                              const aPrice = Number((selectedFacilityObj as any)?.afternoon_rate ?? selectedFacilityObj?.hourly_rate ?? 0);
+
+                              const handleToggleSlot = (slot: 'morning' | 'afternoon') => {
+                                if (slot === 'morning') {
+                                  if (isMorningSelected) {
+                                    if (isAfternoonSelected) {
+                                      setReserveForm(prev => ({ ...prev, start_time: '01:00 PM', end_time: '05:00 PM' }));
+                                    }
+                                  } else {
+                                    if (isAfternoonSelected) {
+                                      setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
+                                    } else {
+                                      setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
+                                    }
+                                  }
+                                } else {
+                                  if (isAfternoonSelected) {
+                                    if (isMorningSelected) {
+                                      setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
+                                    }
+                                  } else {
+                                    if (isMorningSelected) {
+                                      setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
+                                    } else {
+                                      setReserveForm(prev => ({ ...prev, start_time: '01:00 PM', end_time: '05:00 PM' }));
+                                    }
+                                  }
+                                }
+                              };
+
+                              const handleSelectBoth = () => {
+                                if (isBothSelected) {
+                                  setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
+                                } else {
+                                  setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
+                                }
+                              };
+
+                              return (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <label className="block text-xs font-bold text-[#334155] uppercase tracking-wider">
+                                      Select Time Slot (4 Hours Each) *
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={handleSelectBoth}
+                                      className={`text-[11px] font-bold px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                                        isBothSelected
+                                          ? (isParksMode ? 'bg-emerald-600 text-white shadow-sm' : 'bg-blue-600 text-white shadow-sm')
+                                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                      }`}
+                                    >
+                                      {isBothSelected ? '✓ Both Slots Selected (Full Day: 08:00 AM – 05:00 PM)' : '+ Book Both Slots (Full Day: 08:00 AM – 05:00 PM)'}
+                                    </button>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {/* Morning Slot Box */}
+                                    <div
+                                      onClick={() => handleToggleSlot('morning')}
+                                      className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 select-none ${
+                                        isMorningSelected
+                                          ? isParksMode
+                                            ? 'bg-emerald-50/90 border-emerald-500 text-emerald-950 shadow-sm ring-1 ring-emerald-500/30'
+                                            : 'bg-blue-50/90 border-blue-500 text-blue-950 shadow-sm ring-1 ring-blue-500/30'
+                                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      <div className="pt-0.5 shrink-0">
+                                        {isMorningSelected ? (
+                                          <CheckSquare className={`w-5 h-5 ${isParksMode ? 'text-emerald-600' : 'text-blue-600'}`} />
+                                        ) : (
+                                          <Square className="w-5 h-5 text-slate-400" />
+                                        )}
+                                      </div>
+                                      <div className="space-y-0.5 flex-1">
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-extrabold text-xs sm:text-sm">Morning Slot</span>
+                                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                            isMorningSelected ? (isParksMode ? 'bg-emerald-200 text-emerald-900' : 'bg-blue-200 text-blue-900') : 'bg-slate-100 text-slate-600'
+                                          }`}>
+                                            4 Hours
+                                          </span>
+                                        </div>
+                                        <p className="text-xs text-slate-500 font-medium">08:00 AM – 12:00 PM</p>
+                                        <p className="text-xs font-bold text-emerald-600 pt-1">
+                                          ₱{mPrice.toLocaleString()}.00 <span className="text-[10px] font-normal text-slate-500">/ slot</span>
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    {/* Afternoon Slot Box */}
+                                    <div
+                                      onClick={() => handleToggleSlot('afternoon')}
+                                      className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 select-none ${
+                                        isAfternoonSelected
+                                          ? isParksMode
+                                            ? 'bg-emerald-50/90 border-emerald-500 text-emerald-950 shadow-sm ring-1 ring-emerald-500/30'
+                                            : 'bg-blue-50/90 border-blue-500 text-blue-950 shadow-sm ring-1 ring-blue-500/30'
+                                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      <div className="pt-0.5 shrink-0">
+                                        {isAfternoonSelected ? (
+                                          <CheckSquare className={`w-5 h-5 ${isParksMode ? 'text-emerald-600' : 'text-blue-600'}`} />
+                                        ) : (
+                                          <Square className="w-5 h-5 text-slate-400" />
+                                        )}
+                                      </div>
+                                      <div className="space-y-0.5 flex-1">
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-extrabold text-xs sm:text-sm">Afternoon Slot</span>
+                                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                            isAfternoonSelected ? (isParksMode ? 'bg-emerald-200 text-emerald-900' : 'bg-blue-200 text-blue-900') : 'bg-slate-100 text-slate-600'
+                                          }`}>
+                                            4 Hours
+                                          </span>
+                                        </div>
+                                        <p className="text-xs text-slate-500 font-medium">01:00 PM – 05:00 PM</p>
+                                        <p className="text-xs font-bold text-emerald-600 pt-1">
+                                          ₱{aPrice.toLocaleString()}.00 <span className="text-[10px] font-normal text-slate-500">/ slot</span>
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })()} {/* End date IIFE */}
@@ -1035,10 +1320,11 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                       }`}>
                         <div className="space-y-0.5">
                           <span className={`text-[10px] font-bold uppercase tracking-wider block ${isParksMode ? 'text-emerald-700' : 'text-blue-700'}`}>
-                            ⏱️ Computed Duration & Rate:
+                            ⏱️ Scheduled Slot & Duration:
                           </span>
                           <p className="font-semibold text-slate-800">
-                            <strong>{bookingHours} {bookingHours === 1 ? 'Hour' : 'Hours'}</strong> ({reserveForm.start_time} – {reserveForm.end_time}) • <span className="text-slate-600">Rate: ₱{(selectedFacilityObj?.hourly_rate || 0).toLocaleString()}.00 / hr</span>
+                            <strong>{bookingHours} {bookingHours === 1 ? 'Hour' : 'Hours'}</strong> ({reserveForm.start_time} – {reserveForm.end_time})
+                            {bookingHours === 8 && <span className="ml-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">Both Slots Combined (slot price × 2)</span>}
                           </p>
                         </div>
                         <div className={`sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 ${isParksMode ? 'border-emerald-200/60' : 'border-blue-200/60'}`}>
@@ -1157,7 +1443,19 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                                     </div>
                                   </div>
 
-                                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0 flex-wrap">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const existing = aiConflict.existingBooking || resubmittingTicket;
+                                        handleStartResubmitFromBooking(existing);
+                                      }}
+                                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                      <span>Re-edit / Resubmit Ticket</span>
+                                    </button>
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -1225,12 +1523,7 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                                     <button
                                       key={idx}
                                       type="button"
-                                      onClick={() => {
-                                        if (slot.includes('02:00 PM')) {
-                                          setReserveForm(prev => ({ ...prev, start_time: '02:00 PM', end_time: '06:00 PM' }));
-                                        }
-                                        setAppliedAlternativeSlot(slot);
-                                      }}
+                                      onClick={() => handleApplyAlternativeSlot(slot)}
                                       className="bg-white/10 hover:bg-white/25 hover:border-emerald-400/50 hover:text-white text-indigo-200 px-3.5 py-1.5 rounded-xl border border-white/20 text-xs font-mono transition-all flex items-center gap-2 cursor-pointer shadow-sm group"
                                     >
                                       <span className="font-semibold">{slot}</span>
@@ -1243,6 +1536,14 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                         </div>
                       )}
 
+
+                      {/* Validation & Submit Error Banner */}
+                      {reserveError && (
+                        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs font-semibold flex items-center gap-2 animate-fade-in shadow-sm">
+                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>{reserveError}</span>
+                        </div>
+                      )}
 
                       {/* Single Action Button */}
                       <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -2013,23 +2314,36 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
             </div>
 
             {/* Bottom Actions */}
-            <div className="pt-3 flex items-center justify-between border-t border-slate-100">
+            <div className="pt-3 flex items-center justify-between border-t border-slate-100 flex-wrap gap-2">
               <Button size="sm" variant="outline" onClick={() => setViewingRecognizedTicket(null)}>
                 Close
               </Button>
-              <Button
-                size="sm"
-                variant="primary"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
-                leftIcon={<ExternalLink className="w-3.5 h-3.5" />}
-                onClick={() => {
-                  const targetRef = viewingRecognizedTicket.reference_no || viewingRecognizedTicket.ref_no;
-                  setViewingRecognizedTicket(null);
-                  navigate(`/my-tickets?ticket=${encodeURIComponent(targetRef)}`, { state: { openTicketRef: targetRef } });
-                }}
-              >
-                Go to My Tickets Page
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs"
+                  leftIcon={<Edit className="w-3.5 h-3.5" />}
+                  onClick={() => {
+                    handleStartResubmitFromBooking(viewingRecognizedTicket);
+                  }}
+                >
+                  Re-edit / Resubmit Ticket
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                  leftIcon={<ExternalLink className="w-3.5 h-3.5" />}
+                  onClick={() => {
+                    const targetRef = viewingRecognizedTicket.reference_no || viewingRecognizedTicket.ref_no;
+                    setViewingRecognizedTicket(null);
+                    navigate(`/my-tickets?ticket=${encodeURIComponent(targetRef)}`, { state: { openTicketRef: targetRef } });
+                  }}
+                >
+                  Go to My Tickets
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -2038,9 +2352,12 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
       {/* Popout Modal for Applied Alternative Slot */}
       <Modal
         isOpen={Boolean(appliedAlternativeSlot)}
-        onClose={() => setAppliedAlternativeSlot(null)}
+        onClose={() => {
+          setAppliedAlternativeSlot(null);
+          setAiConflict(null);
+        }}
         title="Alternative Slot Applied"
-        description="Schedule conflict resolved — recommended afternoon window has been selected."
+        description="Schedule conflict resolved — recommended available window has been selected."
         maxWidth="md"
       >
         {appliedAlternativeSlot && (
@@ -2072,28 +2389,84 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                 </div>
                 <div className="p-2.5 bg-white rounded-lg border border-emerald-300 bg-emerald-50/40">
                   <span className="text-emerald-700 block text-[10px] font-medium">New Time Window</span>
-                  <span className="font-bold text-emerald-800">02:00 PM - 06:00 PM</span>
+                  <span className="font-bold text-emerald-800">{reserveForm.start_time} - {reserveForm.end_time}</span>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-emerald-700 pt-1 font-medium">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>The schedule conflict is resolved. You can proceed with completing your reservation.</span>
+                <span>The schedule conflict is resolved. Click below to continue and complete your reservation.</span>
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-end border-t border-slate-100">
+            <div className="pt-3 flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setAppliedAlternativeSlot(null);
+                  setAiConflict(null);
+                }}
+                className="text-slate-500 hover:text-slate-700 text-xs font-semibold py-1.5 px-3 transition-colors"
+              >
+                Review Form Details
+              </button>
               <Button
                 size="sm"
                 variant="primary"
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5"
-                onClick={() => setAppliedAlternativeSlot(null)}
+                disabled={reserveSubmitting}
+                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 shadow-sm flex items-center justify-center gap-1.5"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  const targetDate = reserveForm.event_date;
+                  const targetStart = reserveForm.start_time;
+                  const targetEnd = reserveForm.end_time;
+                  setAppliedAlternativeSlot(null);
+                  setAiConflict(null);
+                  await handleFacilityReserve(undefined, {
+                    event_date: targetDate,
+                    start_time: targetStart,
+                    end_time: targetEnd
+                  });
+                }}
               >
-                Continue Reservation
+                {reserveSubmitting ? (
+                  <>
+                    <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  'Continue & Submit Reservation'
+                )}
               </Button>
             </div>
           </div>
         )}
       </Modal>
+
+      {/* Image Zoom Lightbox */}
+      {zoomImage && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/90 flex flex-col items-center justify-center p-4 animate-fade-in"
+          onClick={() => setZoomImage(null)}
+        >
+          <div className="relative max-w-5xl w-full max-h-[90vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => setZoomImage(null)}
+              className="absolute -top-10 right-0 text-white/70 hover:text-white text-sm font-bold flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl transition-colors z-10"
+            >
+              <X className="w-4 h-4" /> Close
+            </button>
+            <img
+              src={zoomImage.src}
+              alt={zoomImage.label}
+              className="max-h-[80vh] max-w-full w-auto object-contain rounded-2xl shadow-2xl border border-white/10"
+            />
+            <p className="text-white/80 text-xs font-bold mt-3 text-center bg-black/40 px-4 py-1.5 rounded-full">
+              {zoomImage.label}
+            </p>
+          </div>
+          <p className="text-white/40 text-[11px] mt-4">Click anywhere outside to close</p>
+        </div>
+      )}
     </div>
   );
 }

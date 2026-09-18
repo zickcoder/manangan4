@@ -72,8 +72,8 @@ export function MyTicketsPage() {
   const [paymentMethod, setPaymentMethod] = useState<'gcash' | 'maya' | 'card'>('gcash');
   const [paying, setPaying] = useState(false);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       const [resData, utilData, burData] = await Promise.all([
         fetchReservations("all", "all"),
@@ -86,14 +86,14 @@ export function MyTicketsPage() {
     } catch (e) {
       console.error(e);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 2500);
-    const handleUpdate = () => loadData();
+    loadData(false);
+    const interval = setInterval(() => loadData(true), 8000);
+    const handleUpdate = () => loadData(true);
     window.addEventListener('govserve_data_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
     return () => {

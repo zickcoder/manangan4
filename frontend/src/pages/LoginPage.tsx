@@ -9,7 +9,9 @@ import {
   User, 
   Phone, 
   CheckCircle2,
-  ArrowLeft
+  ArrowLeft,
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import { loginStaff, loginCitizen, registerCitizen, getLockoutTimeRemaining, recordFailedAttempt, recordSuccessfulLogin } from '../lib/api';
 
@@ -31,26 +33,19 @@ export function LoginPage() {
   const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
   const [isForgotOpen, setIsForgotOpen] = useState(false);
 
+  // Live lockout countdown listener (updates every second based on real wall-clock time)
   useEffect(() => {
-    const rem = getLockoutTimeRemaining(authMode);
-    if (rem > 0) setLockoutSeconds(rem);
-    else setLockoutSeconds(0);
-  }, [authMode]);
-
-  useEffect(() => {
-    if (lockoutSeconds <= 0) return;
-    const timer = setInterval(() => {
-      setLockoutSeconds((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          setError('');
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    const updateLockout = () => {
+      const rem = getLockoutTimeRemaining(authMode);
+      setLockoutSeconds(rem);
+      if (rem === 0) {
+        setError((prev) => prev.includes('Security Lockout') ? '' : prev);
+      }
+    };
+    updateLockout();
+    const timer = setInterval(updateLockout, 1000);
     return () => clearInterval(timer);
-  }, [lockoutSeconds]);
+  }, [authMode]);
 
   const handleTabChange = (mode: 'citizen_login' | 'citizen_register' | 'staff_login') => {
     setAuthMode(mode);
@@ -113,7 +108,7 @@ export function LoginPage() {
           const status = recordFailedAttempt(authMode);
           if (status.locked) {
             setLockoutSeconds(status.remSeconds);
-            setError(`🔒 Security Lockout: 3 invalid attempts reached. Account locked for 3 minutes (180s).`);
+            setError(`🔒 Security Lockout: 3 invalid attempts reached. Account temporarily locked.`);
           } else {
             setError(`Invalid email or password. Attempt ${status.fails} of 3 before 3-minute lockout.`);
           }
@@ -130,7 +125,7 @@ export function LoginPage() {
           const status = recordFailedAttempt(authMode);
           if (status.locked) {
             setLockoutSeconds(status.remSeconds);
-            setError(`🔒 Security Lockout: 3 invalid attempts reached. Account locked for 3 minutes (180s).`);
+            setError(`🔒 Security Lockout: 3 invalid attempts reached. Account temporarily locked.`);
           } else {
             setError(`Invalid email or password. Attempt ${status.fails} of 3 before 3-minute lockout.`);
           }
@@ -249,7 +244,25 @@ export function LoginPage() {
               </div>
             )}
 
-            {error && (
+            {/* Live Security Lockout Alert */}
+            {lockoutSeconds > 0 && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs font-semibold flex items-center justify-between shadow-xs animate-fade-in">
+                <div className="flex items-center gap-2.5">
+                  <Clock className="w-5 h-5 text-amber-600 shrink-0 animate-spin" style={{ animationDuration: '4s' }} />
+                  <div>
+                    <p className="font-extrabold text-amber-950 text-xs">Security Lockout Active</p>
+                    <p className="text-[11px] text-amber-700 font-normal">3 failed attempts reached. Retry unlocks in:</p>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="font-mono font-black text-sm text-amber-950 bg-amber-200/80 border border-amber-300 px-2.5 py-1 rounded-lg tracking-wider inline-block">
+                    {Math.floor(lockoutSeconds / 60)}:{String(lockoutSeconds % 60).padStart(2, '0')}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {error && !lockoutSeconds && (
               <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-semibold flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
                 <span>{error}</span>
@@ -343,10 +356,15 @@ export function LoginPage() {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (authMode !== 'citizen_register' && lockoutSeconds > 0)}
                 className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-2"
               >
-                {loading ? (
+                {authMode !== 'citizen_register' && lockoutSeconds > 0 ? (
+                  <span className="flex items-center gap-1.5 text-amber-200">
+                    <Clock className="w-4 h-4" />
+                    <span>Locked ({Math.floor(lockoutSeconds / 60)}:{String(lockoutSeconds % 60).padStart(2, '0')})</span>
+                  </span>
+                ) : loading ? (
                   <span>Signing in...</span>
                 ) : (
                   <>

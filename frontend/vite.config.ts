@@ -23,6 +23,11 @@ export default defineConfig({
         target: 'http://localhost:5000',
         changeOrigin: true,
       },
+      '/eprov-rest': {
+        target: 'https://supa.eprovider.site/rest',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/eprov-rest/, ''),
+      },
     },
   },
 });

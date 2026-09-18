@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, ShieldCheck, Home } from 'lucide-react';
+import { Menu, X, ShieldCheck } from 'lucide-react';
 import { Button } from '../ui/Button';
 
 export function PublicNavbar() {
@@ -28,10 +28,7 @@ export function PublicNavbar() {
           </div>
         </Link>
 
-        {/* Center Nav Links (Desktop) */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-slate-600">
-          <Link to="/" className="text-blue-600 hover:text-blue-700 transition-colors">Home</Link>
-        </nav>
+
 
         {/* Actions (Desktop) */}
         <div className="hidden md:flex items-center gap-2.5">
@@ -58,16 +55,7 @@ export function PublicNavbar() {
       {/* Mobile Dropdown Menu */}
       {isMobileMenuOpen && (
         <div className="md:hidden border-t border-slate-200 bg-white/95 backdrop-blur-md px-4 pt-3 pb-5 space-y-3 shadow-xl animate-fade-in">
-          <div className="space-y-1">
-            <Link
-              to="/"
-              onClick={() => setIsMobileMenuOpen(false)}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50 hover:text-blue-600 transition-colors"
-            >
-              <Home className="w-4 h-4 text-blue-600" />
-              <span>Home</span>
-            </Link>
-          </div>
+
           <div className="pt-2 border-t border-slate-100">
             <Link
               to="/admin/login"

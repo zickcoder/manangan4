@@ -120,7 +120,8 @@ const DEFAULT_FACILITIES = [
     location: 'Civic Complex, Mindanao Ave.',
     amenities: 'Central Aircon, Full PA Sound System, Stage, 300 Chairs, Generator Backup',
     status: 'Available',
-    image_url: 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=500&auto=format&fit=crop&q=80'
+    image_url: '',
+    image_url_2: ''
   },
   {
     id: 3,
@@ -131,7 +132,8 @@ const DEFAULT_FACILITIES = [
     location: 'Camarin Road Sector 3',
     amenities: 'Jogging Trail, Children Playground, Gazebo, Covered Picnic Sheds, Solar Lights',
     status: 'Available',
-    image_url: 'https://images.unsplash.com/photo-1519331379826-f10be5486c6f?w=500&auto=format&fit=crop&q=80'
+    image_url: '',
+    image_url_2: ''
   },
   {
     id: 4,
@@ -142,40 +144,36 @@ const DEFAULT_FACILITIES = [
     location: 'Purok 7 Hillsview',
     amenities: 'Open-Air Stage, Tiered Seating, Ambient Garden Lighting, Perimeter Fence',
     status: 'Available',
-    image_url: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=500&auto=format&fit=crop&q=80'
+    image_url: '',
+    image_url_2: ''
   }
 ];
 
 function generateInitialPlots() {
   const plots: any[] = [];
   let id = 1;
-  for (let r = 1; r <= 8; r++) {
-    const sectionName = r <= 4 ? 'Section A — North Burial Wall' : 'Section B — South Burial Wall';
-    const secCode = r <= 4 ? 'BW-A' : 'BW-B';
+
+  for (let r = 1; r <= 9; r++) {
     for (let c = 1; c <= 10; c++) {
       const rowStr = r < 10 ? `R0${r}` : `R${r}`;
       const colStr = c < 10 ? `C0${c}` : `C${c}`;
-      let status = 'Available';
-      if (r === 1 && c <= 5) {
-        status = 'Occupied';
-      } else if (r === 1 && (c === 6 || c === 7)) {
-        status = 'Reserved';
-      }
+      const code = `COL-${rowStr}-${colStr}`;
       plots.push({
         id: id++,
-        cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
-        plot_code: `${secCode}-${rowStr}-${colStr}`,
-        section: sectionName,
+        cemetery_name: 'Barangay 178 Municipal Cemetery',
+        plot_code: code,
+        section: 'Columbarium Wall Alpha',
         block_no: `Row ${r}`,
-        lot_no: `Niche ${c}`,
+        lot_no: `Vault ${c}`,
         row_no: r,
         col_no: c,
-        plot_type: 'Burial Niche',
-        status,
+        plot_type: 'Columbarium Niche',
+        status: 'Available',
         price: 18000.00
       });
     }
   }
+
   return plots;
 }
 
@@ -197,92 +195,7 @@ export function format12HourDateTime(dateStr?: string) {
   }
 }
 
-const DEFAULT_BURIALS = [
-  {
-    id: 1,
-    reference_no: 'BUR-2026-081',
-    deceased_name: 'Severino M. Dela Cruz',
-    date_of_birth: '1948-03-12',
-    date_of_death: '2026-08-15',
-    burial_date: '2026-08-20',
-    plot_id: 1,
-    plot_code: 'BW-A-R01-C01',
-    cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
-    contact_person: 'Juan M. Dela Cruz',
-    applicant_email: 'juan.delacruz@citizen.gov.ph',
-    contact_phone: '+63 917 123 4567',
-    status: 'Paid',
-    permit_no: 'BP-2026-0089',
-    fee_amount: 18000,
-    created_at: '2026-08-16T14:30:00.000Z'
-  },
-  {
-    id: 2,
-    reference_no: 'BUR-2026-082',
-    deceased_name: 'Florencia T. Bautista',
-    date_of_birth: '1955-09-24',
-    date_of_death: '2026-08-18',
-    burial_date: '2026-08-24',
-    plot_id: 2,
-    plot_code: 'BW-A-R01-C02',
-    cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
-    contact_person: 'Ricardo Bautista (Husband)',
-    contact_phone: '+63 919 333 7712',
-    status: 'Paid',
-    permit_no: 'BP-2026-0090',
-    fee_amount: 18000,
-    created_at: '2026-08-19T09:15:00.000Z'
-  },
-  {
-    id: 3,
-    reference_no: 'BUR-2026-083',
-    deceased_name: 'Hon. Benjamin G. Ramos',
-    date_of_birth: '1940-11-05',
-    date_of_death: '2026-08-21',
-    burial_date: '2026-08-27',
-    plot_id: 3,
-    plot_code: 'BW-A-R01-C03',
-    cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
-    contact_person: 'Consuelo Ramos (Wife)',
-    contact_phone: '+63 922 444 1109',
-    status: 'Pending Payment',
-    fee_amount: 18000,
-    payment_due_date: '2026-08-30',
-    created_at: '2026-08-22T16:45:00.000Z'
-  },
-  {
-    id: 4,
-    reference_no: 'BUR-2026-084',
-    deceased_name: 'Carlito V. Santos',
-    date_of_birth: '1962-04-18',
-    date_of_death: '2026-08-22',
-    burial_date: '2026-08-28',
-    plot_id: 4,
-    plot_code: 'BW-A-R01-C04',
-    cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
-    contact_person: 'Elena Santos (Daughter)',
-    contact_phone: '+63 917 888 2211',
-    status: 'Paid',
-    permit_no: 'BP-2026-0092',
-    fee_amount: 18000,
-    created_at: '2026-08-23T11:20:00.000Z'
-  },
-  {
-    id: 5,
-    reference_no: 'BUR-2026-085',
-    deceased_name: 'Teresa L. Mendoza',
-    date_of_birth: '1951-12-30',
-    date_of_death: '2026-08-23',
-    burial_date: '2026-08-29',
-    plot_id: 5,
-    plot_code: 'BW-A-R01-C05',
-    cemetery_name: 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
-    contact_person: 'Mateo Mendoza (Son)',
-    contact_phone: '+63 920 111 3344',
-    status: 'Pending Review',
-    created_at: '2026-08-24T08:10:00.000Z'
-  }
-];
+const DEFAULT_BURIALS: any[] = [];
 
 const DEFAULT_UTILITIES = [
   {
@@ -538,71 +451,241 @@ export async function fetchStats() {
   };
 }
 
+function prepareFacilityForDb(payload: any) {
+  // Store images and slot rates in __FAC_META__ in amenities for backward compatibility
+  const meta: any = {
+    image_url: payload.image_url || '',
+    image_url_2: payload.image_url_2 || '',
+  };
+  if (payload.morning_rate !== undefined) meta.morning_rate = Number(payload.morning_rate);
+  if (payload.afternoon_rate !== undefined) meta.afternoon_rate = Number(payload.afternoon_rate);
+
+  let baseAmenities = (payload.amenities || '').split('__FAC_META__')[0].trim();
+  baseAmenities += ` __FAC_META__${JSON.stringify(meta)}`;
+
+  const baseRate = Number(payload.hourly_rate ?? payload.morning_rate ?? 0);
+  const mRate = payload.morning_rate !== undefined ? Number(payload.morning_rate) : baseRate;
+  const aRate = payload.afternoon_rate !== undefined ? Number(payload.afternoon_rate) : baseRate;
+
+  // STRICTLY only include existing columns in eProvider / PostgreSQL
+  const dbPayload: any = {
+    name: payload.name,
+    category: payload.category || 'Government Facility',
+    capacity: Number(payload.capacity) || 50,
+    hourly_rate: baseRate,
+    morning_rate: mRate,
+    afternoon_rate: aRate,
+    location: payload.location || 'Municipal Complex',
+    amenities: baseAmenities,
+    status: payload.status || 'Available',
+    image_url: payload.image_url || null
+  };
+  return dbPayload;
+}
+
+function parseFacilityFromDb(f: any) {
+  let img1 = f.image_url || '';
+  let img2 = f.image_url_2 || '';
+  let cleanAmenities = f.amenities || '';
+  let morningRate = f.morning_rate !== undefined && f.morning_rate !== null ? Number(f.morning_rate) : undefined;
+  let afternoonRate = f.afternoon_rate !== undefined && f.afternoon_rate !== null ? Number(f.afternoon_rate) : undefined;
+
+  if (cleanAmenities.includes('__FAC_META__')) {
+    try {
+      const parts = cleanAmenities.split('__FAC_META__');
+      cleanAmenities = parts[0].trim();
+      const meta = JSON.parse(parts[1]);
+      if (meta.image_url !== undefined) img1 = meta.image_url || '';
+      if (meta.image_url_2 !== undefined) img2 = meta.image_url_2 || '';
+      if (meta.morning_rate !== undefined && morningRate === undefined) morningRate = Number(meta.morning_rate);
+      if (meta.afternoon_rate !== undefined && afternoonRate === undefined) afternoonRate = Number(meta.afternoon_rate);
+    } catch {}
+  }
+
+  const baseRate = Number(f.hourly_rate) || 0;
+  if (morningRate === undefined) morningRate = baseRate;
+  if (afternoonRate === undefined) afternoonRate = baseRate;
+
+  return {
+    ...f,
+    amenities: cleanAmenities,
+    image_url: img1,
+    image_url_2: img2,
+    hourly_rate: baseRate,
+    morning_rate: morningRate,
+    afternoon_rate: afternoonRate
+  };
+}
+
 export async function fetchFacilities(category = 'all') {
   const edgeResult = await edgeFetch(`/facilities?category=${encodeURIComponent(category)}`);
-  if (Array.isArray(edgeResult?.data)) return edgeResult.data;
+  if (Array.isArray(edgeResult?.data)) return edgeResult.data.map(parseFacilityFromDb);
 
-  if (HAS_EPROVIDER) try {
-    const q = category !== 'all' ? `category=ilike.*${encodeURIComponent(category)}*` : '';
-    const data = await epGet('facilities', q + '&order=id.asc');
-    return Array.isArray(data) ? data : [];
-  } catch {}
-  if (HAS_BACKEND) try {
-    const res = await fastFetch(`${API_BASE}/facilities?category=${encodeURIComponent(category)}`, {}, 2500);
-    if (res.ok) { const data = await res.json(); if (data?.data) return data.data; }
-  } catch {}
-  let list = getStore('facilities', DEFAULT_FACILITIES);
+  let list: any[] = [];
+  let fetchedFromRemote = false;
+
+  if (HAS_EPROVIDER) {
+    try {
+      const q = category !== 'all' ? `category=ilike.*${encodeURIComponent(category)}*` : '';
+      const data = await epGet('facilities', q + '&order=id.asc');
+      if (Array.isArray(data) && data.length > 0) {
+        list = data.map(parseFacilityFromDb);
+        fetchedFromRemote = true;
+      }
+    } catch {}
+  }
+
+  if (!fetchedFromRemote && HAS_BACKEND) {
+    try {
+      const res = await fastFetch(`${API_BASE}/facilities?category=${encodeURIComponent(category)}`, {}, 2500);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.data) && data.data.length > 0) {
+          list = data.data.map(parseFacilityFromDb);
+          fetchedFromRemote = true;
+        }
+      }
+    } catch {}
+  }
+
+  if (fetchedFromRemote) {
+    setStore('facilities', list, false);
+  } else {
+    list = getStore('facilities', DEFAULT_FACILITIES);
+  }
+
   if (category !== 'all') list = list.filter((f: any) => f.category.toLowerCase() === category.toLowerCase());
   return list;
 }
 
 export async function createFacility(payload: any) {
-  const newFac = { id: Date.now(), status: 'Available', ...payload };
+  const dbPayload = prepareFacilityForDb(payload);
+  const newFac = { 
+    id: Date.now(), 
+    status: 'Available', 
+    ...payload,
+    morning_rate: dbPayload.morning_rate,
+    afternoon_rate: dbPayload.afternoon_rate,
+    hourly_rate: dbPayload.hourly_rate
+  };
   const list = getStore('facilities', DEFAULT_FACILITIES);
   list.push(newFac);
-  setStore('facilities', list);
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/facilities`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-    });
-    if (res.ok) { const data = await res.json(); if (data?.data) { newFac.id = data.data.id; setStore('facilities', list); } }
-  } catch {}
-  if (HAS_EPROVIDER) try { await epPost('facilities', payload); } catch {}
-  window.dispatchEvent(new Event('govserve_data_updated'));
+  setStore('facilities', list, false);
+
+  // 1. Primary: eProvider Cloud Database
+  if (HAS_EPROVIDER) {
+    try { 
+      const res = await epPost('facilities', dbPayload, 2500); 
+      if (Array.isArray(res) && res[0]?.id) {
+        newFac.id = res[0].id;
+        setStore('facilities', list, false);
+      }
+    } catch (e) {
+      console.warn('eProvider createFacility error:', e);
+    }
+  }
+
+  // 2. Secondary: Render Backend (fastFetch with 2000ms max so it never hangs)
+  if (HAS_BACKEND) {
+    try {
+      const res = await fastFetch(`${API_BASE}/facilities`, {
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(dbPayload)
+      }, 2000);
+      if (res.ok) { 
+        const data = await res.json(); 
+        if (data?.data?.id) { 
+          newFac.id = data.data.id; 
+          setStore('facilities', list, false); 
+        } 
+      }
+    } catch {}
+  }
+
+  // Single dispatch after all operations complete
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('govserve_data_updated'));
   return { success: true, data: newFac };
 }
 
 export async function updateFacility(id: number, payload: any) {
+  const dbPayload = prepareFacilityForDb(payload);
   const list = getStore('facilities', DEFAULT_FACILITIES);
   const idx = list.findIndex((f: any) => Number(f.id) === Number(id));
-  if (idx !== -1) { list[idx] = { ...list[idx], ...payload }; setStore('facilities', list); }
-  if (HAS_BACKEND) try {
-    await fetch(`${API_BASE}/facilities/${id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-    });
-  } catch {}
-  if (HAS_EPROVIDER) try { await epPatch('facilities', `id=eq.${id}`, payload); } catch {}
-  window.dispatchEvent(new Event('govserve_data_updated'));
+  if (idx !== -1) { 
+    list[idx] = { 
+      ...list[idx], 
+      ...payload,
+      morning_rate: dbPayload.morning_rate,
+      afternoon_rate: dbPayload.afternoon_rate,
+      hourly_rate: dbPayload.hourly_rate
+    }; 
+    setStore('facilities', list, false); 
+  }
+
+  // 1. Primary: eProvider Cloud Database
+  if (HAS_EPROVIDER) {
+    try { 
+      await epPatch('facilities', `id=eq.${id}`, dbPayload, 2500); 
+    } catch (e) {
+      console.warn('eProvider updateFacility error:', e);
+    }
+  }
+
+  // 2. Secondary: Render Backend (fastFetch with 2000ms max)
+  if (HAS_BACKEND) {
+    try {
+      await fastFetch(`${API_BASE}/facilities/${id}`, {
+        method: 'PUT', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(dbPayload)
+      }, 2000);
+    } catch {}
+  }
+
+  // Single dispatch after all operations complete
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('govserve_data_updated'));
   return { success: true };
 }
 
 export async function deleteFacility(id: number) {
   const list = getStore('facilities', DEFAULT_FACILITIES);
-  setStore('facilities', list.filter((f: any) => Number(f.id) !== Number(id)));
+  setStore('facilities', list.filter((f: any) => Number(f.id) !== Number(id)), false);
 
   // Cleanly purge any reservations linked to this deleted facility from local store
   const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
-  setStore('reservations', reservations.filter((r: any) => Number(r.facility_id) !== Number(id)));
+  setStore('reservations', reservations.filter((r: any) => Number(r.facility_id) !== Number(id)), false);
 
-  if (HAS_BACKEND) try { await fetch(`${API_BASE}/facilities/${id}`, { method: 'DELETE' }); } catch {}
-  if (HAS_EPROVIDER) try {
-    await fetch(`${EP_REST}/facilities?id=eq.${id}`, { method: 'DELETE', headers: EP_HEADERS });
-  } catch {}
-  window.dispatchEvent(new Event('govserve_data_updated'));
+  if (HAS_EPROVIDER) {
+    try {
+      await fastFetch(`${EP_REST}/facilities?id=eq.${id}`, { 
+        method: 'DELETE', 
+        headers: { ...EP_HEADERS, 'Accept-Profile': EP_SCHEMA, 'Content-Profile': EP_SCHEMA } 
+      }, 2500);
+    } catch {}
+  }
+
+  if (HAS_BACKEND) {
+    try { 
+      await fastFetch(`${API_BASE}/facilities/${id}`, { method: 'DELETE' }, 2000); 
+    } catch {}
+  }
+
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('govserve_data_updated'));
   return { success: true };
 }
 
+let reservationsCache: { data: any[]; timestamp: number } | null = null;
+
+export function invalidateReservationsCache() {
+  reservationsCache = null;
+}
+
 export async function fetchReservations(status = 'all', category = 'all', excludeCancelled = false) {
+  if (status === 'all' && category === 'all' && !excludeCancelled && reservationsCache && (Date.now() - reservationsCache.timestamp < 4000)) {
+    return reservationsCache.data;
+  }
+
   let list: any[] = [];
   let serverList: any[] = [];
   let fetched = false;
@@ -780,10 +863,15 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
     });
   }
 
-  return filterByCategory(list, category);
+  const result = filterByCategory(list, category);
+  if (status === 'all' && category === 'all' && !excludeCancelled) {
+    reservationsCache = { data: result, timestamp: Date.now() };
+  }
+  return result;
 }
 
 export async function createReservation(payload: any) {
+  invalidateReservationsCache();
   let citizenMeta: any = {};
   let callerRole = 'Citizen';
   try {
@@ -942,10 +1030,10 @@ export async function createReservation(payload: any) {
     created_at: new Date().toISOString()
   };
 
-  // Always save to local store
+  // Always save to local store (notify=false: single dispatch at end after remote sync)
   const reservations = getStore('reservations', DEFAULT_RESERVATIONS);
   reservations.unshift(newReservation);
-  setStore('reservations', reservations);
+  setStore('reservations', reservations, false);
 
   // 1. Primary: Save to eProvider Cloud Database
   if (HAS_EPROVIDER) {
@@ -954,7 +1042,7 @@ export async function createReservation(payload: any) {
       if (Array.isArray(inserted) && inserted[0]?.id) {
         newReservation.id = inserted[0].id;
         newReservation.reference_no = inserted[0].reference_no || newReservation.reference_no;
-        setStore('reservations', reservations);
+        setStore('reservations', reservations, false);
       }
     } catch (e) {
       console.warn('eProvider createReservation error:', e);
@@ -974,7 +1062,7 @@ export async function createReservation(payload: any) {
         if (data?.data) {
           newReservation.id = data.data.id || newReservation.id;
           newReservation.reference_no = data.data.reference_no || newReservation.reference_no;
-          setStore('reservations', reservations);
+          setStore('reservations', reservations, false);
         }
       }
     } catch {}
@@ -1004,7 +1092,8 @@ export async function updateReservationStatus(
     if (remarks) item.remarks = remarks;
     if (extraData) Object.assign(item, extraData);
     targetEmail = item.applicant_email || item.citizen_email || '';
-    setStore('reservations', reservations); 
+    // notify=false: single dispatch below after notification is added
+    setStore('reservations', reservations, false); 
   }
 
   if (targetEmail && targetEmail.includes('@')) {
@@ -1017,6 +1106,7 @@ export async function updateReservationStatus(
     });
   }
 
+  // Single dispatch after local store + notification are committed
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('govserve_data_updated'));
   }
@@ -1063,7 +1153,7 @@ export async function updateReservationStatus(
 }
 
 // Time range overlap helper for accurate schedule conflict detection
-function parse12HToMinutes(timeStr: string): number {
+export function parse12HToMinutes(timeStr: string): number {
   if (!timeStr) return 0;
   const cleaned = timeStr.trim().toLowerCase();
   const match = cleaned.match(/(\d+)(?::(\d+))?\s*(am|pm)?/);
@@ -1078,7 +1168,8 @@ function parse12HToMinutes(timeStr: string): number {
 }
 
 export function calculateBookingHours(startTime: string, endTime: string): number {
-  if (!startTime || !endTime) return 1;
+  if (!startTime || !endTime) return 0;
+  if (startTime.trim().toLowerCase() === endTime.trim().toLowerCase()) return 0;
   const startMin = parse12HToMinutes(startTime);
   const endMin = parse12HToMinutes(endTime);
   const diffMinutes = endMin - startMin;
@@ -1086,13 +1177,84 @@ export function calculateBookingHours(startTime: string, endTime: string): numbe
     const hrs = diffMinutes / 60;
     return Math.round(hrs * 100) / 100;
   }
-  return 1;
+  return 0;
 }
 
-export function calculateFacilityFee(startTime: string, endTime: string, hourlyRate: number): number {
+export function calculateSlotFee(
+  startTime: string,
+  endTime: string,
+  facilityOrRate?: any,
+  afternoonRateParam?: number
+): { fee: number; hours: number; slotLabel: string; isMorning: boolean; isAfternoon: boolean; isBoth: boolean } {
+  let mRate = 0;
+  let aRate = 0;
+
+  if (typeof facilityOrRate === 'object' && facilityOrRate !== null) {
+    mRate = Number(facilityOrRate.morning_rate ?? facilityOrRate.hourly_rate ?? 0);
+    aRate = Number(facilityOrRate.afternoon_rate ?? facilityOrRate.hourly_rate ?? 0);
+  } else if (typeof facilityOrRate === 'number') {
+    mRate = facilityOrRate;
+    aRate = afternoonRateParam !== undefined ? afternoonRateParam : facilityOrRate;
+  }
+
+  const s = (startTime || '').trim().toUpperCase();
+  const e = (endTime || '').trim().toUpperCase();
+
+  const isMorning = s.startsWith('08') && (e.startsWith('12') || e === '12:00 PM');
+  const isAfternoon = (s.startsWith('01') || s.startsWith('1:') || s.startsWith('13')) && (e.startsWith('05') || e.startsWith('5:') || e.startsWith('17'));
+  const isBoth = s.startsWith('08') && (e.startsWith('05') || e.startsWith('5:') || e.startsWith('17'));
+
+  if (isBoth) {
+    return {
+      fee: mRate + aRate,
+      hours: 8,
+      slotLabel: 'Full Day (08:00 AM – 05:00 PM)',
+      isMorning: true,
+      isAfternoon: true,
+      isBoth: true
+    };
+  }
+  if (isMorning) {
+    return {
+      fee: mRate,
+      hours: 4,
+      slotLabel: 'Morning Slot (08:00 AM – 12:00 PM)',
+      isMorning: true,
+      isAfternoon: false,
+      isBoth: false
+    };
+  }
+  if (isAfternoon) {
+    return {
+      fee: aRate,
+      hours: 4,
+      slotLabel: 'Afternoon Slot (01:00 PM – 05:00 PM)',
+      isMorning: false,
+      isAfternoon: true,
+      isBoth: false
+    };
+  }
+
+  // Fallback for custom or legacy hours
   const hours = calculateBookingHours(startTime, endTime);
-  const rate = Number(hourlyRate) || 0;
-  return Math.round(hours * rate);
+  const baseRate = mRate || aRate || 0;
+  return {
+    fee: Math.round(hours * baseRate),
+    hours,
+    slotLabel: `${startTime} – ${endTime}`,
+    isMorning: false,
+    isAfternoon: false,
+    isBoth: false
+  };
+}
+
+export function calculateFacilityFee(
+  startTime: string,
+  endTime: string,
+  hourlyRate: number | any,
+  afternoonRate?: number
+): number {
+  return calculateSlotFee(startTime, endTime, hourlyRate, afternoonRate).fee;
 }
 
 function areTimeSlotsConflicting(startA: string, endA: string, startB: string, endB: string): boolean {
@@ -1159,12 +1321,11 @@ export async function checkDoubleBooking(
   // Target event date normalized (YYYY-MM-DD)
   const targetDateStr = (eventDate || '').split('T')[0].trim();
 
-  // Find any active reservation for the EXACT same specific facility, date, and overlapping time
-  const conflict = reservations.find((r: any) => {
+  // Find all active reservations on this target date for THIS specific venue
+  const sameDayBookings = reservations.filter((r: any) => {
     if (r.status === 'Cancelled' || r.status === 'Rejected') return false;
     if (excludeReservationId && (r.id === excludeReservationId || String(r.id) === String(excludeReservationId))) return false;
 
-    // Resolve reservation's facility info
     let rFacId = r.facility_id ? Number(r.facility_id) : null;
     let rFacName = (r.facility_name || '').toLowerCase().trim();
     let rFacCat = (r.facility_category || r.category || '').toLowerCase().trim();
@@ -1184,50 +1345,43 @@ export async function checkDoubleBooking(
       }
     }
 
-    // ── 1. Category isolation: strictly separate Government Facility vs Park & Recreation ──
+    // 1. Category isolation: strictly separate Government Facility vs Park & Recreation
     const rIsPark = rFacCat.includes('park') || rFacCat.includes('recreation') ||
                     rFacName.includes('park') || rFacName.includes('amphitheater') ||
                     rFacName.includes('plaza') || rFacName.includes('grounds');
+    if (isCheckingPark !== rIsPark) return false;
 
-    if (isCheckingPark !== rIsPark) {
-      return false; // NEVER conflict across Government Facility and Park & Recreation
+    // 2. Strict Specific Venue Isolation
+    let isSameVenue = false;
+    if (normTargetId !== null && rFacId !== null) {
+      isSameVenue = (normTargetId === rFacId);
+    } else if (normTargetName && rFacName) {
+      isSameVenue = (normTargetName === rFacName || normTargetName.includes(rFacName) || rFacName.includes(normTargetName));
+    } else if (normTargetId !== null && !rFacName) {
+      isSameVenue = (normTargetId === rFacId);
     }
+    if (!isSameVenue) return false;
 
-    // ── 2. Strict Specific Venue Isolation: must match THIS specific venue only ──
-    // If both have names and they differ, it is NOT the same facility
-    if (normTargetName && rFacName && normTargetName !== rFacName) {
-      return false;
-    }
-
-    // If both have IDs and they differ, it is NOT the same facility
-    if (normTargetId !== null && rFacId !== null && normTargetId !== rFacId) {
-      return false;
-    }
-
-    // Must positively match either ID or exact venue name
-    const idMatches = (normTargetId !== null && rFacId !== null && normTargetId === rFacId);
-    const nameMatches = (normTargetName && rFacName && normTargetName === rFacName);
-
-    if (!idMatches && !nameMatches) {
-      return false;
-    }
-
-    // ── 3. Date comparison (YYYY-MM-DD) ──
+    // 3. Date comparison
     const rDateStr = (r.event_date || '').split('T')[0].trim();
-    if (rDateStr !== targetDateStr) return false;
-
-    // ── 4. Time slot overlap comparison ──
-    return areTimeSlotsConflicting(r.start_time || '', r.end_time || '', startTime, endTime);
+    return rDateStr === targetDateStr;
   });
 
+  // Evaluate 4-hour slots availability on this date
+  const morningBooked = sameDayBookings.some(r => areTimeSlotsConflicting(r.start_time || '', r.end_time || '', '08:00 AM', '12:00 PM'));
+  const afternoonBooked = sameDayBookings.some(r => areTimeSlotsConflicting(r.start_time || '', r.end_time || '', '01:00 PM', '05:00 PM'));
+
+  // Find if there is an exact conflict with the user's requested interval
+  const conflict = sameDayBookings.find((r: any) =>
+    areTimeSlotsConflicting(r.start_time || '', r.end_time || '', startTime, endTime)
+  );
+
   if (conflict) {
-    // Check if this conflicting reservation was submitted by the current citizen (self-booking)
     const cEmail = (conflict.applicant_email || conflict.citizen_email || '').toLowerCase().trim();
     const uEmail = (userEmail || '').toLowerCase().trim();
     const cId = conflict.citizen_id;
     const uId = currentUserId;
 
-    // Strict identity match: EXACT citizen_id OR EXACT email
     const isOwnBooking = Boolean(
       (uId && cId && String(uId) === String(cId)) ||
       (uEmail && cEmail && uEmail.includes('@') && uEmail === cEmail)
@@ -1237,32 +1391,62 @@ export async function checkDoubleBooking(
       const isApproved = conflict.status === 'Approved' || conflict.status === 'Paid';
       const statusLabel = conflict.status || 'Active';
       return {
-        hasConflict: true,
+        hasConflict: false,  // Own booking — not a foreign conflict
         isOwnSchedule: true,
         message: isApproved
-          ? `You already booked this venue for this schedule (${conflict.reference_no} • Status: ${statusLabel}). Your reservation is already registered. Please select another date or time slot.`
-          : `You already have an active booking on this date and time (${conflict.reference_no} • Status: ${statusLabel}). Please select another date or time slot.`,
+          ? `You have an existing confirmed booking for this venue on ${targetDateStr} (${conflict.reference_no} • Status: ${statusLabel}). You can view details, re-edit, or reschedule below.`
+          : `You have an active booking on this date and time (${conflict.reference_no} • Status: ${statusLabel}). You can view details, re-edit, or reschedule below.`,
         existingBooking: {
+          id: conflict.id,
           reference_no: conflict.reference_no,
+          facility_id: conflict.facility_id,
           facility_name: conflict.facility_name,
+          facility_category: conflict.facility_category,
           event_date: conflict.event_date,
           start_time: conflict.start_time,
           end_time: conflict.end_time,
-          status: conflict.status
+          status: conflict.status,
+          purpose: conflict.purpose,
+          attendees: conflict.attendees,
+          special_equipment: conflict.special_equipment,
+          hours: conflict.hours,
+          fee_amount: conflict.fee_amount,
+          applicant_name: conflict.applicant_name,
+          applicant_phone: conflict.applicant_phone,
+          applicant_email: conflict.applicant_email
         },
-        suggestedSlots: []
+        suggestedSlots: !morningBooked
+          ? [`${targetDateStr} (08:00 AM - 12:00 PM)`]
+          : !afternoonBooked
+          ? [`${targetDateStr} (01:00 PM - 05:00 PM)`]
+          : []
       };
     }
 
-    // When someone else booked the slot - Data Privacy Compliance (do NOT expose personal names or details)
+    // Foreign Conflict — Smart AI reciprocal recommendations
+    let suggestedSlot = '';
+    let msg = `This time slot is already reserved for this venue on ${targetDateStr} (${conflict.start_time} - ${conflict.end_time}).`;
+    if (!afternoonBooked && morningBooked) {
+      suggestedSlot = `${targetDateStr} (01:00 PM - 05:00 PM)`;
+      msg = `The morning slot (08:00 AM – 12:00 PM) is already reserved on ${targetDateStr}. Smart AI recommends the available Afternoon Slot (01:00 PM – 05:00 PM)!`;
+    } else if (!morningBooked && afternoonBooked) {
+      suggestedSlot = `${targetDateStr} (08:00 AM - 12:00 PM)`;
+      msg = `The afternoon slot (01:00 PM – 05:00 PM) is already reserved on ${targetDateStr}. Smart AI recommends the available Morning Slot (08:00 AM – 12:00 PM)!`;
+    } else {
+      // Both slots booked on this date — suggest next available day
+      const d = new Date(targetDateStr);
+      d.setDate(d.getDate() + 1);
+      const nextDateStr = d.toISOString().split('T')[0];
+      suggestedSlot = `${nextDateStr} (08:00 AM - 12:00 PM)`;
+      msg = `Both morning and afternoon slots are fully reserved on ${targetDateStr}. Smart AI recommends checking the next available date: ${nextDateStr}.`;
+    }
+
     return {
       hasConflict: true,
       isOwnSchedule: false,
-      message: `This time slot is already reserved for this venue on ${targetDateStr} (${conflict.start_time} - ${conflict.end_time}). Please select another available schedule.`,
-      existingBooking: null, // Protected: do not leak applicant identity
-      suggestedSlots: [
-        `${targetDateStr} (02:00 PM - 06:00 PM)`
-      ]
+      message: msg,
+      existingBooking: null,
+      suggestedSlots: suggestedSlot ? [suggestedSlot] : []
     };
   }
 
@@ -1310,52 +1494,177 @@ export async function checkFacilityAI(facilityName: string, eventDate: string, s
 }
 
 export async function fetchCemeteries(): Promise<string[]> {
-  return ['Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)'];
+  return [
+    'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)'
+  ];
 }
 
 export async function fetchCemeteryPlots(section = 'all', status = 'all', cemetery_name = 'all') {
-  if (HAS_BACKEND) try {
-    const res = await fastFetch(`${API_BASE}/cemetery/plots?section=${encodeURIComponent(section)}&status=${encodeURIComponent(status)}&cemetery_name=${encodeURIComponent(cemetery_name)}`, {}, 2500);
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.data) return data.data;
-    }
-  } catch {}
+  let serverPlots: any[] = [];
+  let serverBurials: any[] = [];
+  let fetched = false;
 
-  let plots = getStore('plots', generateInitialPlots());
-  if (section !== 'all') {
-    plots = plots.filter((p: any) => p.section === section);
+  // 1. Primary: eProvider Cloud Database — fetch both plots and burials together
+  if (HAS_EPROVIDER) {
+    try {
+      let q = 'order=id.asc';
+      if (section !== 'all') q += `&section=eq.${encodeURIComponent(section)}`;
+      const [plotData, burialData] = await Promise.all([
+        epGet('cemetery_plots', q, 5000),
+        epGet('burial_records', 'order=id.desc&status=not.in.(Cancelled,Rejected,Canceled)', 5000)
+      ]);
+      if (Array.isArray(plotData) && plotData.length > 0) {
+        serverPlots = plotData;
+        fetched = true;
+        // Merge burial statuses onto plots in-memory (same source, no local store confusion)
+        if (Array.isArray(burialData)) {
+          serverBurials = burialData;
+          const todayStr = new Date().toISOString().split('T')[0];
+          serverPlots = serverPlots.map((plot: any) => {
+            // Find active burial for this plot
+            const activeBurial = burialData.find((b: any) =>
+              (b.plot_id && String(b.plot_id) === String(plot.id)) ||
+              (b.plot_code && b.plot_code === plot.plot_code)
+            );
+            if (!activeBurial) return plot;
+            const merged = { ...plot };
+            // Override: Paid or Completed + past/today burial_date = Occupied
+            if (['Paid', 'Completed'].includes(activeBurial.status) && activeBurial.burial_date && activeBurial.burial_date <= todayStr) {
+              merged.status = 'Occupied';
+            } else if (['Approved', 'Pending Payment', 'Pending Review'].includes(activeBurial.status)) {
+              // Keep Reserved if not yet occupied
+              if (merged.status !== 'Occupied') merged.status = 'Reserved';
+            }
+            // Attach burial metadata to plot for display in modal
+            merged.deceased_name = activeBurial.deceased_name || merged.deceased_name;
+            merged.burial_date = activeBurial.burial_date || merged.burial_date;
+            merged.date_of_death = activeBurial.date_of_death || merged.date_of_death;
+            merged.permit_no = activeBurial.permit_no || merged.permit_no;
+            merged.contact_person = activeBurial.contact_person || merged.contact_person;
+            return merged;
+          });
+        }
+        setStore('plots', serverPlots, false);
+      }
+    } catch (e) {
+      console.warn('eProvider fetchCemeteryPlots error:', e);
+    }
   }
-  if (status !== 'all') {
-    plots = plots.filter((p: any) => p.status === status);
+
+  // 2. Secondary: Render Backend (also fetches burial-merged data via SQL JOIN)
+  if (!fetched && HAS_BACKEND) {
+    try {
+      const res = await fastFetch(
+        `${API_BASE}/cemetery/plots?section=${encodeURIComponent(section)}&status=${encodeURIComponent(status)}&cemetery_name=${encodeURIComponent(cemetery_name)}`,
+        {},
+        3000
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.data) && data.data.length > 0) {
+          serverPlots = data.data;
+          fetched = true;
+          setStore('plots', data.data, false);
+        }
+      }
+    } catch {}
   }
-  return plots;
+
+  // 3. Fallback: localStorage (with burial record merge)
+  if (!fetched) {
+    let plots = getStore('plots', generateInitialPlots());
+    const burials = getStore('burials', DEFAULT_BURIALS);
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    plots = plots.map((plot: any) => {
+      const activeBurial = burials.find((b: any) =>
+        (b.plot_id && String(b.plot_id) === String(plot.id)) ||
+        (b.plot_code && b.plot_code === plot.plot_code)
+      );
+      if (!activeBurial) return plot;
+      const merged = { ...plot };
+      if (['Paid', 'Completed'].includes(activeBurial.status) && activeBurial.burial_date && activeBurial.burial_date <= todayStr) {
+        merged.status = 'Occupied';
+      } else if (['Approved', 'Pending Payment', 'Pending Review'].includes(activeBurial.status)) {
+        if (merged.status !== 'Occupied') merged.status = 'Reserved';
+      }
+      merged.deceased_name = activeBurial.deceased_name || merged.deceased_name;
+      merged.burial_date = activeBurial.burial_date || merged.burial_date;
+      merged.date_of_death = activeBurial.date_of_death || merged.date_of_death;
+      merged.permit_no = activeBurial.permit_no || merged.permit_no;
+      merged.contact_person = activeBurial.contact_person || merged.contact_person;
+      return merged;
+    });
+
+    if (section !== 'all') plots = plots.filter((p: any) => p.section === section);
+    if (status !== 'all') plots = plots.filter((p: any) => p.status === status);
+    return plots;
+  }
+
+  // Apply filters after merge
+  let result = serverPlots;
+  if (cemetery_name !== 'all' && result.some((p: any) => p.cemetery_name === cemetery_name)) {
+    result = result.filter((p: any) => p.cemetery_name === cemetery_name);
+  }
+  if (status !== 'all') result = result.filter((p: any) => p.status === status);
+  return result;
 }
 
-export async function updatePlotStatus(id: number, status: string) {
-  if (HAS_BACKEND) try {
-    const res = await fetch(`${API_BASE}/cemetery/plots/${id}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    });
-    if (res.ok) return await res.json();
-  } catch {}
 
+export async function updatePlotStatus(id: number, status: string) {
+  // 1. Immediately update local store
   const plots = getStore('plots', generateInitialPlots());
-  const plot = plots.find((p: any) => p.id === id);
+  const plot = plots.find((p: any) => p.id === id || String(p.id) === String(id));
   if (plot) {
     plot.status = status;
     setStore('plots', plots);
   }
+
+  // 2. Non-blocking cloud sync
+  (async () => {
+    if (HAS_EPROVIDER) try {
+      await epPatch('cemetery_plots', `id=eq.${id}`, { status }, 3000);
+    } catch (e) {
+      console.warn('eProvider updatePlotStatus error:', e);
+    }
+    if (HAS_BACKEND) try {
+      await fastFetch(`${API_BASE}/cemetery/plots/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      }, 3000);
+    } catch {}
+  })();
+
   return { success: true };
 }
 
 export async function createPlot(payload: any) {
   const plots = getStore('plots', generateInitialPlots());
-  const newPlot = { id: Date.now(), ...payload };
+  const newPlot = { id: Date.now(), status: 'Available', ...payload };
   plots.push(newPlot);
   setStore('plots', plots);
+
+  // Non-blocking cloud sync
+  (async () => {
+    if (HAS_EPROVIDER) try {
+      const inserted = await epPost('cemetery_plots', payload);
+      if (Array.isArray(inserted) && inserted[0]?.id) {
+        newPlot.id = inserted[0].id;
+        setStore('plots', plots);
+      }
+    } catch (e) {
+      console.warn('eProvider createPlot error:', e);
+    }
+    if (HAS_BACKEND) try {
+      await fastFetch(`${API_BASE}/cemetery/plots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }, 3000);
+    } catch {}
+  })();
+
   return { success: true, data: newPlot };
 }
 
@@ -1424,11 +1733,10 @@ export async function fetchBurials() {
   // 1. Primary: eProvider Cloud Database
   if (HAS_EPROVIDER) {
     try {
-      const data = await epGet('burial_records', 'order=id.desc');
-      if (Array.isArray(data)) {
+      const data = await epGet('burial_records', 'order=id.desc', 5000);
+      if (Array.isArray(data) && data.length >= 0) {
         serverList = data;
         fetched = true;
-        setStore('burials', data);
       }
     } catch (e) {
       console.warn('eProvider fetchBurials error:', e);
@@ -1438,22 +1746,76 @@ export async function fetchBurials() {
   // 2. Secondary: Render Backend
   if (!fetched && HAS_BACKEND) {
     try {
-      const res = await fastFetch(`${API_BASE}/cemetery/burials`, {}, 2500);
+      const res = await fastFetch(`${API_BASE}/cemetery/burials`, {}, 3000);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data?.data)) {
           serverList = data.data;
           fetched = true;
-          setStore('burials', data.data);
         }
       }
     } catch {}
   }
 
   const localList = getStore('burials', DEFAULT_BURIALS);
-  if (fetched && serverList.length > 0) {
-    return serverList;
+
+  if (fetched) {
+    // Merge server records with any local-only records (e.g. just submitted, not yet confirmed by server)
+    const serverIds = new Set(serverList.map((b: any) => String(b.id)));
+    const serverRefs = new Set(
+      serverList.map((b: any) => String(b.reference_no || '').trim().toUpperCase()).filter(Boolean)
+    );
+    const localOnlyRecords = localList.filter((b: any) => {
+      const hasId = serverIds.has(String(b.id));
+      const ref = String(b.reference_no || '').trim().toUpperCase();
+      const hasRef = ref && serverRefs.has(ref);
+      return !hasId && !hasRef;
+    });
+    const combined = [...serverList, ...localOnlyRecords];
+
+    // Final deduplication pass by reference_no then id
+    const seenRefs = new Set<string>();
+    const seenIds = new Set<string>();
+    const deduplicated = combined.filter((b: any) => {
+      const refStr = String(b.reference_no || '').trim().toUpperCase();
+      const idStr = String(b.id);
+      if (refStr) {
+        if (seenRefs.has(refStr)) return false;
+        seenRefs.add(refStr);
+      }
+      if (seenIds.has(idStr)) return false;
+      seenIds.add(idStr);
+      return true;
+    });
+
+    // Extract citizen uploaded images from remarks if packed
+    deduplicated.forEach((b: any) => {
+      try {
+        if (b.remarks && (b.remarks.startsWith('{') || b.remarks.startsWith('['))) {
+          const parsed = JSON.parse(b.remarks);
+          if (parsed.death_cert_url && !b.death_certificate_url) b.death_certificate_url = parsed.death_cert_url;
+          if (parsed.valid_id_url && !b.valid_id_url) b.valid_id_url = parsed.valid_id_url;
+          if (parsed.death_cert_name && !b.death_cert_name) b.death_cert_name = parsed.death_cert_name;
+          if (parsed.valid_id_name && !b.valid_id_name) b.valid_id_name = parsed.valid_id_name;
+        }
+      } catch {}
+    });
+
+    setStore('burials', deduplicated, false);
+    return deduplicated;
   }
+
+  // Also parse localList
+  localList.forEach((b: any) => {
+    try {
+      if (b.remarks && (b.remarks.startsWith('{') || b.remarks.startsWith('['))) {
+        const parsed = JSON.parse(b.remarks);
+        if (parsed.death_cert_url && !b.death_certificate_url) b.death_certificate_url = parsed.death_cert_url;
+        if (parsed.valid_id_url && !b.valid_id_url) b.valid_id_url = parsed.valid_id_url;
+      }
+    } catch {}
+  });
+
   return localList;
 }
 
@@ -1565,8 +1927,20 @@ export async function createBurial(payload: any) {
     }
   }
 
+  const deathCertUrl = payload.death_certificate_url || payload.death_cert_url || '';
+  const validIdUrl = payload.valid_id_url || '';
+
+  // Pack uploaded documents into remarks JSON so they persist reliably even without custom DB columns
+  const remarksMeta = {
+    note: payload.remarks || '',
+    death_cert_url: deathCertUrl,
+    death_cert_name: payload.death_cert_name || '',
+    valid_id_url: validIdUrl,
+    valid_id_name: payload.valid_id_name || ''
+  };
+
   // Clean payload matching PostgreSQL burial_records schema (without out-of-range integer id)
-  const dbBurial = {
+  const dbBurial: any = {
     reference_no: refNo,
     permit_no: permitNo,
     deceased_name: payload.deceased_name || payload.deceased_full_name || 'Individual',
@@ -1576,7 +1950,7 @@ export async function createBurial(payload: any) {
     plot_id: payload.plot_id ? Number(payload.plot_id) : null,
     plot_code: payload.plot_code || null,
     section: payload.section || null,
-    cemetery_name: payload.cemetery_name || 'Barangay 178 Municipal Cemetery',
+    cemetery_name: payload.cemetery_name || 'Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)',
     contact_person: payload.contact_person || citizenMeta.applicant_name || 'Relative',
     contact_phone: payload.contact_phone || payload.applicant_phone || '09123456789',
     applicant_email: citizenMeta.citizen_email || payload.citizen_email || payload.applicant_email || null,
@@ -1589,12 +1963,18 @@ export async function createBurial(payload: any) {
     applicant_address: payload.applicant_address || null,
     burial_time: payload.burial_time || null,
     fee_amount: Number(payload.fee_amount) || 0,
-    status: 'Pending Review'
+    status: 'Pending Review',
+    remarks: JSON.stringify(remarksMeta)
   };
 
   const newBurial = {
     id: Date.now(),
     ...dbBurial,
+    death_certificate_url: deathCertUrl,
+    death_cert_url: deathCertUrl,
+    death_cert_name: payload.death_cert_name || '',
+    valid_id_url: validIdUrl,
+    valid_id_name: payload.valid_id_name || '',
     ...citizenMeta,
     ...payload,
     created_at: new Date().toISOString()
@@ -1611,10 +1991,13 @@ export async function createBurial(payload: any) {
   // 1. Primary: Save to eProvider Cloud Database
   if (HAS_EPROVIDER) {
     try {
-      const inserted = await epPost('burial_records', dbBurial);
+      const inserted = await epPost('burial_records', dbBurial, 6000);
       if (Array.isArray(inserted) && inserted[0]?.id) {
         newBurial.id = inserted[0].id;
         newBurial.reference_no = inserted[0].reference_no || newBurial.reference_no;
+        newBurial.permit_no = inserted[0].permit_no || newBurial.permit_no;
+        // CRITICAL: use the server-assigned plot_id (real DB FK)
+        if (inserted[0].plot_id) newBurial.plot_id = inserted[0].plot_id;
         setStore('burials', burials);
       }
     } catch (e) {
@@ -1647,6 +2030,87 @@ export async function createBurial(payload: any) {
   }
 
   return { success: true, reference_no: refNo, permit_no: permitNo, data: newBurial };
+}
+
+export async function deleteBurial(id: number | string) {
+  const burials = getStore('burials', DEFAULT_BURIALS);
+  const target = burials.find((b: any) => b.id === id || String(b.id) === String(id) || b.reference_no === id);
+
+  // Release plot back to Available if it was reserved by this burial
+  if (target && (target.plot_id || target.plot_code)) {
+    const plots = getStore('plots', generateInitialPlots());
+    const plot = plots.find((p: any) => p.id === Number(target.plot_id) || p.plot_code === target.plot_code);
+    if (plot && plot.status !== 'Occupied') {
+      plot.status = 'Available';
+      delete plot.deceased_name;
+      setStore('plots', plots);
+      if (HAS_EPROVIDER) try { await epPatch('cemetery_plots', `id=eq.${plot.id}`, { status: 'Available' }); } catch {}
+    }
+  }
+
+  const updated = burials.filter((b: any) => b.id !== id && String(b.id) !== String(id) && b.reference_no !== id);
+  setStore('burials', updated);
+
+  if (HAS_EPROVIDER) {
+    try {
+      if (typeof id === 'string' && id.startsWith('BUR-')) {
+        await epDelete('burial_records', `reference_no=eq.${encodeURIComponent(id)}`);
+      } else {
+        await epDelete('burial_records', `id=eq.${id}`);
+      }
+    } catch (e) {
+      console.warn('eProvider deleteBurial error:', e);
+    }
+  }
+
+  if (HAS_BACKEND) {
+    try {
+      await fastFetch(`${API_BASE}/cemetery/burials/${encodeURIComponent(String(id))}`, { method: 'DELETE' }, 2500);
+    } catch {}
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('govserve_data_updated'));
+  }
+  return { success: true };
+}
+
+export async function clearAllBurials() {
+  const burials = getStore('burials', DEFAULT_BURIALS);
+
+  // Release all plots that were reserved
+  const plots = getStore('plots', generateInitialPlots());
+  plots.forEach((p: any) => {
+    if (p.status === 'Reserved') {
+      p.status = 'Available';
+      delete p.deceased_name;
+    }
+  });
+  setStore('plots', plots);
+
+  // Clear local store
+  setStore('burials', []);
+
+  // Delete from eProvider database (all rows with id > 0)
+  if (HAS_EPROVIDER) {
+    try {
+      await epDelete('burial_records', 'id=gt.0');
+      await epPatch('cemetery_plots', 'id=gt.0', { status: 'Available' });
+    } catch (e) {
+      console.warn('eProvider clearAllBurials error:', e);
+    }
+  }
+
+  if (HAS_BACKEND) {
+    try {
+      await fastFetch(`${API_BASE}/cemetery/burials/all`, { method: 'DELETE' }, 2500);
+    } catch {}
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('govserve_data_updated'));
+  }
+  return { success: true };
 }
 
 export async function fetchUtilities(status = 'all', service_type = 'all') {
@@ -1726,7 +2190,7 @@ export async function createUtilityRequest(payload: any) {
 
   const utilities = getStore('utilities', DEFAULT_UTILITIES);
   const randomSuffix = `${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
-  const ticketNo = `REQ-${new Date().getFullYear()}-${randomSuffix}`;
+  const ticketNo = `UTL-${new Date().getFullYear()}-${randomSuffix}`;
 
   const urgencyScore = payload.urgency === 'Urgent' ? 95 : payload.urgency === 'High' ? 80 : 60;
 
@@ -2730,5 +3194,83 @@ export async function updateUserPin(email: string, pin: string): Promise<{ succe
 
   return { success: true, message: 'Security PIN set successfully!' };
 }
+
+/**
+ * Intelligent Municipal PAFMS AI Assistant
+ * Provides accurate guidance for Public Facilities, Parks, Cemetery & Columbarium,
+ * Water & Drainage incidents, and Municipal Heavy Equipment/Assets.
+ */
+export async function sendAIChat(
+  messages: { role: string; content: string }[],
+  userRole: 'citizen' | 'staff' = 'citizen'
+): Promise<string> {
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+  const cleanQuery = lastUserMsg.toLowerCase().trim();
+
+  // 1. Try Live Backend / Edge Function AI if available
+  try {
+    const edgeRes = await edgeFetch('/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ messages, userRole })
+    }, 3000);
+    if (edgeRes?.reply || edgeRes?.data?.reply) {
+      return edgeRes.reply || edgeRes.data.reply;
+    }
+  } catch {}
+
+  // 2. Reference Code Lookup (BUR-, RES-, UTL-)
+  const refMatch = lastUserMsg.match(/\b(BUR|RES|UTL|AST)-\d{4}-\w+\b/i);
+  if (refMatch) {
+    const refCode = refMatch[0].toUpperCase();
+    if (refCode.startsWith('BUR-')) {
+      const burials = getStore('burials', DEFAULT_BURIALS);
+      const b = burials.find((item: any) => String(item.reference_no || '').toUpperCase() === refCode);
+      if (b) {
+        return `📋 Application Found: Burial Permit [${b.reference_no}]\n• Deceased: ${b.deceased_name}\n• Current Status: ${b.status}\n• Plot / Niche: ${b.plot_code || 'Pending Assignment'}\n• Payment Fee: ₱${(b.fee_amount || 18000).toLocaleString()}.00\n• Payment Due: ${b.payment_due_date || 'Issued upon approval'}\n\nPlease visit the Municipal Treasury desk if your permit is pending payment settlement.`;
+      }
+    } else if (refCode.startsWith('RES-')) {
+      const reservations = getStore('reservations', []);
+      const r = reservations.find((item: any) => String(item.reference_no || '').toUpperCase() === refCode);
+      if (r) {
+        return `🏢 Booking Found: Facility/Park Reservation [${r.reference_no}]\n• Venue: ${r.facility_name}\n• Date & Schedule: ${r.event_date} (${r.start_time} - ${r.end_time})\n• Status: ${r.status}\n• Expected Attendees: ${r.attendees} Pax\n• Total Fee: ₱${(r.fee_amount || 0).toLocaleString()}.00`;
+      }
+    } else if (refCode.startsWith('UTL-')) {
+      const utils = getStore('utilities', []);
+      const u = utils.find((item: any) => String(item.ticket_no || '').toUpperCase() === refCode);
+      if (u) {
+        return `🚰 Utility Incident Ticket [${u.ticket_no}]\n• Service: ${u.service_type}\n• Location: ${u.location}\n• Priority: ${u.urgency}\n• Status: ${u.status}\n• Assigned Response Unit: ${u.assigned_team || 'Municipal Maintenance Rapid Crew'}`;
+      }
+    }
+  }
+
+  // 3. Cemetery & Columbarium Queries
+  if (cleanQuery.includes('cemetery') || cleanQuery.includes('burial') || cleanQuery.includes('columbarium') || cleanQuery.includes('niche') || cleanQuery.includes('libing') || cleanQuery.includes('death cert')) {
+    return `🏛️ Municipal Cemetery & Columbarium Administration:\n\n1. Location: Quezon City Municipal Cemetery (Brgy. Bagong Pag-asa)\n2. Columbarium Wall Alpha: Features an 8-row by 10-column marble structure (90 niches) with live slot selection.\n3. Standard Fee: ₱18,000.00 for Columbarium Niche Interment.\n4. Required Documents: You must upload (1) PSA Certified Death Certificate and (2) Valid Government ID of the applicant/next-of-kin.\n5. Payment Process: Once your application is reviewed and approved, a billing notice will be generated. Payments are settled face-to-face at the City Treasury desk.`;
+  }
+
+  // 4. Facility & Parks Reservations Queries
+  if (cleanQuery.includes('facility') || cleanQuery.includes('park') || cleanQuery.includes('reserve') || cleanQuery.includes('court') || cleanQuery.includes('gym') || cleanQuery.includes('civic') || cleanQuery.includes('hour') || cleanQuery.includes('ground')) {
+    return `🏟️ Government Facility & Parks Grounds Scheduling:\n\n1. Available Venues:\n   • Barangay 178 Multi-Purpose Civic Center (350 pax, ₱500/hr, Aircon & Sound System)\n   • Camarin Green Urban Recreation Park (500 pax, Free/Public, Jogging trail & Gazebos)\n   • Purok 7 Community Amphitheater (400 pax, ₱250/hr, Open-air stage)\n2. Time Slot Rules: Bookings require at least a 1-hour duration (e.g. 08:00 AM to 09:00 AM; identical start/end times like 8:00 AM to 8:00 AM are restricted).\n3. Equipment: Additional sound systems, monoblock chairs, and standby diesel generators can be selected on the form.\n4. Approvals: Applications are reviewed by the Municipal Administrator Desk within 24 to 48 hours.`;
+  }
+
+  // 5. Utility & Emergency Incident Desk Queries
+  if (cleanQuery.includes('water') || cleanQuery.includes('leak') || cleanQuery.includes('drainage') || cleanQuery.includes('flood') || cleanQuery.includes('pipe') || cleanQuery.includes('tulo') || cleanQuery.includes('baha') || cleanQuery.includes('canal')) {
+    return `🚰 Water & Drainage Incident Desk:\n\n• Reportable Issues: Water main breaks, low pressure, clogged drainage canals, sewer overflow, or flash flooding hazards.\n• Priority Levels: Urgent (under 2-hour response), High (same-day crew dispatch), and Normal (within 24 hours).\n• Attachments: You can attach on-site photos of leaks or road blockages to expedite engineer inspection.\n• Tracking: You will receive a unique UTL ticket number (e.g. UTL-2026-...) to track dispatched maintenance crews.`;
+  }
+
+  // 6. Public Assets & Heavy Equipment Queries
+  if (cleanQuery.includes('asset') || cleanQuery.includes('equipment') || cleanQuery.includes('generator') || cleanQuery.includes('pump') || cleanQuery.includes('ambulance') || cleanQuery.includes('truck') || cleanQuery.includes('tanker')) {
+    return `🚜 Municipal Asset & Equipment Fleet:\n\n• Heavy Equipment: Isuzu 5,000L Water Response Tankers, Komatsu Mini Hydraulic Excavators.\n• Emergency Power: Caterpillar 45kVA Civic Standby Diesel Silent Generators.\n• Health & Rescue: Toyota HiAce Type-II Emergency Rescue Ambulances with onboard trauma life support.\n• Inquiries: Community groups and barangay officials can inspect active asset readiness via the Public Assets Catalog.`;
+  }
+
+  // 7. Staff Specific Help
+  if (userRole === 'staff') {
+    return `👨‍💼 Municipal Operations Assistant (Staff Desk):\n\n• Facilities: Use the Facilities Module to verify pax capacity, check schedule overlaps, approve reservations, and manage venue specs.\n• Parks: Use Parks Module to review public recreation applications and issue permits.\n• Cemetery: Review burial applications in the Deceased Registry, verify citizen uploaded PSA Death Certs and IDs, issue billing notices, and confirm cash payment receipts.\n• Database: All changes synchronize directly with the eProvider cloud database.`;
+  }
+
+  // 8. General Citizen Greeting
+  return `👋 Kumusta! I am your PAFMS AI Assistant for Quezon City Municipal Services.\n\nI can assist you with:\n1. Reserving Government Multi-Purpose Civic Centers and Public Parks\n2. Columbarium Wall Alpha niche selection and Burial Permit applications\n3. Reporting emergency water pipe leaks and drainage declogging\n4. Looking up your reservation or permit reference number\n\nHow may I help you today? Feel free to type your question or provide a reference code!`;
+}
+
 
 

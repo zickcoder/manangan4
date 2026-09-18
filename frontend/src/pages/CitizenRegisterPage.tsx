@@ -74,6 +74,7 @@ export function CitizenRegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptedConsent, setAcceptedConsent] = useState(false);
 
   // OTP State & 1:30 (90 seconds) Timer
   const [generatedOtp, setGeneratedOtp] = useState('');
@@ -244,6 +245,10 @@ export function CitizenRegisterPage() {
     }
     if (!hasMinLength || !hasUpper || !hasLower || !hasNumber || !hasSymbol) {
       setError('Please meet all password security requirements.');
+      return;
+    }
+    if (!acceptedConsent) {
+      setError('Please check and accept the Citizen Consent and Data Privacy Agreement to continue.');
       return;
     }
 
@@ -640,10 +645,26 @@ export function CitizenRegisterPage() {
                       </div>
                     )}
                   </div>
+ 
+                  {/* Citizen Consent & Data Privacy Agreement Checkbox */}
+                  <div className="pt-1">
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none text-xs text-slate-700 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 hover:bg-slate-100/60 transition-colors">
+                      <input
+                        type="checkbox"
+                        required
+                        checked={acceptedConsent}
+                        onChange={(e) => setAcceptedConsent(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer shrink-0"
+                      />
+                      <span className="leading-snug text-[11px] text-slate-600">
+                        I agree to the <span className="font-semibold text-blue-600">Terms of Service</span> and consent to data processing under the <span className="font-semibold text-blue-600">Data Privacy Act of 2012 (RA 10173)</span>.
+                      </span>
+                    </label>
+                  </div>
 
                   <button
                     type="submit"
-                    disabled={sendingOtp}
+                    disabled={sendingOtp || !acceptedConsent}
                     className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-4"
                   >
                     {sendingOtp ? (

@@ -437,18 +437,18 @@ export function DashboardPage() {
                     <CheckCircle2 className="w-5 h-5" />
                   </div>
                   <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-cyan-100/70 text-cyan-700">
-                    Logistics
+                    Assets
                   </span>
                 </div>
                 <h3 className="font-extrabold text-base text-slate-900 group-hover:text-cyan-600 transition-colors mt-3 mb-1.5">
                   View Assets Available
                 </h3>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Browse municipal heavy equipment, disaster response vehicles, mobile water pumps, and emergency generators.
+                  Browse heavy equipment, disaster response vehicles, mobile water pumps, and emergency generators.
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-cyan-600 group-hover:text-cyan-700">
-                <span>View Assets Available</span>
+                <span>View Assets</span>
                 <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
               </div>
             </Link>
@@ -468,7 +468,7 @@ export function DashboardPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl sm:text-2xl font-extrabold text-[#0f172a] font-display">
-                    QC News
+                    Quezon City News
                   </h2>
                   <Badge variant="info" size="sm">Official Public Updates</Badge>
                 </div>
@@ -795,7 +795,7 @@ export function DashboardPage() {
         <Modal
           isOpen={!!selectedArticle}
           onClose={() => setSelectedArticle(null)}
-          title={selectedArticle?.category || "QC News Bulletin"}
+          title={selectedArticle?.category || "Quezon City News Bulletin"}
           description={selectedArticle?.author || "Quezon City Local Government"}
           maxWidth="2xl"
         >
@@ -868,7 +868,7 @@ export function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 print:hidden">
           <Button
             size="sm"
             variant="outline"
@@ -882,7 +882,12 @@ export function DashboardPage() {
             variant="primary"
             className="bg-blue-600 hover:bg-blue-700 font-bold text-xs"
             leftIcon={<Printer className="w-4 h-4" />}
-            onClick={() => window.print()}
+            onClick={() => {
+              const origTitle = document.title;
+              document.title = '';
+              window.print();
+              setTimeout(() => { document.title = origTitle; }, 500);
+            }}
           >
             Print Executive Summary
           </Button>
@@ -904,7 +909,7 @@ export function DashboardPage() {
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-1">{stats?.totalFacilities || 4} Total Managed Spaces</p>
-            <p className="text-[10px] text-blue-600 font-bold mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">Manage Facilities <ArrowRight className="w-3 h-3" /></p>
+            <p className="text-[10px] text-blue-600 font-bold mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 print:hidden">Manage Facilities <ArrowRight className="w-3 h-3" /></p>
           </Card>
         </button>
 
@@ -919,7 +924,7 @@ export function DashboardPage() {
               <Badge variant="purple" className="ml-2">{stats?.availablePlots ?? 82} Available</Badge>
             </div>
             <p className="text-[11px] text-slate-400 mt-1">{allBurials.length} Registered Burials</p>
-            <p className="text-[10px] text-purple-600 font-bold mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">Manage Cemetery <ArrowRight className="w-3 h-3" /></p>
+            <p className="text-[10px] text-purple-600 font-bold mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 print:hidden">Manage Cemetery <ArrowRight className="w-3 h-3" /></p>
           </Card>
         </button>
 
@@ -934,7 +939,7 @@ export function DashboardPage() {
               <Badge variant="warning" className="ml-2">Active Response</Badge>
             </div>
             <p className="text-[11px] text-slate-400 mt-1">AI prioritized emergency triage</p>
-            <p className="text-[10px] text-cyan-600 font-bold mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">View Tickets <ArrowRight className="w-3 h-3" /></p>
+            <p className="text-[10px] text-cyan-600 font-bold mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 print:hidden">View Tickets <ArrowRight className="w-3 h-3" /></p>
           </Card>
         </button>
 
@@ -949,7 +954,7 @@ export function DashboardPage() {
               <Badge variant="success" className="ml-2">Operational</Badge>
             </div>
             <p className="text-[11px] text-slate-400 mt-1">Backhoes, tankers, flood pumps</p>
-            <p className="text-[10px] text-amber-600 font-bold mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">Inspect Assets <ArrowRight className="w-3 h-3" /></p>
+            <p className="text-[10px] text-amber-600 font-bold mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 print:hidden">Inspect Assets <ArrowRight className="w-3 h-3" /></p>
           </Card>
         </button>
       </div>
@@ -977,7 +982,7 @@ export function DashboardPage() {
                   <Activity className="w-4 h-4 text-blue-600" />
                   <span className="font-bold text-sm text-slate-800 group-hover:text-blue-600 transition-colors">Facility Reservation Pipeline</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 opacity-90 group-hover:opacity-100">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 opacity-90 group-hover:opacity-100 print:hidden">
                   <span>View Facilities</span>
                   <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                 </div>
@@ -1024,7 +1029,7 @@ export function DashboardPage() {
                   <BarChart3 className="w-4 h-4 text-purple-600" />
                   <span className="font-bold text-sm text-slate-800 group-hover:text-purple-600 transition-colors">Cross-Department Operations</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-600 opacity-90 group-hover:opacity-100">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-600 opacity-90 group-hover:opacity-100 print:hidden">
                   <span>View Reports</span>
                   <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                 </div>

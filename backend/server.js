@@ -101,12 +101,12 @@ app.get('/api/facilities', async (req, res) => {
 // Create a new Facility or Park (Admin)
 app.post('/api/facilities', async (req, res) => {
   try {
-    const { name, category, capacity, hourly_rate, location, amenities, status, image_url } = req.body;
+    const { name, category, capacity, hourly_rate, location, amenities, status, image_url, image_url_2 } = req.body;
     const result = await pool.query(`
-      INSERT INTO facilities (name, category, capacity, hourly_rate, location, amenities, status, image_url)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO facilities (name, category, capacity, hourly_rate, location, amenities, status, image_url, image_url_2)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
-    `, [name, category, parseInt(capacity) || 50, parseFloat(hourly_rate) || 0, location, amenities || '', status || 'Available', image_url || null]);
+    `, [name, category, parseInt(capacity) || 50, parseFloat(hourly_rate) || 0, location, amenities || '', status || 'Available', image_url || null, image_url_2 || null]);
     await pool.query(
       'INSERT INTO activity_logs (user_name, action, module, details) VALUES ($1, $2, $3, $4)',
       ['Admin', 'Facility Added', 'FACILITIES', `New ${category}: ${name}`]
@@ -121,11 +121,13 @@ app.post('/api/facilities', async (req, res) => {
 app.put('/api/facilities/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, category, capacity, hourly_rate, location, amenities, status, image_url } = req.body;
+    const { name, category, capacity, hourly_rate, location, amenities, status, image_url, image_url_2 } = req.body;
     const result = await pool.query(`
-      UPDATE facilities SET name=$1, category=$2, capacity=$3, hourly_rate=$4, location=$5, amenities=$6, status=$7, image_url=COALESCE($8, image_url)
-      WHERE id=$9 RETURNING *
-    `, [name, category, parseInt(capacity) || 50, parseFloat(hourly_rate) || 0, location, amenities || '', status || 'Available', image_url || null, id]);
+      UPDATE facilities
+      SET name=$1, category=$2, capacity=$3, hourly_rate=$4, location=$5, amenities=$6, status=$7,
+          image_url=$8, image_url_2=$9
+      WHERE id=$10 RETURNING *
+    `, [name, category, parseInt(capacity) || 50, parseFloat(hourly_rate) || 0, location, amenities || '', status || 'Available', image_url || null, image_url_2 || null, id]);
     if (result.rowCount === 0) return res.status(404).json({ success: false, message: 'Facility not found' });
     res.json({ success: true, data: result.rows[0] });
   } catch (error) {
@@ -417,6 +419,7 @@ app.get('/api/cemetery/plots', async (req, res) => {
       SELECT p.*, b.deceased_name, b.burial_date, b.date_of_death, b.permit_no, b.contact_person
       FROM cemetery_plots p
       LEFT JOIN burial_records b ON b.plot_id = p.id
+        AND b.status NOT IN ('Cancelled', 'Rejected', 'Canceled')
     `;
     const params = [];
     const conditions = [];
@@ -522,7 +525,8 @@ app.post('/api/cemetery/burials', async (req, res) => {
       plot_id, plot_code, section, cemetery_name,
       contact_person, contact_phone, applicant_email, citizen_email, citizen_id,
       cause_of_death, deceased_address, attending_physician, applicant_relationship, applicant_address,
-      status, fee_amount, remarks
+      status, fee_amount, remarks,
+      death_certificate_url, valid_id_url
     } = req.body;
     
     const refCode = reference_no || `BUR-2026-${Math.floor(100 + Math.random() * 900)}`;
@@ -536,20 +540,23 @@ app.post('/api/cemetery/burials', async (req, res) => {
         plot_id, plot_code, section, cemetery_name,
         contact_person, contact_phone, applicant_email, citizen_email, citizen_id,
         cause_of_death, deceased_address, attending_physician, applicant_relationship, applicant_address,
-        status, fee_amount, remarks
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+        status, fee_amount, remarks, death_certificate_url, valid_id_url
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
       ON CONFLICT (reference_no) DO UPDATE SET
         status = EXCLUDED.status,
         remarks = EXCLUDED.remarks,
         burial_date = EXCLUDED.burial_date,
-        burial_time = EXCLUDED.burial_time
+        burial_time = EXCLUDED.burial_time,
+        death_certificate_url = COALESCE(EXCLUDED.death_certificate_url, burial_records.death_certificate_url),
+        valid_id_url = COALESCE(EXCLUDED.valid_id_url, burial_records.valid_id_url)
       RETURNING *
     `, [
       refCode, permNo, deceased_name, date_of_birth || null, date_of_death, burial_date, burial_time || '10:00 AM',
       plot_id || null, plot_code || null, section || null, cemetery_name || 'Barangay 178 Municipal Cemetery',
       contact_person, contact_phone, emailVal, emailVal, citizen_id || null,
       cause_of_death || null, deceased_address || null, attending_physician || null, applicant_relationship || null, applicant_address || null,
-      finalStatus, parseFloat(fee_amount || 0), remarks || null
+      finalStatus, parseFloat(fee_amount || 0), remarks || null,
+      death_certificate_url || null, valid_id_url || null
     ]);
 
     // Mark plot as RESERVED
