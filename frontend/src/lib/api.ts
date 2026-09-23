@@ -40,7 +40,7 @@ const EP_HEADERS = {
 // Edge Function URL (From Classmate tutorial: calling Edge Function client-side)
 const EDGE_URL = (
   env.VITE_EDGE_FUNCTION_URL ||
-  (EP_URL ? `${EP_URL}/functions/v1/api` : '')
+  (EP_URL ? `${EP_URL}/functions/v1/330a2e7808deec92591a/api` : '')
 );
 
 async function fastFetch(url: string, options: RequestInit = {}, timeoutMs = 2500): Promise<Response> {
@@ -54,7 +54,7 @@ async function fastFetch(url: string, options: RequestInit = {}, timeoutMs = 250
   }
 }
 
-export async function edgeFetch(endpoint: string, options: RequestInit = {}, timeoutMs = 3000): Promise<any> {
+export async function edgeFetch(endpoint: string, options: RequestInit = {}, timeoutMs = 1500): Promise<any> {
   if (!EDGE_URL || !EP_KEY) return null;
   try {
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
