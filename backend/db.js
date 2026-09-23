@@ -211,6 +211,9 @@ export async function initDatabase() {
       ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS payment_due_date DATE;
       ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP;
       ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
+      ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS activity_type VARCHAR(100);
+      ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS sponsorship_photo_url TEXT;
+      ALTER TABLE facility_reservations ADD COLUMN IF NOT EXISTS event_name VARCHAR(200);
 
       ALTER TABLE utility_requests ADD COLUMN IF NOT EXISTS citizen_email VARCHAR(100);
       ALTER TABLE utility_requests ADD COLUMN IF NOT EXISTS citizen_id INT;

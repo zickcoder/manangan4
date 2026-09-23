@@ -58,7 +58,7 @@ export function MyTicketsPage() {
   const [filterCategory, setFilterCategory] = useState<'all' | 'facility' | 'utility' | 'cemetery'>(
     catParam === 'facility' || catParam === 'utility' || catParam === 'cemetery' ? catParam : 'all'
   );
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'waiting_payment' | 'paid' | 'rejected' | 'cancelled'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'lgu_approved' | 'waiting_payment' | 'paid' | 'rejected' | 'cancelled'>('all');
   const [selectedSubmission, setSelectedSubmission] = useState<any | null>(null);
 
   useEffect(() => {
@@ -192,7 +192,19 @@ export function MyTicketsPage() {
         });
       } catch { return str; }
     };
-    const feeSection = item.fee_amount > 0 ? `
+    const feeSection = item.is_lgu ? `
+      <div style="border:2px solid #c084fc;background:#faf5ff;border-radius:10px;padding:14px;margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e9d5ff;padding-bottom:8px;margin-bottom:8px">
+          <div>
+            <span style="font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b21a8;display:block">Assessed Fee Amount</span>
+            <span style="font-size:10px;color:#7e22ce;font-weight:600">Local Government Unit Sponsorship</span>
+          </div>
+          <span style="font-family:monospace;font-weight:900;font-size:16px;color:#6b21a8">&#127963; FREE (&#8369;0.00) &mdash; LGU SPONSORED</span>
+        </div>
+        <p style="color:#581c87;font-size:11px;margin:0;line-height:1.4">
+          &#10003; <b>100% Waived:</b> All user and venue fees are waived pursuant to municipal sponsorship policy. No cash payment or treasury settlement required.
+        </p>
+      </div>` : item.fee_amount > 0 ? `
       <div style="border:1px solid #cbd5e1;border-radius:8px;padding:12px;margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;border-bottom:1px solid #e2e8f0;padding-bottom:8px;margin-bottom:8px">
           <span style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#475569">Assessed Fee Amount</span>
@@ -200,7 +212,13 @@ export function MyTicketsPage() {
         </div>
         ${item.status === 'Paid' ? `<p style="color:#166534;font-size:12px">&#10003; <b>Payment Complete:</b> Treasury Cash Payment confirmed on ${fmtDate(item.paid_at || item.date)}.</p>` : ''}
         ${item.status === 'Pending Payment' ? `<p style="color:#92400e;font-size:12px">&#128205; <b>Action Required:</b> Present tracking no. <b>${item.ref_no}</b> at the LGU Treasury Desk for cash settlement.</p>` : ''}
-      </div>` : '';
+      </div>` : `
+      <div style="border:1px solid #e2e8f0;background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#475569">Assessed Fee Amount</span>
+          <span style="font-family:monospace;font-weight:900;font-size:16px;color:#047857">FREE (&#8369;0.00)</span>
+        </div>
+      </div>`;
     const win = window.open('', '_blank', 'width=700,height=900,scrollbars=yes');
     if (!win) { alert('Please allow pop-ups to print the receipt.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><title>Official Receipt — ${item.ref_no}</title>
@@ -227,10 +245,12 @@ export function MyTicketsPage() {
       ${feeSection}
       <div class="section">
         <div class="label" style="margin-bottom:8px">&#128203; Application Details</div>
-        <div class="row"><span><b>Service / Title:</b></span><span>${item.title}</span></div>
+        ${item.event_name ? `<div class="row"><span><b>Event Name:</b></span><span style="font-weight:bold;color:#0f172a">${item.event_name}</span></div>` : ''}
+        ${item.activity_type ? `<div class="row"><span><b>Activity Type:</b></span><span style="font-weight:bold;color:${item.is_lgu ? '#7e22ce' : '#1e40af'}">${item.activity_type}</span></div>` : ''}
+        <div class="row"><span><b>Service / Venue:</b></span><span>${item.title}</span></div>
         <div class="row"><span><b>Date Filed:</b></span><span>${fmtDate(item.created_at)}</span></div>
         <div class="row"><span><b>Schedule / Date:</b></span><span>${item.date} ${item.time ? '· ' + item.time : ''}</span></div>
-        <div class="row"><span><b>Details:</b></span><span>${item.details}</span></div>
+        <div class="row"><span><b>Details / Purpose:</b></span><span>${item.details}</span></div>
         ${item.special_equipment ? `<div class="row"><span><b>Special Equipment:</b></span><span>${Array.isArray(item.special_equipment) ? item.special_equipment.join(', ') : item.special_equipment}</span></div>` : ''}
         <div class="row"><span><b>Applicant:</b></span><span>${item.applicant}</span></div>
         ${item.contact ? `<div class="row"><span><b>Contact:</b></span><span>${item.contact}</span></div>` : ''}
@@ -297,6 +317,14 @@ export function MyTicketsPage() {
           }
         } catch { eventDateIso = String(rawEventDate).slice(0, 10); }
       }
+      const isLGU = r.status === 'LGU Endorsed' ||
+                    (r as any).activity_type === 'LGU Activity' || 
+                    Boolean((r as any).purpose?.toLowerCase().includes('lgu activity')) ||
+                    Boolean((r as any).event_name?.toLowerCase().includes('lgu')) ||
+                    (r as any).fee_amount === 0 ||
+                    (r as any).fee_amount === '0.00' ||
+                    (r as any).fee_amount === '0' ||
+                    Boolean((r as any).sponsorship_photo_url || (r as any).proof_url || (r as any).photo_url);
       return {
         id: `res-${r.id}`,
         originalId: r.id,
@@ -305,15 +333,26 @@ export function MyTicketsPage() {
         facility_category: isPark ? 'Park & Recreation' : 'Government Facility',
         type: isPark ? 'Park & Recreation Grounds Scheduling' : 'Government Facility Reservation',
         title: r.facility_name || (isPark ? 'Municipal Park / Ground' : 'Government Facility'),
+        event_name: (r as any).event_name,
+        activity_type: (r as any).activity_type || (isLGU ? 'LGU Activity' : undefined),
+        sponsorship_photo_url: (r as any).sponsorship_photo_url,
+        is_lgu: isLGU,
         date: formatDateSafely(r.event_date),
         event_date_iso: eventDateIso,
         time: `${r.start_time || ''} - ${r.end_time || ''}`,
         status: r.status || 'Pending',
-        fee_amount: (r as any).fee_amount || calculateFacilityFee(r.start_time, r.end_time, r.hourly_rate || 0) || 0,
+        fee_amount: isLGU ? 0 : (parseFloat(String((r as any).fee_amount)) || calculateFacilityFee(r.start_time, r.end_time, r.hourly_rate || 0) || 0),
         payment_method: (r as any).payment_method,
         paid_at: (r as any).paid_at,
         payment_due_date: (r as any).payment_due_date,
-        badgeVariant: r.status === 'Approved' || r.status === 'Paid' ? 'success' : r.status === 'Pending Payment' ? 'info' : r.status === 'Rejected' ? 'destructive' : r.status === 'Cancelled' ? 'default' : 'warning',
+        badgeVariant: 
+          isLGU && (r.status === 'LGU Endorsed' || r.status === 'Approved' || r.status === 'Paid')
+            ? 'purple'
+            : r.status === 'Approved' || r.status === 'Paid' ? 'success'
+            : r.status === 'Pending Payment' ? 'info'
+            : r.status === 'Rejected' ? 'destructive'
+            : r.status === 'Cancelled' ? 'default'
+            : 'warning',
         details: r.purpose || 'Event Booking',
         special_equipment: (r as any).special_equipment,
         applicant: r.applicant_name || '',
@@ -384,14 +423,28 @@ export function MyTicketsPage() {
     return 5;
   };
 
-  const matchesStatusFilter = (status: string, filter: string) => {
+  const matchesStatusFilter = (status: string, filter: string, isLgu?: boolean) => {
     if (filter === 'all') return true;
     const s = (status || '').toLowerCase().trim();
     if (filter === 'rejected') return s.includes('reject');
     if (filter === 'cancelled') return s.includes('cancel');
     if (filter === 'waiting_payment') return s.includes('payment') || s.includes('waiting');
-    if (filter === 'paid') return s.includes('paid');
-    if (filter === 'approved') return s.includes('approved') || s.includes('resolved') || s.includes('in progress');
+    
+    // NOT in Paid filter: LGU grant free payment / LGU sponsored tickets NEVER show in Paid filter
+    if (filter === 'paid') {
+      return s === 'paid' && !Boolean(isLgu) && s !== 'lgu endorsed';
+    }
+    
+    // ONLY in 🏛️ LGU Officially Endorsed filter: show ALL LGU grant free payment / sponsored tickets
+    if (filter === 'lgu_approved') {
+      return s === 'lgu endorsed' || (Boolean(isLgu) && (s === 'lgu endorsed' || s === 'paid' || s.includes('approved')));
+    }
+    
+    // Regular Approved filter: only non-LGU approved tickets
+    if (filter === 'approved') {
+      return (s.includes('approved') || s.includes('resolved') || s.includes('in progress')) && !Boolean(isLgu) && s !== 'lgu endorsed';
+    }
+    
     if (filter === 'pending') return s.includes('pending') && !s.includes('payment') && !s.includes('waiting');
     return false;
   };
@@ -403,18 +456,19 @@ export function MyTicketsPage() {
 
   const statusCounts = {
     all: categoryScopedSubmissions.length,
-    pending: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'pending')).length,
-    approved: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'approved')).length,
-    waiting_payment: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'waiting_payment')).length,
-    paid: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'paid')).length,
-    rejected: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'rejected')).length,
-    cancelled: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'cancelled')).length,
+    pending: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'pending', i.is_lgu)).length,
+    approved: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'approved', i.is_lgu)).length,
+    lgu_approved: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'lgu_approved', i.is_lgu)).length,
+    waiting_payment: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'waiting_payment', i.is_lgu)).length,
+    paid: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'paid', i.is_lgu)).length,
+    rejected: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'rejected', i.is_lgu)).length,
+    cancelled: categoryScopedSubmissions.filter(i => matchesStatusFilter(i.status, 'cancelled', i.is_lgu)).length,
   };
 
   const filteredSubmissions = allSubmissions
     .filter((item) => {
       if (filterCategory !== 'all' && item.category !== filterCategory) return false;
-      if (!matchesStatusFilter(item.status, statusFilter)) return false;
+      if (!matchesStatusFilter(item.status, statusFilter, item.is_lgu)) return false;
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase().trim();
       return (
@@ -472,7 +526,7 @@ export function MyTicketsPage() {
             <div className="mt-3">
               <span className="text-3xl font-extrabold text-[#0f172a] font-display">{myReservations.length}</span>
               <span className="text-[11px] text-emerald-600 font-semibold ml-2">
-                ({myReservations.filter(r => r.status === 'Approved' || r.status === 'Paid').length} Approved)
+                ({myReservations.filter(r => r.status === 'Approved' || r.status === 'Paid' || r.status === 'LGU Endorsed').length} Approved)
               </span>
             </div>
             <p className="text-[11px] text-blue-700 font-bold mt-1.5 flex items-center gap-1">
@@ -594,6 +648,7 @@ export function MyTicketsPage() {
             { id: 'all', label: 'All Statuses', count: statusCounts.all, activeBg: 'bg-slate-800 text-white' },
             { id: 'pending', label: 'Pending', count: statusCounts.pending, activeBg: 'bg-amber-500 text-white' },
             { id: 'approved', label: 'Approved', count: statusCounts.approved, activeBg: 'bg-emerald-600 text-white' },
+            { id: 'lgu_approved', label: '🏛️ LGU Officially Endorsed', count: statusCounts.lgu_approved, activeBg: 'bg-purple-700 text-white' },
             { id: 'waiting_payment', label: 'Waiting for Payment', count: statusCounts.waiting_payment, activeBg: 'bg-blue-600 text-white' },
             { id: 'paid', label: 'Paid', count: statusCounts.paid, activeBg: 'bg-teal-600 text-white' },
             { id: 'rejected', label: 'Rejected', count: statusCounts.rejected, activeBg: 'bg-rose-600 text-white' },
@@ -650,13 +705,26 @@ export function MyTicketsPage() {
                     <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3.5 px-4">
                         <span className="font-mono font-bold text-blue-600 block">{item.ref_no}</span>
-                        <span className="text-[10px] text-slate-400">{item.created_at}</span>
+                        <span className="text-[10px] text-slate-400 block">{item.created_at}</span>
+                        {item.is_lgu && (
+                          <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200">
+                            🏛️ LGU FREE
+                          </span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 font-semibold text-slate-700">
-                        {item.type}
+                        <div>{item.type}</div>
+                        {item.is_lgu && (
+                          <span className="inline-block mt-0.5 text-[10px] font-bold text-purple-700">
+                            🏛️ LGU Sponsored (Free ₱0.00)
+                          </span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4">
-                        <p className="font-bold text-slate-900">{item.title}</p>
+                        {item.event_name && (
+                          <p className="font-extrabold text-slate-900 truncate max-w-[220px]">{item.event_name}</p>
+                        )}
+                        <p className={item.event_name ? "text-[11px] font-semibold text-slate-600 truncate max-w-[220px]" : "font-bold text-slate-900"}>{item.title}</p>
                         <p className="text-[10px] text-slate-500 truncate max-w-[200px]">{item.details}</p>
                       </td>
                       <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap">
@@ -664,7 +732,25 @@ export function MyTicketsPage() {
                         <span className="block text-[10px] text-slate-400">{item.time}</span>
                       </td>
                       <td className="py-3.5 px-4">
-                        <Badge variant={item.badgeVariant as any}>{item.status}</Badge>
+                        {item.status === 'LGU Endorsed' || (item.is_lgu && item.status === 'Paid') ? (
+                          <div className="space-y-1">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-purple-600 text-white border border-purple-700 shadow-sm">
+                              ✅ LGU Officially Approved
+                            </span>
+                            <div className="text-[9px] font-bold text-purple-700">
+                              LGU SPONSORED · Verified & Free — ₱0.00
+                            </div>
+                          </div>
+                        ) : item.is_lgu && item.status === 'Approved' ? (
+                          <div className="space-y-1">
+                            <Badge variant="purple">🏛️ Officially Endorsed</Badge>
+                            <div className="text-[9px] font-black text-purple-700 uppercase tracking-wide">
+                              Admin Verified · LGU Sponsored
+                            </div>
+                          </div>
+                        ) : (
+                          <Badge variant={item.badgeVariant as any}>{item.status}</Badge>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
@@ -757,28 +843,46 @@ export function MyTicketsPage() {
       <Modal
         isOpen={Boolean(selectedSubmission)}
         onClose={() => setSelectedSubmission(null)}
-        title={`Official Order of Payment & Ticket Voucher — ${selectedSubmission?.ref_no}`}
-        description="Official Municipal Ticket Copy. Present this at the LGU Treasury Desk for Face-to-Face Payment."
+        title={selectedSubmission?.is_lgu
+          ? `Official LGU Sponsorship Ticket Voucher — ${selectedSubmission?.ref_no}`
+          : `Official Order of Payment & Ticket Voucher — ${selectedSubmission?.ref_no}`}
+        description={selectedSubmission?.is_lgu
+          ? "Official Municipal Ticket Copy. 100% Free of Charge — LGU Sponsored Activity."
+          : "Official Municipal Ticket Copy. Present this at the LGU Treasury Desk for Face-to-Face Payment."}
         maxWidth="lg"
         hideHeaderOnPrint={true}
       >
         {selectedSubmission && (
           <div className="space-y-4 text-xs print:p-4 print:border-2 print:border-slate-800 print:rounded-xl">
             {/* Header Voucher Banner */}
-            <div className="p-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-slate-700">
+            <div className={`p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 border ${
+              selectedSubmission.is_lgu
+                ? 'bg-gradient-to-r from-purple-950 via-purple-900 to-slate-900 text-white border-purple-800'
+                : 'bg-gradient-to-r from-slate-900 to-slate-800 text-white border-slate-700'
+            }`}>
               <div>
-                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest block">REPUBLIC OF THE PHILIPPINES — MUNICIPAL TREASURY & E-SERVICES</span>
+                <span className={`text-[10px] font-bold uppercase tracking-widest block ${selectedSubmission.is_lgu ? 'text-purple-300' : 'text-blue-400'}`}>
+                  {selectedSubmission.is_lgu ? 'REPUBLIC OF THE PHILIPPINES — LGU SPONSORED ACTIVITY VOUCHER' : 'REPUBLIC OF THE PHILIPPINES — MUNICIPAL TREASURY & E-SERVICES'}
+                </span>
                 <h4 className="text-base font-extrabold font-display">{selectedSubmission.type}</h4>
                 <p className="text-xs font-mono text-slate-300 mt-0.5">Tracking No: <strong>{selectedSubmission.ref_no}</strong></p>
               </div>
               <div className="flex items-center gap-2 bg-white/10 px-3.5 py-2.5 rounded-xl backdrop-blur-sm border border-white/10 shrink-0">
-                <p className="font-bold text-emerald-400 text-[10px] font-mono tracking-wider">VERIFIED LGU TICKET</p>
+                <p className={`font-bold text-[10px] font-mono tracking-wider ${selectedSubmission.is_lgu ? 'text-purple-300' : 'text-emerald-400'}`}>
+                  {selectedSubmission.is_lgu ? '🏛️ LGU SPONSORED TICKET' : 'VERIFIED LGU TICKET'}
+                </p>
               </div>
             </div>
 
             {/* Real-time Status Notice */}
             <div className={`p-3.5 rounded-xl border flex items-center justify-between ${
-              selectedSubmission.status === 'Paid' || selectedSubmission.status === 'Approved' || selectedSubmission.status === 'Completed'
+              selectedSubmission.is_lgu
+                ? (selectedSubmission.status === 'Approved' || selectedSubmission.status === 'Paid' || selectedSubmission.status === 'LGU Endorsed'
+                    ? 'bg-purple-50 border-purple-300 text-purple-950'
+                    : (selectedSubmission.status as string) === 'Cancelled' || (selectedSubmission.status as string) === 'Canceled' || selectedSubmission.status === 'Rejected'
+                    ? 'bg-rose-50 border-rose-300 text-rose-950'
+                    : 'bg-purple-50/70 border-purple-200 text-purple-900')
+                : selectedSubmission.status === 'Paid' || selectedSubmission.status === 'Approved' || selectedSubmission.status === 'Completed'
                 ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
                 : selectedSubmission.status === 'Pending Payment'
                 ? 'bg-amber-50 border-amber-300 text-amber-950'
@@ -789,7 +893,15 @@ export function MyTicketsPage() {
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider block">LGU Ticket & Fee Status</span>
                 <h4 className="font-bold text-sm">
-                  {selectedSubmission.status === 'Pending Payment'
+                  {selectedSubmission.is_lgu
+                    ? (selectedSubmission.status === 'LGU Endorsed' || selectedSubmission.status === 'Paid'
+                      ? 'LGU SPONSORED — Verified & Approved (Free ₱0.00)'
+                      : selectedSubmission.status === 'Approved'
+                      ? 'LGU SPONSORED — Verified & Approved (Free ₱0.00)'
+                      : (selectedSubmission.status as string) === 'Cancelled' || (selectedSubmission.status as string) === 'Canceled'
+                      ? 'CANCELLED — Slot released.'
+                      : 'LGU Sponsored Activity — Pending Verification (Free ₱0.00)')
+                    : selectedSubmission.status === 'Pending Payment'
                     ? 'Approved — Waiting for Face-to-Face LGU Treasury Payment'
                     : selectedSubmission.status === 'Paid'
                     ? 'PAID & APPROVED — Official Receipt Issued'
@@ -798,13 +910,74 @@ export function MyTicketsPage() {
                     : selectedSubmission.status}
                 </h4>
               </div>
-              <Badge variant={selectedSubmission.badgeVariant as any} size="md">
-                {selectedSubmission.status}
-              </Badge>
+              {selectedSubmission.is_lgu && (selectedSubmission.status === 'LGU Endorsed' || selectedSubmission.status === 'Paid') ? (
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-purple-600 text-white border border-purple-700 shadow-sm">
+                  ✅ LGU Officially Approved
+                </span>
+              ) : selectedSubmission.is_lgu && selectedSubmission.status === 'Approved' ? (
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-purple-100 text-purple-800 border border-purple-300 shadow-sm">
+                  🏛️ Officially Endorsed
+                </span>
+              ) : (
+                <Badge variant={selectedSubmission.badgeVariant as any} size="md">
+                  {selectedSubmission.status}
+                </Badge>
+              )}
             </div>
 
-            {/* Face to Face Treasury Instruction for Unpaid Tickets */}
-            {(selectedSubmission.status === 'Pending Payment' || selectedSubmission.status === 'Approved' || selectedSubmission.fee_amount > 0) && (
+            {/* Assessed Fee Amount Box */}
+            {selectedSubmission.is_lgu ? (
+              <div className="p-4 bg-purple-50/90 rounded-2xl border-2 border-purple-300 space-y-2.5 shadow-xs">
+                <div className="flex items-center justify-between border-b border-purple-200 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base">🏛️</span>
+                    <div>
+                      <span className="font-extrabold text-purple-950 uppercase tracking-wider text-[11px] block">
+                        Assessed Fee Amount
+                      </span>
+                      <span className="text-[10px] text-purple-700 font-semibold">
+                        Official Local Government Sponsorship
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-mono font-black text-xl text-purple-900 block leading-tight">
+                      FREE (₱0.00)
+                    </span>
+                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[9px] font-black bg-purple-200 text-purple-900 border border-purple-300">
+                      100% SPONSORED
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white/90 rounded-xl p-3 border border-purple-200 text-xs text-purple-900 space-y-1">
+                  <p className="font-bold text-[11px] flex items-center gap-1 text-purple-950">
+                    <span>✓ Resident Fee Waived:</span>
+                    <span className="font-normal text-purple-900">No payment required at the LGU Treasury Desk.</span>
+                  </p>
+                  <p className="text-[10px] text-purple-700 leading-relaxed">
+                    This reservation is recognized as an <strong>Official LGU / Community Activity</strong> under municipal sponsorship policy. User and venue rental fees are completely waived.
+                  </p>
+                </div>
+
+                {selectedSubmission.sponsorship_photo_url && (
+                  <div className="pt-1 flex items-center justify-between text-[11px]">
+                    <span className="text-purple-800 font-bold flex items-center gap-1">
+                      <span>📄 Official Endorsement Document:</span>
+                      <span className="text-emerald-700 font-extrabold">Attached &amp; On File</span>
+                    </span>
+                    <a
+                      href={selectedSubmission.sponsorship_photo_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-purple-700 hover:text-purple-950 font-bold underline cursor-pointer"
+                    >
+                      View My Submitted Letter
+                    </a>
+                  </div>
+                )}
+              </div>
+            ) : (selectedSubmission.status === 'Pending Payment' || selectedSubmission.status === 'Approved' || selectedSubmission.fee_amount > 0) && (
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                   <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Assessed Fee Amount</span>
@@ -826,9 +999,22 @@ export function MyTicketsPage() {
             {/* Submitted Application Data */}
             <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
               <p className="font-bold text-slate-950 text-xs uppercase tracking-wider">📋 Application Details</p>
+              {selectedSubmission.event_name && (
+                <p className="text-slate-800"><strong>Event Name:</strong> <span className="font-bold text-slate-900">{selectedSubmission.event_name}</span></p>
+              )}
+              {selectedSubmission.activity_type && (
+                <p className="text-slate-800">
+                  <strong>Activity Category:</strong>{' '}
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    selectedSubmission.is_lgu ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {selectedSubmission.activity_type}
+                  </span>
+                </p>
+              )}
               <p className="text-slate-800"><strong>Title / Service:</strong> {selectedSubmission.title}</p>
               <p className="text-slate-800"><strong>Date & Time Logged:</strong> <span className="font-mono font-bold text-blue-700">{selectedSubmission.created_at}</span></p>
-              <p className="text-slate-800"><strong>Details:</strong> {selectedSubmission.details}</p>
+              <p className="text-slate-800"><strong>Details / Purpose:</strong> {selectedSubmission.details}</p>
               <p className="text-slate-800"><strong>Schedule / Date:</strong> {selectedSubmission.date} ({selectedSubmission.time})</p>
               {selectedSubmission.special_equipment && (
                 <div className="pt-1 pb-1">
@@ -861,7 +1047,7 @@ export function MyTicketsPage() {
                   leftIcon={<Printer className="w-3.5 h-3.5" />}
                   onClick={() => handlePrintReceipt(selectedSubmission)}
                 >
-                  Print Order of Payment / Receipt
+                  {selectedSubmission.is_lgu ? 'Print Official Ticket Voucher' : 'Print Order of Payment / Receipt'}
                 </Button>
                 {/* No Resubmit button for cancelled tickets in detail modal */}
                 {(selectedSubmission.status === 'Pending Review' || selectedSubmission.status === 'Pending Payment' || selectedSubmission.status === 'Pending' || selectedSubmission.status === 'Waiting for Payment') && (

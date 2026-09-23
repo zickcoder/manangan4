@@ -766,7 +766,15 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
         rCat = (n.includes('park') || n.includes('amphitheater') || n.includes('plaza') || n.includes('grounds') || n.includes('recreation'))
           ? 'Park & Recreation' : 'Government Facility';
       }
-      return { ...r, facility_name: rName || 'Municipal Facility', facility_category: rCat };
+      return { 
+        ...localMatch,
+        ...r, 
+        facility_name: rName || 'Municipal Facility', 
+        facility_category: rCat,
+        sponsorship_photo_url: r.sponsorship_photo_url || localMatch?.sponsorship_photo_url || null,
+        activity_type: r.activity_type || localMatch?.activity_type || null,
+        event_name: r.event_name || localMatch?.event_name || null,
+      };
     });
 
     // CRITICAL: Deduplicate by BOTH id AND reference_no so local Date.now() records are never duplicated against server records
@@ -822,10 +830,15 @@ export async function fetchReservations(status = 'all', category = 'all', exclud
       const matched = allFacsMaster.find((f: any) => (f.name || '').trim().toLowerCase() === String(rName).trim().toLowerCase());
       if (matched) rCat = matched.category;
     }
+    if (!rCat) {
+      const n = (rName || '').toLowerCase();
+      rCat = (n.includes('park') || n.includes('amphitheater') || n.includes('plaza') || n.includes('grounds') || n.includes('recreation'))
+        ? 'Park & Recreation' : 'Government Facility';
+    }
     return {
       ...r,
       facility_name: rName || 'Municipal Facility',
-      facility_category: rCat || 'Government Facility'
+      facility_category: rCat
     };
   });
 
@@ -1008,6 +1021,7 @@ export async function createReservation(payload: any) {
   }
 
   // Prepare database-clean payload matching PostgreSQL schema
+  const isLGUActivity = payload.activity_type === 'LGU Activity';
   const dbReservation = {
     reference_no: refNo,
     facility_id: payload.facility_id ? Number(payload.facility_id) : 1,
@@ -1017,14 +1031,18 @@ export async function createReservation(payload: any) {
     citizen_email: applicantEmail || null,
     applicant_phone: payload.applicant_phone || '',
     purpose: payload.purpose || 'Civic Event',
+    event_name: payload.event_name || null,
     event_date: payload.event_date ? payload.event_date.split('T')[0] : new Date().toISOString().split('T')[0],
     start_time: payload.start_time || '08:00 AM',
     end_time: payload.end_time || '12:00 PM',
     attendees: Number(payload.attendees) || 20,
     special_equipment: equipmentText || null,
-    fee_amount: Number(payload.fee_amount) || 0,
+    // LGU Activity bookings are always free — admin verifies sponsorship proof before approving
+    fee_amount: isLGUActivity ? 0 : (Number(payload.fee_amount) || 0),
     hours: Number(payload.hours) || 1,
-    status: 'Pending Review'
+    status: 'Pending Review',
+    activity_type: payload.activity_type || null,
+    sponsorship_photo_url: payload.sponsorship_photo_url || null,
   };
 
   const newReservation = {

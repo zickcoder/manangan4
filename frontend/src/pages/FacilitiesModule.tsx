@@ -17,7 +17,10 @@ import {
   X,
   Upload,
   Image as ImageIcon,
-  MapPin
+  MapPin,
+  ShieldCheck,
+  ZoomIn,
+  ExternalLink
 } from 'lucide-react';
 import { compressImage } from '../lib/imageCompressor';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
@@ -29,15 +32,11 @@ import {
   fetchFacilities, 
   fetchReservations, 
   updateReservationStatus, 
-  createReservation, 
-  checkFacilityAI,
-  checkDoubleBooking,
   createFacility,
   updateFacility,
   deleteFacility,
-  calculateBookingHours,
   calculateFacilityFee,
-  calculateSlotFee
+  calculateBookingHours
 } from '../lib/api';
 import { Facility, FacilityReservation } from '../types';
 
@@ -50,8 +49,8 @@ export function FacilitiesModule() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRes, setSelectedRes] = useState<FacilityReservation | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
-  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [reviewRemarks, setReviewRemarks] = useState('');
+  const [lightboxProof, setLightboxProof] = useState<{ url: string; title: string; applicant: string; ref: string } | null>(null);
 
   // Facility CRUD
   const [isFacilityFormOpen, setIsFacilityFormOpen] = useState(false);
@@ -156,9 +155,7 @@ export function FacilitiesModule() {
     message: ''
   });
 
-  // AI Conflict check state
-  const [aiChecking, setAiChecking] = useState(false);
-  const [aiResult, setAiResult] = useState<any>(null);
+
 
   const DEFAULT_FACILITY_EQUIPMENT = [
     'Sound System & 2 Wireless Microphones',
@@ -212,24 +209,13 @@ export function FacilitiesModule() {
     setEditingEquipIdx(null);
   };
 
-  const [newForm, setNewForm] = useState({
-    facility_id: 1,
-    applicant_name: '',
-    applicant_email: '',
-    applicant_phone: '',
-    purpose: '',
-    event_date: new Date().toISOString().split('T')[0],
-    start_time: '08:00 AM',
-    end_time: '12:00 PM',
-    attendees: '100',
-    remarks: '',
-  });
+
 
   const loadData = async () => {
     try {
       const [facs, resList] = await Promise.all([
         fetchFacilities('Government Facility'),
-        fetchReservations(statusFilter, 'Government Facility', true),
+        fetchReservations('all', 'Government Facility', false),
       ]);
       setFacilities(facs);
       setReservations(resList);
@@ -266,8 +252,13 @@ export function FacilitiesModule() {
         message: 'Updating facility reservation status.'
       });
 
+      const isLGU = 
+        (selectedRes as any).activity_type === 'LGU Activity' || 
+        (selectedRes as any).purpose?.includes('LGU Activity') ||
+        (selectedRes as any).fee_amount === 0 ||
+        Boolean((selectedRes as any).sponsorship_photo_url || (selectedRes as any).proof_url);
       const computedFee = calculateFacilityFee(selectedRes.start_time, selectedRes.end_time, selectedRes.hourly_rate || 0);
-      const fee = (selectedRes as any).fee_amount || computedFee || (selectedRes.hourly_rate ? selectedRes.hourly_rate * 4 : 2000);
+      const fee = isLGU ? 0 : ((selectedRes as any).fee_amount ?? computedFee ?? (selectedRes.hourly_rate ? selectedRes.hourly_rate * 4 : 2000));
       const dueDate = new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0];
 
       await updateReservationStatus(
@@ -283,7 +274,14 @@ export function FacilitiesModule() {
 
       // Show animated checkmark or x-mark
       setTimeout(() => {
-        if (status === 'Paid') {
+        if (status === 'LGU Endorsed') {
+          setAnimModal({
+            isOpen: true,
+            type: 'paid',
+            title: '🏛️ LGU Officially Endorsed!',
+            message: `Reservation #${selectedRes.reference_no} is officially endorsed. LGU-sponsored — no payment required.`
+          });
+        } else if (status === 'Paid') {
           setAnimModal({
             isOpen: true,
             type: 'paid',
@@ -323,117 +321,45 @@ export function FacilitiesModule() {
     }
   };
 
-  const handleCheckAI = async () => {
-    setAiChecking(true);
-    const fac = facilities.find(f => f.id === newForm.facility_id);
-    try {
-      const res = await checkFacilityAI(
-        fac?.name || 'Civic Center',
-        newForm.event_date,
-        newForm.start_time,
-        newForm.end_time,
-        newForm.facility_id
-      );
-      setAiResult(res);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setAiChecking(false);
-    }
-  };
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setAnimModal({
-        isOpen: true,
-        type: 'loading',
-        title: 'Checking Availability...',
-        message: 'Verifying schedule for conflicts before booking.'
-      });
-
-      const durationHours = calculateBookingHours(newForm.start_time, newForm.end_time);
-      if (durationHours < 1 || newForm.start_time.trim().toLowerCase() === newForm.end_time.trim().toLowerCase()) {
-        setAnimModal({
-          isOpen: true,
-          type: 'rejected',
-          title: 'Invalid Booking Duration',
-          message: 'Start Time and End Time cannot be the same. The reservation duration must be at least 1 hour (e.g. 08:00 AM to 09:00 AM).'
-        });
-        return;
-      }
-
-      const facObj = facilities.find(f => f.id === Number(newForm.facility_id));
-
-      // Double booking check
-      if (facObj && newForm.event_date && newForm.start_time && newForm.end_time) {
-        const conflict = await checkDoubleBooking(
-          facObj.id,
-          facObj.name,
-          newForm.event_date,
-          newForm.start_time,
-          newForm.end_time,
-          undefined,
-          undefined,
-          undefined,
-          'Government Facility'
-        );
-        if (conflict.hasConflict) {
-          setAnimModal({
-            isOpen: true,
-            type: 'rejected',
-            title: '⚠️ Schedule Conflict Detected',
-            message: conflict.message
-          });
-          return;
-        }
-      }
-
-      setAnimModal({
-        isOpen: true,
-        type: 'loading',
-        title: 'Booking Facility...',
-        message: 'Checking schedule availability and creating booking ticket.'
-      });
-
-      await createReservation({
-        ...newForm,
-        facility_category: 'Government Facility',
-        facility_name: facObj?.name,
-        facility_location: facObj?.location,
-        hourly_rate: facObj?.hourly_rate
-      });
-      setIsNewModalOpen(false);
-      // govserve_data_updated event from createReservation will trigger debounced loadData automatically
-
-      setTimeout(() => {
-        setAnimModal({
-          isOpen: true,
-          type: 'success',
-          title: '✓ Facility Reserved Successfully!',
-          message: 'Booking submitted to Pending Review queue.'
-        });
-      }, 200);
-    } catch (e) {
-      setAnimModal({
-        isOpen: true,
-        type: 'rejected',
-        title: 'Booking Failed',
-        message: 'Could not create reservation. Please try again.'
-      });
-    }
-  };
-
   const filtered = (reservations || []).filter(r => {
-    const matchesQuery = (r.reference_no || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
-      (r.applicant_name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
-      (r.purpose || '').toLowerCase().includes((searchQuery || '').toLowerCase());
+    const q = (searchQuery || '').toLowerCase();
+    const matchesQuery = 
+      (r.reference_no || '').toLowerCase().includes(q) ||
+      (r.applicant_name || '').toLowerCase().includes(q) ||
+      (r.purpose || '').toLowerCase().includes(q) ||
+      ((r as any).event_name || '').toLowerCase().includes(q) ||
+      (r.facility_name || '').toLowerCase().includes(q);
     
-    if (statusFilter === 'all') return matchesQuery;
+    if (!matchesQuery) return false;
+
+    const rProof = (r as any).sponsorship_photo_url || (r as any).proof_url || (r as any).photo_url;
+    const isLGU = 
+      r.status === 'LGU Endorsed' ||
+      (r as any).activity_type === 'LGU Activity' ||
+      ((r as any).purpose || '').toLowerCase().includes('lgu activity') ||
+      ((r as any).event_name || '').toLowerCase().includes('lgu') ||
+      (r as any).fee_amount === 0 ||
+      (r as any).fee_amount === '0.00' ||
+      (r as any).fee_amount === '0' ||
+      Boolean(rProof);
+
+    if (statusFilter === 'all') return true;
     if (statusFilter === 'Pending Review') {
-      return matchesQuery && (r.status === 'Pending' || r.status === 'Pending Review');
+      return r.status === 'Pending' || r.status === 'Pending Review';
     }
-    return matchesQuery && r.status === statusFilter;
+    // Only in 🏛️ LGU Officially Endorsed filter: show ALL LGU grant free payment / LGU sponsored tickets
+    if (statusFilter === 'LGU Endorsed') {
+      return r.status === 'LGU Endorsed' || (isLGU && (r.status === 'Approved' || r.status === 'Paid'));
+    }
+    // NOT in Paid filter: LGU tickets must NEVER appear in the Paid filter
+    if (statusFilter === 'Paid') {
+      return r.status === 'Paid' && !isLGU && r.status !== 'LGU Endorsed';
+    }
+    // In Approved filter: only regular non-LGU approved bookings
+    if (statusFilter === 'Approved') {
+      return r.status === 'Approved' && !isLGU && r.status !== 'LGU Endorsed';
+    }
+    return r.status === statusFilter;
   });
 
   return (
@@ -666,17 +592,25 @@ export function FacilitiesModule() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-          {['all', 'Pending Review', 'Approved', 'Pending Payment', 'Paid', 'Rejected'].map((status) => (
+          {[
+            { id: 'all', label: 'All Bookings' },
+            { id: 'Pending Review', label: 'Pending Review' },
+            { id: 'Approved', label: 'Approved' },
+            { id: 'LGU Endorsed', label: '🏛️ LGU Officially Endorsed' },
+            { id: 'Pending Payment', label: 'Waiting for Payment' },
+            { id: 'Paid', label: 'Paid' },
+            { id: 'Rejected', label: 'Rejected' },
+          ].map((sf) => (
             <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
+              key={sf.id}
+              onClick={() => setStatusFilter(sf.id)}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                statusFilter === status
-                  ? 'bg-blue-600 text-white shadow-sm'
+                statusFilter === sf.id
+                  ? sf.id === 'LGU Endorsed' ? 'bg-purple-700 text-white shadow-sm' : 'bg-blue-600 text-white shadow-sm'
                   : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
               }`}
             >
-              {status === 'all' ? 'All Bookings' : status === 'Pending Payment' ? 'Waiting for Payment' : status}
+              {sf.label}
             </button>
           ))}
         </div>
@@ -699,25 +633,102 @@ export function FacilitiesModule() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filtered.map((r) => (
+                {filtered.map((r) => {
+                  const rProof = (r as any).sponsorship_photo_url || (r as any).proof_url || (r as any).photo_url;
+                  const isLGU = 
+                    r.status === 'LGU Endorsed' ||
+                    (r as any).activity_type === 'LGU Activity' || 
+                    ((r as any).purpose || '').toLowerCase().includes('lgu activity') ||
+                    ((r as any).event_name || '').toLowerCase().includes('lgu') ||
+                    (r as any).fee_amount === 0 || 
+                    (r as any).fee_amount === '0.00' ||
+                    (r as any).fee_amount === '0' ||
+                    Boolean(rProof);
+                  const eventName = (r as any).event_name;
+                  return (
                   <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3.5 px-4 font-mono font-bold text-blue-600">{r.reference_no}</td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-blue-600">
+                      <div>{r.reference_no}</div>
+                      {isLGU && (
+                        <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200">
+                          🏛️ LGU FREE
+                        </span>
+                      )}
+                    </td>
                     <td className="py-3.5 px-4 font-bold text-slate-800">{r.facility_name}</td>
-                    <td className="py-3.5 px-4 max-w-[200px]">
-                      <p className="font-bold text-slate-900 truncate">{r.applicant_name}</p>
+                    <td className="py-3.5 px-4 max-w-[220px]">
+                      {eventName && (
+                        <p className="font-extrabold text-slate-900 truncate">
+                          {eventName}
+                        </p>
+                      )}
+                      <p className="text-xs text-slate-700 font-semibold truncate">{r.applicant_name}</p>
                       <p className="text-[10px] text-slate-500 truncate">{r.purpose}</p>
+                      {rProof && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLightboxProof({
+                              url: rProof,
+                              title: eventName || r.purpose || 'LGU Sponsorship Proof',
+                              applicant: r.applicant_name,
+                              ref: r.reference_no
+                            });
+                          }}
+                          className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded-md border border-purple-200 transition-colors cursor-pointer"
+                        >
+                          <Eye className="w-3 h-3" /> View LGU Proof
+                        </button>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap">
                       {r.event_date ? new Date(r.event_date).toLocaleDateString() : '—'}
-                      <span className="block text-[10px] text-slate-400">{r.start_time} - {r.end_time}</span>
+                      <span className="block text-[10px] text-slate-400 font-mono">{r.start_time} - {r.end_time}</span>
                     </td>
                     <td className="py-3.5 px-4 text-slate-700">{r.attendees} Pax</td>
                     <td className="py-3.5 px-4">
-                      <Badge variant={r.status === 'Approved' || r.status === 'Paid' ? 'success' : r.status === 'Pending Payment' ? 'info' : r.status === 'Rejected' ? 'destructive' : 'warning'}>
-                        {r.status === 'Pending Payment' ? 'Waiting for Payment' : r.status}
-                      </Badge>
+                      {r.status === 'LGU Endorsed' || (isLGU && r.status === 'Paid') ? (
+                        <div className="space-y-1">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-purple-600 text-white border border-purple-700 shadow-sm">
+                            ✅ LGU Officially Approved
+                          </span>
+                          <div className="text-[9px] font-bold text-purple-700">
+                            LGU SPONSORED · Verified & Free — ₱0.00
+                          </div>
+                        </div>
+                      ) : isLGU && r.status === 'Approved' ? (
+                        <div className="space-y-1">
+                          <Badge variant="purple">🏛️ Officially Endorsed</Badge>
+                          <div className="text-[9px] font-black text-purple-700 uppercase tracking-wide">
+                            Admin Verified · LGU Sponsored
+                          </div>
+                        </div>
+                      ) : (
+                        <Badge variant={r.status === 'Approved' || r.status === 'Paid' ? 'success' : r.status === 'Pending Payment' ? 'info' : r.status === 'Rejected' ? 'destructive' : 'warning'}>
+                          {r.status === 'Pending Payment' ? 'Waiting for Payment' : r.status}
+                        </Badge>
+                      )}
                     </td>
-                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                    <td className="py-3.5 px-4 text-right whitespace-nowrap space-x-1.5">
+                      {rProof && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-purple-700 border-purple-300 hover:bg-purple-50 text-[11px] font-bold"
+                          leftIcon={<Eye className="w-3.5 h-3.5 text-purple-600" />}
+                          onClick={() => {
+                            setLightboxProof({
+                              url: rProof,
+                              title: eventName || r.purpose || 'LGU Sponsorship Proof',
+                              applicant: r.applicant_name,
+                              ref: r.reference_no
+                            });
+                          }}
+                        >
+                          Proof
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="secondary"
@@ -732,7 +743,8 @@ export function FacilitiesModule() {
                       </Button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -744,10 +756,24 @@ export function FacilitiesModule() {
         isOpen={isReviewModalOpen}
         onClose={() => setIsReviewModalOpen(false)}
         title={`Review Reservation — ${selectedRes?.reference_no}`}
-        description="Full citizen-submitted booking details. Set due date and process payment status."
+        description="Full citizen-submitted booking details. Inspect LGU sponsorship proof and process approval."
         maxWidth="lg"
       >
-        {selectedRes && (
+        {selectedRes && (() => {
+          const proofUrl = 
+            (selectedRes as any).sponsorship_photo_url || 
+            (selectedRes as any).proof_url || 
+            (selectedRes as any).photo_url ||
+            (selectedRes as any).attachment_url;
+          const isLGU = 
+            (selectedRes as any).activity_type === 'LGU Activity' || 
+            (selectedRes as any).purpose?.includes('LGU Activity') ||
+            (selectedRes as any).fee_amount === 0 ||
+            Boolean(proofUrl);
+          const eventName = (selectedRes as any).event_name;
+          const activityType = (selectedRes as any).activity_type || (isLGU ? 'LGU Activity' : 'Standard Activity');
+
+          return (
           <div className="space-y-4 text-xs">
             {/* Status Banner */}
             <div className="flex items-center justify-between">
@@ -758,9 +784,21 @@ export function FacilitiesModule() {
             </div>
 
             {/* Facility & Schedule */}
-            <div className="p-3.5 bg-blue-50 rounded-xl border border-blue-200 space-y-1.5">
-              <p className="font-bold text-blue-900 text-xs uppercase tracking-wider">📍 Venue & Schedule</p>
+            <div className={`p-3.5 rounded-xl border space-y-1.5 ${isLGU ? 'bg-purple-50 border-purple-200' : 'bg-blue-50 border-blue-200'}`}>
+              <div className="flex items-center justify-between mb-1">
+                <p className="font-bold text-slate-700 text-[11px] uppercase tracking-wider">📍 Venue & Schedule</p>
+                {activityType && (
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                    isLGU
+                      ? 'bg-purple-100 text-purple-800 border-purple-300'
+                      : 'bg-blue-100 text-blue-800 border-blue-300'
+                  }`}>
+                    {isLGU ? '🏛️ LGU Activity (Sponsored Free)' : '🏢 Government Facility Booking'}
+                  </span>
+                )}
+              </div>
               <p><span className="font-bold text-slate-700">Facility:</span> {selectedRes.facility_name}</p>
+              {eventName && <p><span className="font-bold text-slate-700">Event Name:</span> <span className="font-semibold text-slate-900">{eventName}</span></p>}
               <p><span className="font-bold text-slate-700">Date:</span> {new Date(selectedRes.event_date).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
               <p><span className="font-bold text-slate-700">Time:</span> {selectedRes.start_time} – {selectedRes.end_time}</p>
               <p><span className="font-bold text-slate-700">Expected Attendees:</span> <strong className="text-blue-800">{selectedRes.attendees} Pax</strong></p>
@@ -772,7 +810,93 @@ export function FacilitiesModule() {
               <p><span className="font-bold text-slate-700">Name:</span> {selectedRes.applicant_name}</p>
               <p><span className="font-bold text-slate-700">Email:</span> {selectedRes.applicant_email || '—'}</p>
               <p><span className="font-bold text-slate-700">Contact:</span> {selectedRes.applicant_phone || '—'}</p>
+              <p><span className="font-bold text-slate-700">Purpose:</span> {selectedRes.purpose}</p>
             </div>
+
+            {/* LGU Proof Document — ADMIN MUST VERIFY */}
+            {isLGU && (
+              <div className="p-4 bg-purple-50/80 rounded-2xl border-2 border-purple-300 space-y-3 shadow-xs">
+                <div className="flex items-center justify-between border-b border-purple-200 pb-2">
+                  <p className="font-extrabold text-purple-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-purple-600" />
+                    <span>LGU Sponsorship Proof Document — Official Verification</span>
+                  </p>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-200 text-purple-900">
+                    Mandatory Review
+                  </span>
+                </div>
+                
+                <p className="text-[11px] text-purple-800 leading-relaxed">
+                  This booking is tagged as <strong>LGU Sponsored (Free ₱0.00)</strong>. As administrator, you must inspect the official request letter, barangay endorsement, or authorization memo below before granting approval.
+                </p>
+
+                {proofUrl ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
+                      <span>Submitted Proof File:</span>
+                      <button
+                        type="button"
+                        onClick={() => setLightboxProof({
+                          url: proofUrl,
+                          title: eventName || selectedRes.purpose || 'LGU Sponsorship Proof',
+                          applicant: selectedRes.applicant_name,
+                          ref: selectedRes.reference_no
+                        })}
+                        className="flex items-center gap-1 text-purple-700 hover:text-purple-900 underline text-[11px] cursor-pointer"
+                      >
+                        <ZoomIn className="w-3.5 h-3.5" /> Full-Screen Zoom
+                      </button>
+                    </div>
+
+                    <div 
+                      onClick={() => setLightboxProof({
+                        url: proofUrl,
+                        title: eventName || selectedRes.purpose || 'LGU Sponsorship Proof',
+                        applicant: selectedRes.applicant_name,
+                        ref: selectedRes.reference_no
+                      })}
+                      className="relative group rounded-xl overflow-hidden border-2 border-purple-300 bg-white cursor-pointer hover:border-purple-500 transition-all shadow-sm max-h-64 flex items-center justify-center p-2"
+                    >
+                      <img
+                        src={proofUrl}
+                        alt="LGU Sponsorship Official Proof"
+                        className="max-h-60 max-w-full object-contain rounded-lg group-hover:scale-102 transition-transform duration-200"
+                      />
+                      <div className="absolute inset-0 bg-purple-950/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="px-3 py-1.5 rounded-xl bg-purple-900/90 text-white font-bold text-xs shadow-md flex items-center gap-1.5 backdrop-blur-xs">
+                          <ZoomIn className="w-4 h-4" /> Click to Inspect Full Document
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[10px] text-slate-500 italic">
+                        Document verified and recorded under #{selectedRes.reference_no}
+                      </span>
+                      <a
+                        href={proofUrl}
+                        download={`LGU-Proof-${selectedRes.reference_no}.jpg`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 px-3 py-1 bg-purple-700 hover:bg-purple-800 text-white text-[11px] font-bold rounded-lg shadow-xs transition-colors"
+                      >
+                        <ExternalLink className="w-3 h-3" /> Open in New Tab
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl space-y-1">
+                    <p className="text-xs font-bold text-red-800 flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 text-red-600" />
+                      <span>Missing Proof Document</span>
+                    </p>
+                    <p className="text-[11px] text-red-700">
+                      No sponsorship document or memo was found in this submission. Do NOT approve as Free until the citizen provides an official endorsement letter.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Special Equipment Requirements */}
             {selectedRes.special_equipment && (Array.isArray(selectedRes.special_equipment) ? selectedRes.special_equipment.length > 0 : true) && (
@@ -790,7 +914,15 @@ export function FacilitiesModule() {
             )}
 
             {/* Computed Fee Breakdown — always visible for facility tickets */}
-            {(selectedRes.hourly_rate > 0 || (selectedRes as any).fee_amount > 0) && (
+            {isLGU ? (
+              <div className="p-3.5 bg-purple-50 rounded-xl border border-purple-200 text-xs">
+                <p className="font-bold text-purple-700 text-[11px] uppercase tracking-wider mb-1.5">💰 Booking Fee:</p>
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl font-extrabold text-purple-900 font-mono">₱0.00</span>
+                  <span className="text-[11px] font-bold px-2.5 py-1 bg-purple-200 text-purple-800 rounded-full">LGU Sponsored — Free (Pending Verification)</span>
+                </div>
+              </div>
+            ) : (selectedRes.hourly_rate > 0 || (selectedRes as any).fee_amount > 0) && (
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
                 <p className="font-bold text-slate-700 text-[11px] uppercase tracking-wider">💰 Booking Fee Computation:</p>
                 <div className="grid grid-cols-3 gap-2 text-center">
@@ -815,7 +947,11 @@ export function FacilitiesModule() {
             {/* SET PAYMENT DUE DATE & FEE - shown when Approved, before issuing payment notice */}
             {selectedRes.status === 'Approved' && (
               <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 space-y-1">
-                <p className="font-bold text-amber-900 text-[11px]">🗓️ Grant Payment Notice — Computed fee will be charged to citizen. Payment due in 3 days.</p>
+                <p className="font-bold text-amber-900 text-[11px]">
+                  {isLGU
+                    ? '✅ LGU Activity — This is a FREE booking (₱0.00). Grant reservation directly with no payment required.'
+                    : '🗓️ Grant Payment Notice — Computed fee will be charged to citizen. Payment due in 3 days.'}
+                </p>
               </div>
             )}
 
@@ -847,7 +983,7 @@ export function FacilitiesModule() {
                       ✕ Reject Booking
                     </Button>
                     <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Approved')}>
-                      ✓ Approve Booking
+                      {isLGU ? '🏛️ Verify & Approve (LGU Free)' : '✓ Approve Booking'}
                     </Button>
                   </>
                 )}
@@ -876,9 +1012,15 @@ export function FacilitiesModule() {
                 </Button>
                 {/* Approved: Issue Payment Notice */}
                 {selectedRes.status === 'Approved' && (
-                  <Button size="sm" variant="success" className="bg-blue-600 hover:bg-blue-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Pending Payment')}>
-                    Grant Reservation & Issue Payment Notice
-                  </Button>
+                  isLGU ? (
+                    <Button size="sm" variant="success" className="bg-purple-600 hover:bg-purple-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('LGU Endorsed')}>
+                      🏛️ Grant LGU Official Endorsement (Free)
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="success" className="bg-blue-600 hover:bg-blue-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Pending Payment')}>
+                      Grant Reservation & Issue Payment Notice
+                    </Button>
+                  )
                 )}
                 {/* Waiting for Payment: Confirm Cash Received */}
                 {selectedRes.status === 'Pending Payment' && (
@@ -889,169 +1031,11 @@ export function FacilitiesModule() {
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
       </Modal>
 
-      {/* Modal: Add New Reservation with AI Conflict Check */}
-      <Modal
-        isOpen={isNewModalOpen}
-        onClose={() => setIsNewModalOpen(false)}
-        title="Direct Booking: Government Facility"
-        description="Schedule civic center or gym booking with AI conflict detection."
-      >
-        <form onSubmit={handleCreate} className="space-y-3 text-xs">
-          <div>
-            <label className="block text-xs font-semibold text-[#334155] mb-1">Target Facility *</label>
-            <select
-              value={newForm.facility_id}
-              onChange={(e) => setNewForm({ ...newForm, facility_id: parseInt(e.target.value) })}
-              className="w-full rounded-xl border border-slate-300 p-2 text-xs"
-            >
-              {facilities.map(f => (
-                <option key={f.id} value={f.id}>{f.name} (Cap: {f.capacity})</option>
-              ))}
-            </select>
-          </div>
 
-          <Input
-            label="Applicant / Organization Name *"
-            required
-            value={newForm.applicant_name}
-            onChange={(e) => setNewForm({ ...newForm, applicant_name: e.target.value })}
-          />
-
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="Email Address *"
-              type="email"
-              required
-              value={newForm.applicant_email}
-              onChange={(e) => setNewForm({ ...newForm, applicant_email: e.target.value })}
-            />
-            <Input
-              label="Phone Number *"
-              required
-              value={newForm.applicant_phone}
-              onChange={(e) => setNewForm({ ...newForm, applicant_phone: e.target.value })}
-            />
-          </div>
-
-          <Input
-            label="Event Purpose *"
-            required
-            value={newForm.purpose}
-            onChange={(e) => setNewForm({ ...newForm, purpose: e.target.value })}
-          />
-
-          <div className="space-y-3">
-            <Input
-              label="Date *"
-              type="date"
-              required
-              value={newForm.event_date}
-              onChange={(e) => setNewForm({ ...newForm, event_date: e.target.value })}
-            />
-            {/* 2-Slot Checklist */}
-            {(() => {
-              const isMorning = newForm.start_time === '08:00 AM' && (newForm.end_time === '12:00 PM' || newForm.end_time === '05:00 PM');
-              const isAfternoon = (newForm.start_time === '01:00 PM' && newForm.end_time === '05:00 PM') || (newForm.start_time === '08:00 AM' && newForm.end_time === '05:00 PM');
-              const isBoth = isMorning && isAfternoon;
-              const selFac = facilities.find(f => f.id === Number(newForm.facility_id));
-              const mPrice = Number((selFac as any)?.morning_rate ?? selFac?.hourly_rate ?? 0);
-              const aPrice = Number((selFac as any)?.afternoon_rate ?? selFac?.hourly_rate ?? 0);
-              const slotInfo = selFac ? calculateSlotFee(newForm.start_time, newForm.end_time, selFac) : { hours: 4, fee: 0 };
-
-              const toggle = (slot: 'morning' | 'afternoon') => {
-                if (slot === 'morning') {
-                  if (isMorning) {
-                    setNewForm(prev => ({ ...prev, start_time: '01:00 PM', end_time: '05:00 PM' }));
-                  } else if (isAfternoon) {
-                    setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
-                  } else {
-                    setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
-                  }
-                } else {
-                  if (isAfternoon) {
-                    setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
-                  } else if (isMorning) {
-                    setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
-                  } else {
-                    setNewForm(prev => ({ ...prev, start_time: '01:00 PM', end_time: '05:00 PM' }));
-                  }
-                }
-              };
-
-              return (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-[#334155] uppercase tracking-wider">Select Time Slot *</label>
-                    <button type="button"
-                      onClick={() => isBoth
-                        ? setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }))
-                        : setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }))
-                      }
-                      className={`text-[11px] font-bold px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                        isBoth ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      {isBoth ? '✓ Both (Full Day)' : '+ Book Both Slots (Full Day)'}
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div onClick={() => toggle('morning')}
-                      className={`p-3 rounded-xl border cursor-pointer select-none transition-all ${
-                        isMorning ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-400/30' : 'bg-white border-slate-200 hover:bg-slate-50'
-                      }`}>
-                      <p className="font-bold text-xs">{isMorning ? '✓ ' : ''}Morning</p>
-                      <p className="text-[11px] text-slate-500">08:00 AM – 12:00 PM</p>
-                      <p className="text-[11px] font-bold text-emerald-600">₱{mPrice.toLocaleString()}</p>
-                    </div>
-                    <div onClick={() => toggle('afternoon')}
-                      className={`p-3 rounded-xl border cursor-pointer select-none transition-all ${
-                        isAfternoon ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-400/30' : 'bg-white border-slate-200 hover:bg-slate-50'
-                      }`}>
-                      <p className="font-bold text-xs">{isAfternoon ? '✓ ' : ''}Afternoon</p>
-                      <p className="text-[11px] text-slate-500">01:00 PM – 05:00 PM</p>
-                      <p className="text-[11px] font-bold text-emerald-600">₱{aPrice.toLocaleString()}</p>
-                    </div>
-                  </div>
-                  <div className="p-2.5 bg-blue-50 rounded-xl border border-blue-200 text-xs flex items-center justify-between">
-                    <span className="text-blue-700 font-semibold">{slotInfo.hours} hrs: {newForm.start_time} – {newForm.end_time}</span>
-                    <span className="font-extrabold text-blue-900 font-mono">₱{slotInfo.fee.toLocaleString()}.00</span>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* AI Conflict Detection Widget */}
-          <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-blue-800 flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                <span>AI Schedule Conflict Checker</span>
-              </span>
-              <Button type="button" size="sm" variant="outline" isLoading={aiChecking} onClick={handleCheckAI}>
-                Check Conflicts
-              </Button>
-            </div>
-            {aiResult && (
-              <p className="text-[11px] text-blue-900 bg-white p-2 rounded border border-blue-100">
-                {aiResult.aiAnalysis}
-              </p>
-            )}
-          </div>
-
-          <div className="pt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" type="button" onClick={() => setIsNewModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button size="sm" variant="primary" type="submit">
-              Confirm Reservation
-            </Button>
-          </div>
-        </form>
-      </Modal>
 
       {/* Status Animation Toast / Modal */}
       <StatusAnimationModal
@@ -1230,6 +1214,71 @@ export function FacilitiesModule() {
           </div>
         </form>
       </Modal>
+
+      {/* Lightbox / Full-Screen Proof Viewer */}
+      {lightboxProof && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-fade-in"
+          onClick={() => setLightboxProof(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-slate-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 bg-purple-900 text-white flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-amber-300" />
+                  <h3 className="font-extrabold text-sm sm:text-base">LGU Sponsorship Proof Document</h3>
+                  <span className="font-mono text-xs bg-purple-800 px-2 py-0.5 rounded text-purple-200">
+                    #{lightboxProof.ref}
+                  </span>
+                </div>
+                <p className="text-xs text-purple-200 mt-0.5">
+                  Organizer: <strong>{lightboxProof.applicant}</strong> • Event: {lightboxProof.title}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLightboxProof(null)}
+                className="p-1.5 rounded-full hover:bg-white/20 text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 bg-slate-900 flex-1 overflow-auto flex items-center justify-center min-h-[320px]">
+              <img
+                src={lightboxProof.url}
+                alt="Full size LGU sponsorship proof"
+                className="max-h-[70vh] max-w-full object-contain rounded-lg shadow-lg border border-slate-700"
+              />
+            </div>
+
+            <div className="p-3.5 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Official sponsorship documentation uploaded by applicant</span>
+              <div className="flex gap-2">
+                <a
+                  href={lightboxProof.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 font-bold rounded-xl transition-colors flex items-center gap-1.5"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Open in New Tab
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setLightboxProof(null)}
+                  className="px-4 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-xl transition-colors shadow-xs"
+                >
+                  Close Viewer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

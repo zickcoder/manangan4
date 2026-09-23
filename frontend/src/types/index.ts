@@ -38,6 +38,12 @@ export interface FacilityReservation {
   applicant_email: string;
   applicant_phone: string;
   purpose: string;
+  /** Event name as entered by the citizen — used for Parks & Recreation bookings */
+  event_name?: string;
+  /** Activity type for Parks bookings: LGU Activity (free), Sports Activity, or Other / Private Event */
+  activity_type?: 'LGU Activity' | 'Sports Activity' | 'Other / Private Event';
+  /** Base64 or URL of the LGU sponsorship proof document uploaded by citizen */
+  sponsorship_photo_url?: string;
   special_equipment?: string[];
   event_date: string;
   start_time: string;

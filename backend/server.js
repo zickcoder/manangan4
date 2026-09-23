@@ -194,11 +194,14 @@ app.get('/api/facilities/reservations', async (req, res) => {
 
     const result = await pool.query(query, params);
 
-    // Auto-compute fee_amount = hours * hourly_rate when stored fee is 0 or null
+    // Auto-compute fee_amount = hours * hourly_rate when stored fee is 0 or null (except for LGU Activities)
     const rows = result.rows.map(r => {
-      const rate = parseFloat(r.hourly_rate) || 0;
       const storedFee = parseFloat(r.fee_amount) || 0;
-      if (storedFee === 0 && rate > 0 && r.start_time && r.end_time) {
+      const rate = parseFloat(r.hourly_rate) || 0;
+      const isLGU = r.activity_type === 'LGU Activity' || (r.purpose && r.purpose.includes('LGU Activity')) || Boolean(r.sponsorship_photo_url);
+      if (isLGU) {
+        r.fee_amount = 0;
+      } else if (storedFee === 0 && rate > 0 && r.start_time && r.end_time) {
         const startH = parse12HToHours(r.start_time);
         const endH = parse12HToHours(r.end_time);
         const diffHours = endH > startH ? endH - startH : 1;
@@ -219,8 +222,9 @@ app.post('/api/facilities/reservations', async (req, res) => {
   try {
     const {
       reference_no, facility_id, applicant_name, applicant_email, applicant_phone,
-      purpose, event_date, start_time, end_time, attendees, remarks,
-      fee_amount, hours, citizen_id, citizen_email, special_equipment
+      purpose, event_name, event_date, start_time, end_time, attendees, remarks,
+      fee_amount, hours, citizen_id, citizen_email, special_equipment,
+      activity_type, sponsorship_photo_url
     } = req.body;
     const refCode = reference_no || `RES-2026-${Math.floor(100 + Math.random() * 900)}`;
     const equipStr = Array.isArray(special_equipment) ? special_equipment.join(', ') : special_equipment;
@@ -233,26 +237,53 @@ app.post('/api/facilities/reservations', async (req, res) => {
       bookingHours = endH > startH ? endH - startH : 1;
     }
 
-    // fee_amount should already be hours * hourly_rate from frontend
-    // but if 0, leave it 0 — admin will see it auto-computed from hourly_rate on GET
-    const savedFee = parseFloat(fee_amount) || 0;
+    // LGU Activity bookings are always free (₱0) — fee is verified by admin before approval
+    const isLGU = activity_type === 'LGU Activity';
+    const savedFee = isLGU ? 0 : (parseFloat(fee_amount) || 0);
 
-    const result = await pool.query(`
-      INSERT INTO facility_reservations (
-        reference_no, facility_id, applicant_name, applicant_email, applicant_phone,
-        purpose, event_date, start_time, end_time, attendees, status, remarks,
-        fee_amount, hours, citizen_id, citizen_email, special_equipment
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Pending Review', $11, $12, $13, $14, $15, $16)
-      RETURNING *
-    `, [
-      refCode, facility_id, applicant_name, applicant_email, applicant_phone,
-      purpose, event_date, start_time, end_time, parseInt(attendees || 20), remarks,
-      savedFee, bookingHours, citizen_id || null, citizen_email || applicant_email, equipStr || null
-    ]);
+    // Check if activity_type and sponsorship_photo_url columns exist (graceful fallback)
+    let hasNewColumns = true;
+    try {
+      await pool.query('SELECT activity_type FROM facility_reservations LIMIT 0');
+    } catch (colErr) {
+      hasNewColumns = false;
+    }
+
+    let result;
+    if (hasNewColumns) {
+      result = await pool.query(`
+        INSERT INTO facility_reservations (
+          reference_no, facility_id, applicant_name, applicant_email, applicant_phone,
+          purpose, event_name, event_date, start_time, end_time, attendees, status, remarks,
+          fee_amount, hours, citizen_id, citizen_email, special_equipment,
+          activity_type, sponsorship_photo_url
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Pending Review', $12, $13, $14, $15, $16, $17, $18, $19)
+        RETURNING *
+      `, [
+        refCode, facility_id, applicant_name, applicant_email, applicant_phone,
+        purpose, event_name || null, event_date, start_time, end_time, parseInt(attendees || 20), remarks,
+        savedFee, bookingHours, citizen_id || null, citizen_email || applicant_email, equipStr || null,
+        activity_type || null, sponsorship_photo_url || null
+      ]);
+    } else {
+      // Fallback: insert without new columns (columns not yet migrated)
+      result = await pool.query(`
+        INSERT INTO facility_reservations (
+          reference_no, facility_id, applicant_name, applicant_email, applicant_phone,
+          purpose, event_date, start_time, end_time, attendees, status, remarks,
+          fee_amount, hours, citizen_id, citizen_email, special_equipment
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Pending Review', $11, $12, $13, $14, $15, $16)
+        RETURNING *
+      `, [
+        refCode, facility_id, applicant_name, applicant_email, applicant_phone,
+        purpose, event_date, start_time, end_time, parseInt(attendees || 20), remarks,
+        savedFee, bookingHours, citizen_id || null, citizen_email || applicant_email, equipStr || null
+      ]);
+    }
 
     await pool.query(
       'INSERT INTO activity_logs (user_name, action, module, details) VALUES ($1, $2, $3, $4)',
-      [applicant_name, 'Reservation Submitted', 'FACILITIES', `Ref ${refCode} on ${event_date}`]
+      [applicant_name, 'Reservation Submitted', 'FACILITIES', `Ref ${refCode} on ${event_date}${isLGU ? ' [LGU Activity - Free]' : ''}`]
     );
 
     res.status(201).json({ success: true, message: 'Reservation request logged!', data: result.rows[0] });
@@ -309,30 +340,18 @@ app.patch('/api/facilities/reservations/:id', async (req, res) => {
     const { id } = req.params;
     const { 
       facility_id, applicant_name, applicant_email, applicant_phone, 
-      purpose, event_date, start_time, end_time, attendees, 
-      special_equipment, hours, fee_amount, status, remarks 
+      purpose, event_name, event_date, start_time, end_time, attendees, 
+      special_equipment, hours, fee_amount, status, remarks,
+      activity_type, sponsorship_photo_url
     } = req.body;
 
-    const result = await pool.query(`
-      UPDATE facility_reservations
-      SET 
-        facility_id = COALESCE($1, facility_id),
-        applicant_name = COALESCE($2, applicant_name),
-        applicant_email = COALESCE($3, applicant_email),
-        applicant_phone = COALESCE($4, applicant_phone),
-        purpose = COALESCE($5, purpose),
-        event_date = COALESCE($6, event_date),
-        start_time = COALESCE($7, start_time),
-        end_time = COALESCE($8, end_time),
-        attendees = COALESCE($9, attendees),
-        special_equipment = COALESCE($10, special_equipment),
-        hours = COALESCE($11, hours),
-        fee_amount = COALESCE($12, fee_amount),
-        status = COALESCE($13, status),
-        remarks = COALESCE($14, remarks)
-      WHERE id = $15 OR reference_no = $16
-      RETURNING *
-    `, [
+    // Check if new columns exist (graceful fallback if not yet migrated)
+    let hasNewColumns = true;
+    try {
+      await pool.query('SELECT activity_type FROM facility_reservations LIMIT 0');
+    } catch { hasNewColumns = false; }
+
+    const baseParams = [
       facility_id ? parseInt(facility_id) : null,
       applicant_name || null,
       applicant_email || null,
@@ -344,12 +363,75 @@ app.patch('/api/facilities/reservations/:id', async (req, res) => {
       attendees ? parseInt(attendees) : null,
       special_equipment || null,
       hours ? parseFloat(hours) : null,
-      fee_amount ? parseFloat(fee_amount) : null,
+      fee_amount !== undefined ? parseFloat(fee_amount) : null,
       status || null,
       remarks || null,
-      isNaN(parseInt(id)) ? -1 : parseInt(id),
-      id
-    ]);
+    ];
+
+    let queryStr;
+    let queryParams;
+
+    if (hasNewColumns) {
+      queryStr = `
+        UPDATE facility_reservations
+        SET 
+          facility_id = COALESCE($1, facility_id),
+          applicant_name = COALESCE($2, applicant_name),
+          applicant_email = COALESCE($3, applicant_email),
+          applicant_phone = COALESCE($4, applicant_phone),
+          purpose = COALESCE($5, purpose),
+          event_date = COALESCE($6, event_date),
+          start_time = COALESCE($7, start_time),
+          end_time = COALESCE($8, end_time),
+          attendees = COALESCE($9, attendees),
+          special_equipment = COALESCE($10, special_equipment),
+          hours = COALESCE($11, hours),
+          fee_amount = COALESCE($12, fee_amount),
+          status = COALESCE($13, status),
+          remarks = COALESCE($14, remarks),
+          event_name = COALESCE($15, event_name),
+          activity_type = COALESCE($16, activity_type),
+          sponsorship_photo_url = COALESCE($17, sponsorship_photo_url)
+        WHERE id = $18 OR reference_no = $19
+        RETURNING *
+      `;
+      queryParams = [
+        ...baseParams,
+        event_name || null,
+        activity_type || null,
+        sponsorship_photo_url || null,
+        isNaN(parseInt(id)) ? -1 : parseInt(id),
+        id
+      ];
+    } else {
+      queryStr = `
+        UPDATE facility_reservations
+        SET 
+          facility_id = COALESCE($1, facility_id),
+          applicant_name = COALESCE($2, applicant_name),
+          applicant_email = COALESCE($3, applicant_email),
+          applicant_phone = COALESCE($4, applicant_phone),
+          purpose = COALESCE($5, purpose),
+          event_date = COALESCE($6, event_date),
+          start_time = COALESCE($7, start_time),
+          end_time = COALESCE($8, end_time),
+          attendees = COALESCE($9, attendees),
+          special_equipment = COALESCE($10, special_equipment),
+          hours = COALESCE($11, hours),
+          fee_amount = COALESCE($12, fee_amount),
+          status = COALESCE($13, status),
+          remarks = COALESCE($14, remarks)
+        WHERE id = $15 OR reference_no = $16
+        RETURNING *
+      `;
+      queryParams = [
+        ...baseParams,
+        isNaN(parseInt(id)) ? -1 : parseInt(id),
+        id
+      ];
+    }
+
+    const result = await pool.query(queryStr, queryParams);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ success: false, message: 'Reservation not found' });

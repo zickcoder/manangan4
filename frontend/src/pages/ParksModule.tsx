@@ -18,7 +18,10 @@ import {
   X,
   Upload,
   Image as ImageIcon,
-  MapPin
+  MapPin,
+  ShieldCheck,
+  ZoomIn,
+  ExternalLink
 } from 'lucide-react';
 import { compressImage } from '../lib/imageCompressor';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
@@ -30,14 +33,11 @@ import {
   fetchFacilities, 
   fetchReservations, 
   updateReservationStatus, 
-  createReservation,
-  checkDoubleBooking,
   createFacility,
   updateFacility,
   deleteFacility,
-  calculateBookingHours,
   calculateFacilityFee,
-  calculateSlotFee
+  calculateBookingHours
 } from '../lib/api';
 import { Facility, FacilityReservation } from '../types';
 
@@ -50,8 +50,8 @@ export function ParksModule() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRes, setSelectedRes] = useState<FacilityReservation | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
-  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [reviewRemarks, setReviewRemarks] = useState('');
+  const [lightboxProof, setLightboxProof] = useState<{ url: string; title: string; applicant: string; ref: string } | null>(null);
 
   // Park CRUD
   const [isParkFormOpen, setIsParkFormOpen] = useState(false);
@@ -156,34 +156,6 @@ export function ParksModule() {
     message: ''
   });
 
-  // AI Conflict check state for parks
-  const [aiChecking, setAiChecking] = useState(false);
-  const [aiResult, setAiResult] = useState<any>(null);
-
-  const handleCheckAIPark = async () => {
-    setAiChecking(true);
-    setAiResult(null);
-    const parkObj = parks.find(p => p.id === Number(newForm.facility_id)) || parks[0];
-    if (!parkObj) { setAiChecking(false); return; }
-    try {
-      const conflict = await checkDoubleBooking(
-        parkObj.id,
-        parkObj.name,
-        newForm.event_date,
-        newForm.start_time,
-        newForm.end_time,
-        undefined,
-        undefined,
-        undefined,
-        'Park & Recreation'
-      );
-      setAiResult(conflict);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setAiChecking(false);
-    }
-  };
 
   const DEFAULT_PARKS_EQUIPMENT = [
     'Heavy-Duty Outdoor Tents (3x3m)',
@@ -237,24 +209,11 @@ export function ParksModule() {
     setEditingEquipIdx(null);
   };
 
-  const [newForm, setNewForm] = useState({
-    facility_id: 4,
-    applicant_name: '',
-    applicant_email: '',
-    applicant_phone: '',
-    purpose: '',
-    event_date: new Date().toISOString().split('T')[0],
-    start_time: '08:00 AM',
-    end_time: '12:00 PM',
-    attendees: '80',
-    remarks: '',
-  });
-
   const loadData = async () => {
     try {
       const [parkList, resList] = await Promise.all([
         fetchFacilities('Park & Recreation'),
-        fetchReservations(statusFilter, 'Park & Recreation', true),
+        fetchReservations('all', 'Park & Recreation', false),
       ]);
       setParks(parkList);
       setReservations(resList);
@@ -290,8 +249,13 @@ export function ParksModule() {
         message: 'Updating park scheduling status.'
       });
 
+      const isLGU = 
+        (selectedRes as any).activity_type === 'LGU Activity' || 
+        (selectedRes as any).purpose?.includes('LGU Activity') ||
+        (selectedRes as any).fee_amount === 0 ||
+        Boolean((selectedRes as any).sponsorship_photo_url || (selectedRes as any).proof_url);
       const computedFee = calculateFacilityFee(selectedRes.start_time, selectedRes.end_time, selectedRes.hourly_rate || 0);
-      const fee = (selectedRes as any).fee_amount || computedFee || (selectedRes.hourly_rate ? selectedRes.hourly_rate * 4 : 1500);
+      const fee = isLGU ? 0 : ((selectedRes as any).fee_amount ?? computedFee ?? (selectedRes.hourly_rate ? selectedRes.hourly_rate * 4 : 1500));
       const dueDate = new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0];
 
       await updateReservationStatus(
@@ -306,7 +270,14 @@ export function ParksModule() {
       // govserve_data_updated event from updateReservationStatus triggers debounced loadData automatically
 
       setTimeout(() => {
-        if (status === 'Paid') {
+        if (status === 'LGU Endorsed') {
+          setAnimModal({
+            isOpen: true,
+            type: 'paid',
+            title: '🏛️ LGU Officially Endorsed!',
+            message: `Reservation #${selectedRes.reference_no} is officially endorsed. LGU-sponsored — no payment required.`
+          });
+        } else if (status === 'Paid') {
           setAnimModal({
             isOpen: true,
             type: 'paid',
@@ -346,98 +317,45 @@ export function ParksModule() {
     }
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setAnimModal({
-        isOpen: true,
-        type: 'loading',
-        title: 'Checking Availability...',
-        message: 'Verifying park schedule for conflicts.'
-      });
-
-      const durationHours = calculateBookingHours(newForm.start_time, newForm.end_time);
-      if (durationHours < 1 || newForm.start_time.trim().toLowerCase() === newForm.end_time.trim().toLowerCase()) {
-        setAnimModal({
-          isOpen: true,
-          type: 'rejected',
-          title: 'Invalid Booking Duration',
-          message: 'Start Time and End Time cannot be the same. The reservation duration must be at least 1 hour (e.g. 08:00 AM to 09:00 AM).'
-        });
-        return;
-      }
-
-      const parkObj = parks.find(p => p.id === Number(newForm.facility_id));
-
-      // Double booking check
-      if (parkObj && newForm.event_date && newForm.start_time && newForm.end_time) {
-        const conflict = await checkDoubleBooking(
-          parkObj.id,
-          parkObj.name,
-          newForm.event_date,
-          newForm.start_time,
-          newForm.end_time,
-          undefined,
-          undefined,
-          undefined,
-          'Park & Recreation'
-        );
-        if (conflict.hasConflict) {
-          setAnimModal({
-            isOpen: true,
-            type: 'rejected',
-            title: '⚠️ Schedule Conflict Detected',
-            message: conflict.message
-          });
-          return;
-        }
-      }
-
-      setAnimModal({
-        isOpen: true,
-        type: 'loading',
-        title: 'Scheduling Park Event...',
-        message: 'Reserving park ground and generating ticket.'
-      });
-
-      await createReservation({
-        ...newForm,
-        facility_category: 'Park & Recreation',
-        facility_name: parkObj?.name,
-        facility_location: parkObj?.location,
-        hourly_rate: parkObj?.hourly_rate
-      });
-      setIsNewModalOpen(false);
-      // govserve_data_updated event from createReservation will trigger debounced loadData automatically
-
-      setTimeout(() => {
-        setAnimModal({
-          isOpen: true,
-          type: 'success',
-          title: '✓ Park Schedule Submitted!',
-          message: 'Booking submitted to Pending Review queue.'
-        });
-      }, 200);
-    } catch (e) {
-      setAnimModal({
-        isOpen: true,
-        type: 'rejected',
-        title: 'Booking Failed',
-        message: 'Failed to schedule park event.'
-      });
-    }
-  };
-
-  const filtered = reservations.filter(r => {
-    const matchesQuery = r.reference_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.applicant_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.purpose.toLowerCase().includes(searchQuery.toLowerCase());
+  const filtered = (reservations || []).filter(r => {
+    const q = (searchQuery || '').toLowerCase();
+    const matchesQuery = 
+      (r.reference_no || '').toLowerCase().includes(q) ||
+      (r.applicant_name || '').toLowerCase().includes(q) ||
+      (r.purpose || '').toLowerCase().includes(q) ||
+      ((r as any).event_name || '').toLowerCase().includes(q) ||
+      (r.facility_name || '').toLowerCase().includes(q);
     
-    if (statusFilter === 'all') return matchesQuery;
+    if (!matchesQuery) return false;
+
+    const rProof = (r as any).sponsorship_photo_url || (r as any).proof_url || (r as any).photo_url;
+    const isLGU = 
+      r.status === 'LGU Endorsed' ||
+      (r as any).activity_type === 'LGU Activity' ||
+      ((r as any).purpose || '').toLowerCase().includes('lgu activity') ||
+      ((r as any).event_name || '').toLowerCase().includes('lgu') ||
+      (r as any).fee_amount === 0 ||
+      (r as any).fee_amount === '0.00' ||
+      (r as any).fee_amount === '0' ||
+      Boolean(rProof);
+
+    if (statusFilter === 'all') return true;
     if (statusFilter === 'Pending Review') {
-      return matchesQuery && (r.status === 'Pending' || r.status === 'Pending Review');
+      return r.status === 'Pending' || r.status === 'Pending Review';
     }
-    return matchesQuery && r.status === statusFilter;
+    // Only in 🏛️ LGU Officially Endorsed filter: show ALL LGU grant free payment / LGU sponsored tickets
+    if (statusFilter === 'LGU Endorsed') {
+      return r.status === 'LGU Endorsed' || (isLGU && (r.status === 'Approved' || r.status === 'Paid'));
+    }
+    // NOT in Paid filter: LGU tickets must NEVER appear in the Paid filter
+    if (statusFilter === 'Paid') {
+      return r.status === 'Paid' && !isLGU && r.status !== 'LGU Endorsed';
+    }
+    // In Approved filter: only regular non-LGU approved bookings
+    if (statusFilter === 'Approved') {
+      return r.status === 'Approved' && !isLGU && r.status !== 'LGU Endorsed';
+    }
+    return r.status === statusFilter;
   });
 
   return (
@@ -465,313 +383,527 @@ export function ParksModule() {
 
       {/* Parks Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {parks.map((p) => {
-          const mRate = Number((p as any).morning_rate ?? p.hourly_rate ?? 0);
-          const aRate = Number((p as any).afternoon_rate ?? p.hourly_rate ?? 0);
-          const isAvail = ((p as any).status || 'Available') === 'Available';
-          return (
-            <Card key={p.id} hoverEffect className="border-slate-200/90 p-0 overflow-hidden bg-white shadow-soft rounded-2xl flex flex-col justify-between transition-all">
-              <div>
-                {p.image_url ? (
-                  <div className="relative h-36 w-full overflow-hidden bg-slate-900 group">
-                    <img
-                      src={p.image_url}
-                      alt={p.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-black/20" />
-                    <div className="absolute top-2.5 left-2.5">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs ${
-                        isAvail ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
-                      }`}>
-                        {isAvail ? '● Available' : '○ Unavailable'}
-                      </span>
-                    </div>
-                    <div className="absolute top-2.5 right-2.5">
-                      <span className="text-[10px] font-bold text-white bg-black/60 backdrop-blur-xs px-2 py-0.5 rounded-lg border border-white/20">
-                        {p.capacity} Pax
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="relative h-32 w-full bg-slate-100/90 border-b border-slate-200/80 flex flex-col items-center justify-center p-3 text-center">
-                    <div className="flex flex-col items-center gap-1 text-slate-400">
-                      <ImageIcon className="w-6 h-6 opacity-50 text-emerald-600" />
-                      <span className="text-[11px] font-medium text-slate-500">No photo display yet</span>
-                    </div>
-                    <div className="absolute top-2.5 left-2.5">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs ${
-                        isAvail ? 'bg-emerald-600 text-white' : 'bg-rose-500 text-white'
-                      }`}>
-                        {isAvail ? '● Available' : '○ Unavailable'}
-                      </span>
-                    </div>
-                    <div className="absolute top-2.5 right-2.5">
-                      <span className="text-[10px] font-bold text-slate-700 bg-white/95 px-2 py-0.5 rounded-lg border border-slate-200 shadow-xs">
-                        {p.capacity} Pax
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                <div className="p-4 space-y-2">
+            {parks.map((p) => {
+              const mRate = Number((p as any).morning_rate ?? p.hourly_rate ?? 0);
+              const aRate = Number((p as any).afternoon_rate ?? p.hourly_rate ?? 0);
+              const isAvail = ((p as any).status || 'Available') === 'Available';
+              return (
+                <Card key={p.id} hoverEffect className="border-slate-200/90 p-0 overflow-hidden bg-white shadow-soft rounded-2xl flex flex-col justify-between transition-all">
                   <div>
-                    <h3 className="text-base font-bold text-slate-900 leading-snug line-clamp-1">{p.name}</h3>
-                    <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
-                      <MapPin className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                      <span className="truncate">{p.location}</span>
-                    </p>
+                    {p.image_url ? (
+                      <div className="relative h-36 w-full overflow-hidden bg-slate-900 group">
+                        <img
+                          src={p.image_url}
+                          alt={p.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-black/20" />
+                        <div className="absolute top-2.5 left-2.5">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs ${
+                            isAvail ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
+                          }`}>
+                            {isAvail ? '● Available' : '○ Unavailable'}
+                          </span>
+                        </div>
+                        <div className="absolute top-2.5 right-2.5">
+                          <span className="text-[10px] font-bold text-white bg-black/60 backdrop-blur-xs px-2 py-0.5 rounded-lg border border-white/20">
+                            {p.capacity} Pax
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative h-32 w-full bg-slate-100/90 border-b border-slate-200/80 flex flex-col items-center justify-center p-3 text-center">
+                        <div className="flex flex-col items-center gap-1 text-slate-400">
+                          <ImageIcon className="w-6 h-6 opacity-50 text-emerald-600" />
+                          <span className="text-[11px] font-medium text-slate-500">No photo display yet</span>
+                        </div>
+                        <div className="absolute top-2.5 left-2.5">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs ${
+                            isAvail ? 'bg-emerald-600 text-white' : 'bg-rose-500 text-white'
+                          }`}>
+                            {isAvail ? '● Available' : '○ Unavailable'}
+                          </span>
+                        </div>
+                        <div className="absolute top-2.5 right-2.5">
+                          <span className="text-[10px] font-bold text-slate-700 bg-white/95 px-2 py-0.5 rounded-lg border border-slate-200 shadow-xs">
+                            {p.capacity} Pax
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="p-4 space-y-2">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900 leading-snug line-clamp-1">{p.name}</h3>
+                        <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                          <MapPin className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                          <span className="truncate">{p.location}</span>
+                        </p>
+                      </div>
+
+                      {p.amenities && (
+                        <p className="text-[11px] text-slate-500 line-clamp-1 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                          {p.amenities}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
-                  {p.amenities && (
-                    <p className="text-[11px] text-slate-500 line-clamp-1 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
-                      {p.amenities}
-                    </p>
+                  <div className="p-4 pt-0 space-y-3">
+                    <div className="pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-2">
+                      <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-100/90 flex flex-col">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Morning Rate</span>
+                        <span className="text-xs font-black text-emerald-900 mt-0.5">
+                          {mRate > 0 ? `₱${mRate.toLocaleString()}` : 'Free'}
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-100/90 flex flex-col">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Afternoon Rate</span>
+                        <span className="text-xs font-black text-emerald-900 mt-0.5">
+                          {aRate > 0 ? `₱${aRate.toLocaleString()}` : 'Free'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => openEditPark(p)}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeletePark(p)}
+                        className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Parks Equipment Manager Section */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-soft overflow-hidden">
+            <div
+              className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 transition-colors"
+              onClick={() => setIsEquipManagerOpen(v => !v)}
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg">
+                  <Package className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Parks Equipment List Manager</h3>
+                  <p className="text-[10px] text-slate-500">{equipmentList.length} items • Citizens see these when scheduling parks</p>
+                </div>
+              </div>
+              <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                {isEquipManagerOpen ? '▲ Collapse' : '▼ Manage Equipment'}
+              </span>
+            </div>
+
+            {isEquipManagerOpen && (
+              <div className="border-t border-slate-200 p-4 space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Add new park equipment item..."
+                    value={newEquipItem}
+                    onChange={e => setNewEquipItem(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addEquipItem()}
+                    className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-500 bg-slate-50"
+                  />
+                  <button
+                    onClick={addEquipItem}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                  {equipmentList.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                      {editingEquipIdx === idx ? (
+                        <>
+                          <input
+                            autoFocus
+                            className="flex-1 px-2 py-1 text-xs rounded-lg border border-emerald-400 focus:outline-none"
+                            value={editingEquipVal}
+                            onChange={e => setEditingEquipVal(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && saveEditEquipItem(idx)}
+                          />
+                          <button onClick={() => saveEditEquipItem(idx)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
+                            <Save className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => setEditingEquipIdx(null)} className="p-1 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="flex-1 text-xs font-medium text-slate-700">{item}</span>
+                          <button
+                            onClick={() => { setEditingEquipIdx(idx); setEditingEquipVal(item); }}
+                            className="p-1 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Edit"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => deleteEquipItem(idx)}
+                            className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                  {equipmentList.length === 0 && (
+                    <p className="text-[11px] text-slate-400 italic text-center py-4">No equipment items. Add one above.</p>
                   )}
                 </div>
               </div>
-
-              <div className="p-4 pt-0 space-y-3">
-                <div className="pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-2">
-                  <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-100/90 flex flex-col">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Morning Rate</span>
-                    <span className="text-xs font-black text-emerald-900 mt-0.5">
-                      {mRate > 0 ? `₱${mRate.toLocaleString()}` : 'Free'}
-                    </span>
-                  </div>
-                  <div className="p-2 rounded-xl bg-emerald-50/70 border border-emerald-100/90 flex flex-col">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Afternoon Rate</span>
-                    <span className="text-xs font-black text-emerald-900 mt-0.5">
-                      {aRate > 0 ? `₱${aRate.toLocaleString()}` : 'Free'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => openEditPark(p)}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors"
-                  >
-                    <Pencil className="w-3.5 h-3.5" /> Edit
-                  </button>
-                  <button
-                    onClick={() => handleDeletePark(p)}
-                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" /> Delete
-                  </button>
-                </div>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-
-      {/* Parks Equipment Manager Section */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-soft overflow-hidden">
-        <div
-          className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 transition-colors"
-          onClick={() => setIsEquipManagerOpen(v => !v)}
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg">
-              <Package className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Parks Equipment List Manager</h3>
-              <p className="text-[10px] text-slate-500">{equipmentList.length} items • Citizens see these when scheduling parks</p>
-            </div>
+            )}
           </div>
-          <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-            {isEquipManagerOpen ? '▲ Collapse' : '▼ Manage Equipment'}
-          </span>
-        </div>
 
-        {isEquipManagerOpen && (
-          <div className="border-t border-slate-200 p-4 space-y-3">
-            <div className="flex gap-2">
+          {/* Filter and Search Bar */}
+          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-white p-3.5 rounded-2xl border border-slate-200 shadow-soft">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Add new park equipment item..."
-                value={newEquipItem}
-                onChange={e => setNewEquipItem(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && addEquipItem()}
-                className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-500 bg-slate-50"
+                placeholder="Search park bookings by ref, applicant..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800"
               />
-              <button
-                onClick={addEquipItem}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add
-              </button>
             </div>
 
-            <div className="space-y-1.5 max-h-64 overflow-y-auto">
-              {equipmentList.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200">
-                  {editingEquipIdx === idx ? (
-                    <>
-                      <input
-                        autoFocus
-                        className="flex-1 px-2 py-1 text-xs rounded-lg border border-emerald-400 focus:outline-none"
-                        value={editingEquipVal}
-                        onChange={e => setEditingEquipVal(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && saveEditEquipItem(idx)}
-                      />
-                      <button onClick={() => saveEditEquipItem(idx)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
-                        <Save className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => setEditingEquipIdx(null)} className="p-1 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="flex-1 text-xs font-medium text-slate-700">{item}</span>
-                      <button
-                        onClick={() => { setEditingEquipIdx(idx); setEditingEquipVal(item); }}
-                        className="p-1 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Edit"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => deleteEquipItem(idx)}
-                        className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </>
-                  )}
-                </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
+              {[
+                { id: 'all', label: 'All Park Bookings' },
+                { id: 'Pending Review', label: 'Pending Review' },
+                { id: 'Approved', label: 'Approved' },
+                { id: 'LGU Endorsed', label: '🏛️ LGU Officially Endorsed' },
+                { id: 'Pending Payment', label: 'Waiting for Payment' },
+                { id: 'Paid', label: 'Paid' },
+                { id: 'Rejected', label: 'Rejected' },
+              ].map((sf) => (
+                <button
+                  key={sf.id}
+                  onClick={() => setStatusFilter(sf.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                    statusFilter === sf.id
+                      ? sf.id === 'LGU Endorsed' ? 'bg-purple-700 text-white shadow-sm' : 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {sf.label}
+                </button>
               ))}
-              {equipmentList.length === 0 && (
-                <p className="text-[11px] text-slate-400 italic text-center py-4">No equipment items. Add one above.</p>
-              )}
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-white p-3.5 rounded-2xl border border-slate-200 shadow-soft">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search park bookings by ref, applicant..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-600 focus:bg-white text-slate-800"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-          {['all', 'Pending Review', 'Approved', 'Pending Payment', 'Paid', 'Rejected'].map((status) => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                statusFilter === status
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {status === 'all' ? 'All Park Bookings' : status === 'Pending Payment' ? 'Waiting for Payment' : status}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Reservations Table */}
-      <Card className="border-[#cbd5e1]">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                <tr>
-                  <th className="py-3 px-4">Ref Code</th>
-                  <th className="py-3 px-4">Park Ground</th>
-                  <th className="py-3 px-4">Organizer & Purpose</th>
-                  <th className="py-3 px-4">Event Date</th>
-                  <th className="py-3 px-4">Time Slot</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {filtered.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3.5 px-4 font-mono font-bold text-emerald-700">{r.reference_no}</td>
-                    <td className="py-3.5 px-4 font-bold text-slate-800">{r.facility_name}</td>
-                    <td className="py-3.5 px-4 max-w-[200px]">
-                      <p className="font-bold text-slate-900 truncate">{r.applicant_name}</p>
-                      <p className="text-[10px] text-slate-500 truncate">{r.purpose}</p>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-700">{new Date(r.event_date).toLocaleDateString()}</td>
-                    <td className="py-3.5 px-4 text-slate-700">{r.start_time} - {r.end_time}</td>
-                    <td className="py-3.5 px-4">
-                      <Badge variant={r.status === 'Approved' || r.status === 'Paid' ? 'success' : r.status === 'Pending Payment' ? 'info' : r.status === 'Rejected' ? 'destructive' : 'warning'}>
-                        {r.status === 'Pending Payment' ? 'Waiting for Payment' : r.status}
-                      </Badge>
-                    </td>
-                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        leftIcon={<Eye className="w-3.5 h-3.5" />}
-                        onClick={() => {
-                          setSelectedRes(r);
-                          setReviewRemarks(r.remarks || '');
-                          setIsReviewModalOpen(true);
-                        }}
-                      >
-                        Review
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+          {/* Reservations Table */}
+          <Card className="border-[#cbd5e1]">
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                    <tr>
+                      <th className="py-3 px-4">Ref Code</th>
+                      <th className="py-3 px-4">Park Ground</th>
+                      <th className="py-3 px-4">Organizer & Purpose</th>
+                      <th className="py-3 px-4">Event Date</th>
+                      <th className="py-3 px-4">Time Slot</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {filtered.map((r) => {
+                      const rProof = (r as any).sponsorship_photo_url || (r as any).proof_url || (r as any).photo_url;
+                      const isLGU = 
+                        r.status === 'LGU Endorsed' ||
+                        (r as any).activity_type === 'LGU Activity' || 
+                        ((r as any).purpose || '').toLowerCase().includes('lgu activity') ||
+                        ((r as any).event_name || '').toLowerCase().includes('lgu') ||
+                        (r as any).fee_amount === 0 || 
+                        (r as any).fee_amount === '0.00' ||
+                        (r as any).fee_amount === '0' ||
+                        Boolean(rProof);
+                      const eventName = (r as any).event_name;
+                      
+                      return (
+                      <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3.5 px-4 font-mono font-bold text-emerald-700">
+                          <div>{r.reference_no}</div>
+                          {isLGU && (
+                            <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200">
+                              🏛️ LGU FREE
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-slate-800">{r.facility_name}</td>
+                        <td className="py-3.5 px-4 max-w-[220px]">
+                          {eventName && (
+                            <p className="font-extrabold text-slate-900 truncate">
+                              {eventName}
+                            </p>
+                          )}
+                          <p className="text-xs text-slate-700 font-semibold truncate">{r.applicant_name}</p>
+                          <p className="text-[10px] text-slate-500 truncate">{r.purpose}</p>
+                          {rProof && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setLightboxProof({
+                                  url: rProof,
+                                  title: eventName || r.purpose || 'LGU Sponsorship Proof',
+                                  applicant: r.applicant_name,
+                                  ref: r.reference_no
+                                });
+                              }}
+                              className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded-md border border-purple-200 transition-colors cursor-pointer"
+                            >
+                              <Eye className="w-3 h-3" /> View LGU Proof
+                            </button>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap">
+                          {r.event_date ? new Date(r.event_date).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap font-mono text-[11px]">
+                          {r.start_time} - {r.end_time}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          {r.status === 'LGU Endorsed' || (isLGU && r.status === 'Paid') ? (
+                            <div className="space-y-1">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-purple-600 text-white border border-purple-700 shadow-sm">
+                                ✅ LGU Officially Approved
+                              </span>
+                              <div className="text-[9px] font-bold text-purple-700">
+                                LGU SPONSORED · Verified & Free — ₱0.00
+                              </div>
+                            </div>
+                          ) : isLGU && r.status === 'Approved' ? (
+                            <div className="space-y-1">
+                              <Badge variant="purple">🏛️ Officially Endorsed</Badge>
+                              <div className="text-[9px] font-black text-purple-700 uppercase tracking-wide">
+                                Admin Verified · LGU Sponsored
+                              </div>
+                            </div>
+                          ) : (
+                            <Badge variant={r.status === 'Approved' || r.status === 'Paid' ? 'success' : r.status === 'Pending Payment' ? 'info' : r.status === 'Rejected' ? 'destructive' : 'warning'}>
+                              {r.status === 'Pending Payment' ? 'Waiting for Payment' : r.status}
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap space-x-1.5">
+                          {rProof && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-purple-700 border-purple-300 hover:bg-purple-50 text-[11px] font-bold"
+                              leftIcon={<Eye className="w-3.5 h-3.5 text-purple-600" />}
+                              onClick={() => {
+                                setLightboxProof({
+                                  url: rProof,
+                                  title: eventName || r.purpose || 'LGU Sponsorship Proof',
+                                  applicant: r.applicant_name,
+                                  ref: r.reference_no
+                                });
+                              }}
+                            >
+                              Proof
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            leftIcon={<Eye className="w-3.5 h-3.5" />}
+                            onClick={() => {
+                              setSelectedRes(r);
+                              setReviewRemarks(r.remarks || '');
+                              setIsReviewModalOpen(true);
+                            }}
+                          >
+                            Review
+                          </Button>
+                        </td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
 
       {/* Modal: Review Booking */}
       <Modal
         isOpen={isReviewModalOpen}
         onClose={() => setIsReviewModalOpen(false)}
         title={`Review Park Schedule: ${selectedRes?.reference_no}`}
-        description="Verify park availability, set payment due date, and process approval."
+        description="Verify park availability, inspect LGU sponsorship proof, set payment due date, and process approval."
         maxWidth="lg"
       >
-        {selectedRes && (
+        {selectedRes && (() => {
+          const proofUrl = 
+            (selectedRes as any).sponsorship_photo_url || 
+            (selectedRes as any).proof_url || 
+            (selectedRes as any).photo_url ||
+            (selectedRes as any).attachment_url;
+          const isLGU = 
+            (selectedRes as any).activity_type === 'LGU Activity' || 
+            (selectedRes as any).purpose?.includes('LGU Activity') ||
+            (selectedRes as any).fee_amount === 0 ||
+            Boolean(proofUrl);
+          const eventName = (selectedRes as any).event_name;
+          const activityType = (selectedRes as any).activity_type || (isLGU ? 'LGU Activity' : 'Sports Activity');
+
+          return (
           <div className="space-y-4 text-xs">
-            <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 space-y-1">
+            {/* Summary Info Card */}
+            <div className={`p-3.5 rounded-xl border space-y-1.5 ${isLGU ? 'bg-purple-50 border-purple-200' : 'bg-emerald-50 border-emerald-200'}`}>
+              <div className="flex items-center justify-between mb-1">
+                <p className="font-bold text-slate-700 text-[11px] uppercase tracking-wider">Booking Details</p>
+                {activityType && (
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                    isLGU
+                      ? 'bg-purple-100 text-purple-800 border-purple-300'
+                      : activityType === 'Sports Activity'
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : 'bg-blue-100 text-blue-800 border-blue-300'
+                  }`}>
+                    {isLGU ? '🏛️ LGU Activity (Sponsored Free)' : activityType === 'Sports Activity' ? '⚽ Sports Activity' : '🎉 Other / Private Event'}
+                  </span>
+                )}
+              </div>
               <p><span className="font-bold text-slate-700">Park Ground:</span> {selectedRes.facility_name}</p>
+              {eventName && <p><span className="font-bold text-slate-700">Event Name:</span> <span className="font-semibold text-slate-900">{eventName}</span></p>}
               <p><span className="font-bold text-slate-700">Organizer:</span> {selectedRes.applicant_name} ({selectedRes.applicant_phone})</p>
-              <p><span className="font-bold text-slate-700">Event:</span> {selectedRes.purpose}</p>
-              <p><span className="font-bold text-slate-700">Schedule:</span> {new Date(selectedRes.event_date).toLocaleDateString()} ({selectedRes.start_time} - {selectedRes.end_time})</p>
+              <p><span className="font-bold text-slate-700">Purpose:</span> {selectedRes.purpose}</p>
+              <p><span className="font-bold text-slate-700">Schedule:</span> {selectedRes.event_date ? new Date(selectedRes.event_date).toLocaleDateString() : 'N/A'} ({selectedRes.start_time} - {selectedRes.end_time})</p>
             </div>
+
+            {/* LGU Proof Document — ADMIN MUST VERIFY */}
+            {isLGU && (
+              <div className="p-4 bg-purple-50/80 rounded-2xl border-2 border-purple-300 space-y-3 shadow-xs">
+                <div className="flex items-center justify-between border-b border-purple-200 pb-2">
+                  <p className="font-extrabold text-purple-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-purple-600" />
+                    <span>LGU Sponsorship Proof Document — Official Verification</span>
+                  </p>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-200 text-purple-900">
+                    Mandatory Review
+                  </span>
+                </div>
+                
+                <p className="text-[11px] text-purple-800 leading-relaxed">
+                  This booking is tagged as <strong>LGU Sponsored (Free ₱0.00)</strong>. As administrator, you must inspect the official request letter, barangay endorsement, or authorization memo below before granting approval.
+                </p>
+
+                {proofUrl ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
+                      <span>Submitted Proof File:</span>
+                      <button
+                        type="button"
+                        onClick={() => setLightboxProof({
+                          url: proofUrl,
+                          title: eventName || selectedRes.purpose || 'LGU Sponsorship Proof',
+                          applicant: selectedRes.applicant_name,
+                          ref: selectedRes.reference_no
+                        })}
+                        className="flex items-center gap-1 text-purple-700 hover:text-purple-900 underline text-[11px] cursor-pointer"
+                      >
+                        <ZoomIn className="w-3.5 h-3.5" /> Full-Screen Zoom
+                      </button>
+                    </div>
+
+                    <div 
+                      onClick={() => setLightboxProof({
+                        url: proofUrl,
+                        title: eventName || selectedRes.purpose || 'LGU Sponsorship Proof',
+                        applicant: selectedRes.applicant_name,
+                        ref: selectedRes.reference_no
+                      })}
+                      className="relative group rounded-xl overflow-hidden border-2 border-purple-300 bg-white cursor-pointer hover:border-purple-500 transition-all shadow-sm max-h-64 flex items-center justify-center p-2"
+                    >
+                      <img
+                        src={proofUrl}
+                        alt="LGU Sponsorship Official Proof"
+                        className="max-h-60 max-w-full object-contain rounded-lg group-hover:scale-102 transition-transform duration-200"
+                      />
+                      <div className="absolute inset-0 bg-purple-950/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="px-3 py-1.5 rounded-xl bg-purple-900/90 text-white font-bold text-xs shadow-md flex items-center gap-1.5 backdrop-blur-xs">
+                          <ZoomIn className="w-4 h-4" /> Click to Inspect Full Document
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[10px] text-slate-500 italic">
+                        Document verified and recorded under #{selectedRes.reference_no}
+                      </span>
+                      <a
+                        href={proofUrl}
+                        download={`LGU-Proof-${selectedRes.reference_no}.jpg`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 px-3 py-1 bg-purple-700 hover:bg-purple-800 text-white text-[11px] font-bold rounded-lg shadow-xs transition-colors"
+                      >
+                        <ExternalLink className="w-3 h-3" /> Open in New Tab
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl space-y-1">
+                    <p className="text-xs font-bold text-red-800 flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 text-red-600" />
+                      <span>Missing Proof Document</span>
+                    </p>
+                    <p className="text-[11px] text-red-700">
+                      No sponsorship document or memo was found in this submission. Do NOT approve as Free until the citizen provides an official endorsement letter.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Special Equipment Requirements */}
             {selectedRes.special_equipment && (Array.isArray(selectedRes.special_equipment) ? selectedRes.special_equipment.length > 0 : true) && (
-              <div className="p-3.5 bg-purple-50 rounded-xl border border-purple-200 space-y-1.5">
-                <p className="font-bold text-purple-900 text-xs uppercase tracking-wider">🔧 Special Equipment Requirements</p>
+              <div className="p-3.5 bg-indigo-50 rounded-xl border border-indigo-200 space-y-1.5">
+                <p className="font-bold text-indigo-900 text-xs uppercase tracking-wider">🔧 Special Equipment Requirements</p>
                 <div className="flex flex-wrap gap-1.5 mt-1">
                   {(Array.isArray(selectedRes.special_equipment)
                     ? selectedRes.special_equipment
                     : String(selectedRes.special_equipment).split(',').map((s: string) => s.trim())
                   ).filter(Boolean).map((eq: string, i: number) => (
-                    <span key={i} className="px-2 py-0.5 bg-purple-100 text-purple-800 text-[10px] font-semibold rounded-full border border-purple-200">{eq}</span>
+                    <span key={i} className="px-2 py-0.5 bg-indigo-100 text-indigo-800 text-[10px] font-semibold rounded-full border border-indigo-200">{eq}</span>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Computed Fee Breakdown — always visible for park tickets */}
-            {(selectedRes.hourly_rate > 0 || (selectedRes as any).fee_amount > 0) && (
+            {/* Fee Breakdown — show ₱0 for LGU, computed for others */}
+            {isLGU ? (
+              <div className="p-3.5 bg-purple-50 rounded-xl border border-purple-200 text-xs">
+                <p className="font-bold text-purple-700 text-[11px] uppercase tracking-wider mb-1.5">💰 Booking Fee:</p>
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl font-extrabold text-purple-900 font-mono">₱0.00</span>
+                  <span className="text-[11px] font-bold px-2.5 py-1 bg-purple-200 text-purple-800 rounded-full">LGU Sponsored — Free (Pending Verification)</span>
+                </div>
+              </div>
+            ) : (selectedRes.hourly_rate > 0 || (selectedRes as any).fee_amount > 0) && (
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
                 <p className="font-bold text-slate-700 text-[11px] uppercase tracking-wider">💰 Booking Fee Computation:</p>
                 <div className="grid grid-cols-3 gap-2 text-center">
@@ -796,8 +928,13 @@ export function ParksModule() {
             {/* Approved — grant notice */}
             {selectedRes.status === 'Approved' && (
               <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 space-y-1">
-                <p className="font-bold text-amber-900 text-[11px]">🗓️ Grant Payment Notice — Computed fee will be charged to citizen. Payment due in 3 days.</p>
+                <p className="font-bold text-amber-900 text-[11px]">
+                  {isLGU
+                    ? '✅ LGU Activity — This is a FREE booking (₱0.00). Grant reservation directly with no payment required.'
+                    : '🗓️ Grant Payment Notice — Computed fee will be charged to citizen. Payment due in 3 days.'}
+                </p>
               </div>
+
             )}
 
             {selectedRes.status === 'Pending Payment' && (
@@ -826,7 +963,7 @@ export function ParksModule() {
                       ✕ Reject Schedule
                     </Button>
                     <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Approved')}>
-                      ✓ Approve Booking
+                      {isLGU ? '🏛️ Verify & Approve (LGU Free)' : '✓ Approve Booking'}
                     </Button>
                   </>
                 )}
@@ -851,9 +988,15 @@ export function ParksModule() {
                   Close
                 </Button>
                 {selectedRes.status === 'Approved' && (
-                  <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Pending Payment')}>
-                    Grant Reservation & Issue Payment Notice
-                  </Button>
+                  isLGU ? (
+                    <Button size="sm" variant="success" className="bg-purple-600 hover:bg-purple-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('LGU Endorsed')}>
+                      🏛️ Grant LGU Official Endorsement (Free)
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Pending Payment')}>
+                      Grant Reservation & Issue Payment Notice
+                    </Button>
+                  )
                 )}
                 {selectedRes.status === 'Pending Payment' && (
                   <Button size="sm" variant="success" className="bg-emerald-600 hover:bg-emerald-700 font-bold text-white text-xs" onClick={() => handleUpdateStatus('Paid')}>
@@ -863,211 +1006,70 @@ export function ParksModule() {
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
       </Modal>
 
-      {/* Modal: New Booking */}
-      <Modal
-        isOpen={isNewModalOpen}
-        onClose={() => setIsNewModalOpen(false)}
-        title="Schedule Park or Recreation Ground"
-        description="Reserve public plaza or sports grounds."
-      >
-        <form onSubmit={handleCreate} className="space-y-3 text-xs">
-          <div>
-            <label className="block text-xs font-semibold text-[#334155] mb-1">Select Park Ground *</label>
-            <select
-              value={newForm.facility_id}
-              onChange={(e) => setNewForm({ ...newForm, facility_id: parseInt(e.target.value) })}
-              className="w-full rounded-xl border border-slate-300 p-2 text-xs"
-            >
-              {parks.map(p => (
-                <option key={p.id} value={p.id}>{p.name} ({p.location})</option>
-              ))}
-            </select>
-          </div>
-
-          <Input
-            label="Applicant / Organization *"
-            required
-            value={newForm.applicant_name}
-            onChange={(e) => setNewForm({ ...newForm, applicant_name: e.target.value })}
-          />
-
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="Email Address *"
-              type="email"
-              required
-              value={newForm.applicant_email}
-              onChange={(e) => setNewForm({ ...newForm, applicant_email: e.target.value })}
-            />
-            <Input
-              label="Phone Number *"
-              required
-              value={newForm.applicant_phone}
-              onChange={(e) => setNewForm({ ...newForm, applicant_phone: e.target.value })}
-            />
-          </div>
-
-          <Input
-            label="Event Purpose *"
-            required
-            placeholder="e.g. Youth Soccer Clinic / Senior Morning Calisthenics"
-            value={newForm.purpose}
-            onChange={(e) => setNewForm({ ...newForm, purpose: e.target.value })}
-          />
-
-          <div className="space-y-3">
-            <Input
-              label="Date *"
-              type="date"
-              required
-              value={newForm.event_date}
-              onChange={(e) => { setNewForm({ ...newForm, event_date: e.target.value }); setAiResult(null); }}
-            />
-            {/* 2-Slot Checklist */}
-            {(() => {
-              const isMorning = newForm.start_time === '08:00 AM' && (newForm.end_time === '12:00 PM' || newForm.end_time === '05:00 PM');
-              const isAfternoon = (newForm.start_time === '01:00 PM' && newForm.end_time === '05:00 PM') || (newForm.start_time === '08:00 AM' && newForm.end_time === '05:00 PM');
-              const isBoth = isMorning && isAfternoon;
-              const selPark = parks.find(p => p.id === Number(newForm.facility_id));
-              const mPrice = Number((selPark as any)?.morning_rate ?? selPark?.hourly_rate ?? 0);
-              const aPrice = Number((selPark as any)?.afternoon_rate ?? selPark?.hourly_rate ?? 0);
-              const slotInfo = selPark ? calculateSlotFee(newForm.start_time, newForm.end_time, selPark) : { hours: 4, fee: 0 };
-
-              const toggle = (slot: 'morning' | 'afternoon') => {
-                if (slot === 'morning') {
-                  if (isMorning) {
-                    setNewForm(prev => ({ ...prev, start_time: '01:00 PM', end_time: '05:00 PM' }));
-                  } else if (isAfternoon) {
-                    setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
-                  } else {
-                    setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
-                  }
-                } else {
-                  if (isAfternoon) {
-                    setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
-                  } else if (isMorning) {
-                    setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
-                  } else {
-                    setNewForm(prev => ({ ...prev, start_time: '01:00 PM', end_time: '05:00 PM' }));
-                  }
-                }
-                setAiResult(null);
-              };
-
-              return (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-[#334155] uppercase tracking-wider">Select Time Slot *</label>
-                    <button type="button"
-                      onClick={() => {
-                        isBoth
-                          ? setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }))
-                          : setNewForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
-                        setAiResult(null);
-                      }}
-                      className={`text-[11px] font-bold px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                        isBoth ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      {isBoth ? '✓ Both (Full Day)' : '+ Book Both Slots (Full Day)'}
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div onClick={() => toggle('morning')}
-                      className={`p-3 rounded-xl border cursor-pointer select-none transition-all ${
-                        isMorning ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-400/30' : 'bg-white border-slate-200 hover:bg-slate-50'
-                      }`}>
-                      <p className="font-bold text-xs">{isMorning ? '✓ ' : ''}Morning</p>
-                      <p className="text-[11px] text-slate-500">08:00 AM – 12:00 PM</p>
-                      <p className="text-[11px] font-bold text-emerald-600">₱{mPrice.toLocaleString()}</p>
-                    </div>
-                    <div onClick={() => toggle('afternoon')}
-                      className={`p-3 rounded-xl border cursor-pointer select-none transition-all ${
-                        isAfternoon ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-400/30' : 'bg-white border-slate-200 hover:bg-slate-50'
-                      }`}>
-                      <p className="font-bold text-xs">{isAfternoon ? '✓ ' : ''}Afternoon</p>
-                      <p className="text-[11px] text-slate-500">01:00 PM – 05:00 PM</p>
-                      <p className="text-[11px] font-bold text-emerald-600">₱{aPrice.toLocaleString()}</p>
-                    </div>
-                  </div>
-                  <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-xs flex items-center justify-between">
-                    <span className="text-emerald-700 font-semibold">{slotInfo.hours} hrs: {newForm.start_time} – {newForm.end_time}</span>
-                    <span className="font-extrabold text-emerald-900 font-mono">₱{slotInfo.fee.toLocaleString()}.00</span>
-                  </div>
+      {/* Lightbox / Full-Screen Proof Viewer */}
+      {lightboxProof && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-fade-in"
+          onClick={() => setLightboxProof(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-slate-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 bg-purple-900 text-white flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-amber-300" />
+                  <h3 className="font-extrabold text-sm sm:text-base">LGU Sponsorship Proof Document</h3>
+                  <span className="font-mono text-xs bg-purple-800 px-2 py-0.5 rounded text-purple-200">
+                    #{lightboxProof.ref}
+                  </span>
                 </div>
-              );
-            })()}
-          </div>
-
-          {/* AI Double-Booking Checker */}
-          <div className="border border-emerald-200 rounded-xl p-3 bg-emerald-50/60 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="text-xs font-bold text-emerald-900">AI Availability Checker</span>
-                <span className="text-[10px] text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full font-semibold border border-emerald-200">Smart Conflict Detection</span>
+                <p className="text-xs text-purple-200 mt-0.5">
+                  Organizer: <strong>{lightboxProof.applicant}</strong> • Event: {lightboxProof.title}
+                </p>
               </div>
               <button
                 type="button"
-                onClick={handleCheckAIPark}
-                disabled={aiChecking || !newForm.event_date || !newForm.start_time || !newForm.end_time}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+                onClick={() => setLightboxProof(null)}
+                className="p-1.5 rounded-full hover:bg-white/20 text-white transition-colors cursor-pointer"
               >
-                {aiChecking ? (
-                  <><span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Checking...</>
-                ) : (
-                  <><Sparkles className="w-3 h-3" /> Check Availability</>
-                )}
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {aiResult && (
-              <div className={`rounded-lg p-2.5 text-xs font-medium border ${
-                aiResult.hasConflict
-                  ? 'bg-red-50 border-red-200 text-red-800'
-                  : 'bg-emerald-50 border-emerald-300 text-emerald-800'
-              }`}>
-                {aiResult.hasConflict ? (
-                  <>
-                    <p className="font-bold text-red-900 mb-1">⚠️ Schedule Conflict Detected</p>
-                    <p className="text-[11px] leading-relaxed">{aiResult.message}</p>
-                    {aiResult.suggestedSlots?.length > 0 && (
-                      <p className="text-[10px] text-red-600 mt-1 font-semibold">
-                        Suggested alternative: {aiResult.suggestedSlots[0]}
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <p className="font-bold text-emerald-900">✓ Slot is Available — No conflicts detected for this park on the selected schedule.</p>
-                )}
+            <div className="p-4 bg-slate-900 flex-1 overflow-auto flex items-center justify-center min-h-[320px]">
+              <img
+                src={lightboxProof.url}
+                alt="Full size LGU sponsorship proof"
+                className="max-h-[70vh] max-w-full object-contain rounded-lg shadow-lg border border-slate-700"
+              />
+            </div>
+
+            <div className="p-3.5 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Official sponsorship documentation uploaded by applicant</span>
+              <div className="flex gap-2">
+                <a
+                  href={lightboxProof.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 font-bold rounded-xl transition-colors flex items-center gap-1.5"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> Open in New Tab
+                </a>
+                <Button size="sm" variant="primary" onClick={() => setLightboxProof(null)}>
+                  Close Viewer
+                </Button>
               </div>
-            )}
-
-            {!aiResult && !aiChecking && (
-              <p className="text-[10px] text-emerald-700">
-                Fill in date and time, then click <strong>Check Availability</strong> to verify no double-booking before confirming.
-              </p>
-            )}
+            </div>
           </div>
+        </div>
+      )}
 
-          <div className="pt-2 flex justify-end gap-2">
-            <Button size="sm" variant="outline" type="button" onClick={() => { setIsNewModalOpen(false); setAiResult(null); }}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              variant="success"
-              type="submit"
-              className={aiResult?.hasConflict ? 'opacity-50 cursor-not-allowed' : ''}
-            >
-              Confirm Park Schedule
-            </Button>
-          </div>
-        </form>
-      </Modal>
 
       {/* Status Animation Toast / Modal */}
       <StatusAnimationModal

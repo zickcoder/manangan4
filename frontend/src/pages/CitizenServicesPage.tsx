@@ -53,6 +53,7 @@ import {
 } from '../lib/api';
 import { Facility, CemeteryPlot, Asset } from '../types';
 import { compressImage } from '../lib/imageCompressor';
+import { ParksFacilitiesBookingAssistant } from '../components/booking/ParksFacilitiesBookingAssistant';
 
 interface CitizenServicesProps {
   defaultTab?: 'facility' | 'parks' | 'reserve' | 'utility' | 'cemetery' | 'assets';
@@ -157,6 +158,31 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
   // Separate selected equipment per tab
   const [facilityEquipment, setFacilityEquipment] = useState<string[]>([]);
   const [parksEquipment, setParksEquipment] = useState<string[]>([]);
+
+  // Parks-specific Step 2 fields (Activity Type, Event Name, LGU proof)
+  const [parksActivityType, setParksActivityType] = useState<'LGU Activity' | 'Sports Activity' | 'Other / Private Event'>('Sports Activity');
+  const [parksEventName, setParksEventName] = useState('');
+  const [parksProofPhoto, setParksProofPhoto] = useState<{ url: string; name: string } | null>(null);
+  const [parksProofUploading, setParksProofUploading] = useState(false);
+
+  // Parks Step 1 — Schedule Search & Viewing Filters
+  const [scheduleYear, setScheduleYear] = useState(new Date().getFullYear());
+  const [scheduleMonth, setScheduleMonth] = useState(new Date().getMonth()); // 0-indexed
+  const [scheduleDayFilter, setScheduleDayFilter] = useState<'all' | 'weekday' | 'weekend'>('all');
+
+  const handleParksProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParksProofUploading(true);
+    try {
+      const compressed = await compressImage(file);
+      setParksProofPhoto({ url: compressed, name: file.name });
+    } catch {
+      alert('Failed to process file. Please try a different image.');
+    } finally {
+      setParksProofUploading(false);
+    }
+  };
 
   const [reserveForm, setReserveForm] = useState({
     applicant_name: currentUser?.name || '',
@@ -673,9 +699,22 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
       }
     }
 
+    // Parks: LGU Activity requires sponsorship proof document
+    if (isParksMode && parksActivityType === 'LGU Activity' && !parksProofPhoto) {
+      setReserveError('LGU Activity bookings require a sponsorship proof document. Please upload your official LGU letter, request memo, or authorization document.');
+      return;
+    }
+
+    // Parks: Event Name is required
+    if (isParksMode && !parksEventName.trim()) {
+      setReserveError('Please provide an Event Name for the park booking.');
+      return;
+    }
+
     const slotFeeInfo = calculateSlotFee(activeStart, activeEnd, selectedFacilityObj);
     const durationHours = slotFeeInfo.hours;
-    const activeFee = slotFeeInfo.fee;
+    // LGU Activity is always free regardless of configured rates
+    const activeFee = (isParksMode && parksActivityType === 'LGU Activity') ? 0 : slotFeeInfo.fee;
 
     setReserveSubmitting(true);
     try {
@@ -698,6 +737,12 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
         hours: durationHours,
         fee_amount: activeFee,
         attendees: currentAttendees,
+        // Parks-specific Step 2 fields
+        ...(isParksMode ? {
+          event_name: parksEventName.trim(),
+          activity_type: parksActivityType,
+          sponsorship_photo_url: parksProofPhoto?.url || null,
+        } : {}),
         special_equipment: activeSelectedEquipment,
         ...(activeResubmit ? { resubmitId: resubmittingTicket.originalId, reference_no: resubmittingTicket.ref_no } : {})
       };
@@ -923,6 +968,11 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
               <p className="text-xs sm:text-sm text-slate-600 mt-2 max-w-md mx-auto">
                 Reference Number: <span className="font-bold font-mono text-blue-600">{reservationSuccess.reference_no}</span>. This request is now visible in your tickets ledger and the admin desk.
               </p>
+              {(reservationSuccess.activity_type === 'LGU Activity' || reservationSuccess.fee_amount === 0) && (
+                <div className="inline-flex items-center gap-1.5 mt-2.5 px-3.5 py-1 rounded-full bg-purple-100 text-purple-900 border border-purple-300 text-xs font-bold">
+                  <span>🏛️ Assessed Fee: FREE (₱0.00) — LGU Sponsored (No Treasury Payment Required)</span>
+                </div>
+              )}
               <div className="pt-4 flex justify-center gap-3">
                 <Button size="md" onClick={() => setReservationSuccess(null)}>
                   {isParksMode ? 'Book Another Park Ground' : 'Book Another Facility'}
@@ -933,660 +983,12 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
               </div>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left venue cards */}
-              <div className="space-y-3">
-                <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                  {isParksMode ? 'Select Park / Ground' : 'Select Government Facility'}
-                </p>
-                <div className="space-y-2.5">
-                  {availableVenues.map((fac) => {
-                    const isSelected = selectedFacilityId === fac.id;
-                    return (
-                      <div
-                        key={fac.id}
-                        onClick={() => setSelectedFacilityId(fac.id)}
-                        className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
-                          isSelected
-                            ? isParksMode ? 'bg-emerald-50 border-emerald-600 shadow-soft ring-2 ring-emerald-500/20' : 'bg-blue-50 border-blue-600 shadow-soft ring-2 ring-blue-500/20'
-                            : 'bg-white border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className={`p-2 rounded-xl shrink-0 ${isParksMode ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
-                            {isParksMode ? <Trees className="w-4 h-4" /> : <Building className="w-4 h-4" />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase truncate">{fac.category}</span>
-                              <span className={`text-[11px] font-bold ${isParksMode ? 'text-emerald-700' : 'text-blue-700'}`}>₱{fac.hourly_rate}/hr</span>
-                            </div>
-                            <h4 className="text-xs font-bold text-slate-900 leading-tight mt-0.5 truncate">{fac.name}</h4>
-                            <p className="text-[10px] text-slate-500 mt-0.5">Cap: <strong>{fac.capacity} Pax</strong> • {fac.location}</p>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {selectedFacilityObj && (
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">Selected Venue Specs:</span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${isParksMode ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
-                        {isParksMode ? 'Park Grounds' : 'Gov Facility'}
-                      </span>
-                    </div>
-                    <p className="font-bold text-slate-900 text-sm leading-tight">{selectedFacilityObj.name}</p>
-                    <p className="text-[11px] text-slate-600 font-medium">Max Capacity: <span className="text-blue-700 font-bold">{selectedFacilityObj.capacity} Pax</span> • Rate: <span className="font-bold text-slate-800">₱{selectedFacilityObj.hourly_rate}/hr</span></p>
-                    <p className="text-[10px] text-slate-500">{selectedFacilityObj.amenities}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Form */}
-              <div className="lg:col-span-2">
-                <Card className="border-[#cbd5e1]">
-                  <CardHeader>
-                    <CardTitle>{isParksMode ? 'Parks & Recreation Grounds Scheduling Form' : 'Government Facility Reservation Form'}</CardTitle>
-                    <CardDescription>{isParksMode ? 'Select recreation purpose, special equipment, and confirm park schedule' : 'Select event purpose, special equipment, and verify schedule'}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {/* Top Visual Preview Ribbon (2 Images) */}
-                    {selectedFacilityObj && (
-                      <div className="mb-4 p-3.5 bg-gradient-to-r from-slate-50 to-slate-100/80 rounded-2xl border border-slate-200 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <ImageIcon className="w-4 h-4 text-blue-600" />
-                            <span className="text-xs font-bold text-slate-900">Venue Visual Preview: {selectedFacilityObj.name}</span>
-                          </div>
-                          <span className="text-[10px] font-semibold text-slate-500">2 Venue Photos</span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div
-                            className="relative h-36 rounded-xl overflow-hidden border border-slate-300/80 bg-slate-900 group shadow-xs cursor-zoom-in"
-                            onClick={() => (selectedFacilityObj as any).image_url && setZoomImage({ src: (selectedFacilityObj as any).image_url, label: `${selectedFacilityObj.name} — Photo 1: Exterior / Entrance` })}
-                          >
-                            {(selectedFacilityObj as any).image_url ? (
-                              <img
-                                src={(selectedFacilityObj as any).image_url}
-                                alt={`${selectedFacilityObj.name} View 1`}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs bg-slate-800/80">
-                                <ImageIcon className="w-6 h-6 mb-1 opacity-50 text-slate-400" />
-                                <span className="font-medium text-slate-300">No photo display yet</span>
-                              </div>
-                            )}
-                            {(selectedFacilityObj as any).image_url && (
-                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                                <span className="bg-white/90 text-slate-900 text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-lg">
-                                  <Eye className="w-3 h-3" /> Click to Zoom
-                                </span>
-                              </div>
-                            )}
-                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-white">
-                              <span className="text-[10px] font-extrabold uppercase tracking-wide block">Photo 1 • Exterior / Entrance</span>
-                            </div>
-                          </div>
-
-                          <div
-                            className="relative h-36 rounded-xl overflow-hidden border border-slate-300/80 bg-slate-900 group shadow-xs cursor-zoom-in"
-                            onClick={() => (selectedFacilityObj as any).image_url_2 && setZoomImage({ src: (selectedFacilityObj as any).image_url_2, label: `${selectedFacilityObj.name} — Photo 2: Interior / Amenities` })}
-                          >
-                            {(selectedFacilityObj as any).image_url_2 ? (
-                              <img
-                                src={(selectedFacilityObj as any).image_url_2}
-                                alt={`${selectedFacilityObj.name} View 2`}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs bg-slate-800/80">
-                                <ImageIcon className="w-6 h-6 mb-1 opacity-50 text-slate-400" />
-                                <span className="font-medium text-slate-300">No photo display yet</span>
-                              </div>
-                            )}
-                            {(selectedFacilityObj as any).image_url_2 && (
-                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                                <span className="bg-white/90 text-slate-900 text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 shadow-lg">
-                                  <Eye className="w-3 h-3" /> Click to Zoom
-                                </span>
-                              </div>
-                            )}
-                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-white">
-                              <span className="text-[10px] font-extrabold uppercase tracking-wide block">Photo 2 • Interior / Amenities</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    {activeResubmit && (
-                      <div className="mb-4 p-3 bg-blue-50 border border-blue-300 rounded-2xl flex items-center justify-between text-blue-950 text-xs animate-fade-in">
-                        <div className="flex items-center gap-2.5">
-                          <span className="p-1.5 bg-blue-200 text-blue-900 rounded-xl font-bold">🔄</span>
-                          <div>
-                            <p className="font-bold">Resubmitting Application: <span className="font-mono text-blue-800">{activeResubmit?.ref_no || resubmittingTicket?.ref_no}</span></p>
-                            <p className="text-[11px] text-blue-700">You are updating your schedule. Your previous pending booking is recognized as your own and will not conflict.</p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setResubmittingTicket(null);
-                            sessionStorage.removeItem('govserve_resubmit_ticket');
-                          }}
-                          className="text-blue-700 hover:text-blue-900 text-xs font-bold underline cursor-pointer shrink-0"
-                        >
-                          Cancel Resubmit
-                        </button>
-                      </div>
-                    )}
-                    <form onSubmit={handleFacilityReserve} className="space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <Input
-                          label="Applicant Name *"
-                          required
-                          value={reserveForm.applicant_name}
-                          onChange={(e) => setReserveForm({ ...reserveForm, applicant_name: e.target.value })}
-                        />
-                        <Input
-                          label="Email Address *"
-                          type="email"
-                          required
-                          value={reserveForm.applicant_email}
-                          onChange={(e) => setReserveForm({ ...reserveForm, applicant_email: e.target.value })}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <Input
-                          label="Contact Number *"
-                          required
-                          placeholder="09171234567"
-                          maxLength={11}
-                          value={reserveForm.applicant_phone}
-                          onChange={(e) => setReserveForm({ ...reserveForm, applicant_phone: e.target.value.replace(/\D/g, '').slice(0, 11) })}
-                        />
-                        <div>
-                          <Input
-                            label="Expected Attendees Count *"
-                            type="number"
-                            required
-                            value={reserveForm.attendees}
-                            onChange={(e) => setReserveForm({ ...reserveForm, attendees: e.target.value })}
-                          />
-                          {isPaxExceeded && (
-                            <div className="mt-1.5 p-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-semibold flex items-center gap-1.5">
-                              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                              <span>⚠️ <strong>Exceeded Limit:</strong> {currentAttendees} pax exceeds maximum venue capacity ({selectedFacilityObj.capacity} pax)!</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* PREDEFINED PURPOSE */}
-                      <div>
-                        <label className="block text-xs font-semibold text-[#334155] mb-1.5">Purpose of Event / Activity *</label>
-                        <select
-                          value={reserveForm.purpose}
-                          onChange={(e) => setReserveForm({ ...reserveForm, purpose: e.target.value })}
-                          className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm font-medium focus:border-blue-600 focus:outline-none"
-                        >
-                          {PURPOSE_OPTIONS.map((p, idx) => (
-                            <option key={idx} value={p}>{p}</option>
-                          ))}
-                        </select>
-                        {reserveForm.purpose === 'Other Government / Civic Activity' && (
-                          <input
-                            type="text"
-                            placeholder="Please specify specific activity..."
-                            value={reserveForm.custom_purpose}
-                            onChange={(e) => setReserveForm({ ...reserveForm, custom_purpose: e.target.value })}
-                            className="mt-2 w-full p-2.5 text-xs rounded-xl border border-slate-300 bg-slate-50"
-                          />
-                        )}
-                      </div>
-
-                      {/* DATE AND TIME */}
-                      {/* 3-day minimum booking rule */}
-                      {(() => {
-                        const minDate = new Date();
-                        minDate.setDate(minDate.getDate() + 3);
-                        const minBookingDate = minDate.toISOString().split('T')[0];
-                        return (
-                          <div className="space-y-4">
-                            <div className="max-w-xs">
-                              <label className="block text-xs font-semibold text-[#334155] mb-1.5">Event Date *</label>
-                              <input
-                                type="date"
-                                required
-                                min={activeResubmit ? undefined : minBookingDate}
-                                value={reserveForm.event_date}
-                                onChange={(e) => setReserveForm({ ...reserveForm, event_date: e.target.value })}
-                                className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm focus:border-blue-600 focus:outline-none"
-                              />
-                              {!activeResubmit && (
-                                <p className="text-[10px] text-slate-400 mt-0.5">📅 Earliest: {minDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-                              )}
-                            </div>
-
-                            {/* 2 Fixed 4-Hour Time Slot Selection Checklist */}
-                            {(() => {
-                              const isMorningSelected = reserveForm.start_time === '08:00 AM' && (reserveForm.end_time === '12:00 PM' || reserveForm.end_time === '05:00 PM');
-                              const isAfternoonSelected = (reserveForm.start_time === '01:00 PM' && reserveForm.end_time === '05:00 PM') || (reserveForm.start_time === '08:00 AM' && reserveForm.end_time === '05:00 PM');
-                              const isBothSelected = isMorningSelected && isAfternoonSelected;
-
-                              const mPrice = Number((selectedFacilityObj as any)?.morning_rate ?? selectedFacilityObj?.hourly_rate ?? 0);
-                              const aPrice = Number((selectedFacilityObj as any)?.afternoon_rate ?? selectedFacilityObj?.hourly_rate ?? 0);
-
-                              const handleToggleSlot = (slot: 'morning' | 'afternoon') => {
-                                if (slot === 'morning') {
-                                  if (isMorningSelected) {
-                                    if (isAfternoonSelected) {
-                                      setReserveForm(prev => ({ ...prev, start_time: '01:00 PM', end_time: '05:00 PM' }));
-                                    }
-                                  } else {
-                                    if (isAfternoonSelected) {
-                                      setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
-                                    } else {
-                                      setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
-                                    }
-                                  }
-                                } else {
-                                  if (isAfternoonSelected) {
-                                    if (isMorningSelected) {
-                                      setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
-                                    }
-                                  } else {
-                                    if (isMorningSelected) {
-                                      setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
-                                    } else {
-                                      setReserveForm(prev => ({ ...prev, start_time: '01:00 PM', end_time: '05:00 PM' }));
-                                    }
-                                  }
-                                }
-                              };
-
-                              const handleSelectBoth = () => {
-                                if (isBothSelected) {
-                                  setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '12:00 PM' }));
-                                } else {
-                                  setReserveForm(prev => ({ ...prev, start_time: '08:00 AM', end_time: '05:00 PM' }));
-                                }
-                              };
-
-                              return (
-                                <div className="space-y-2">
-                                  <div className="flex items-center justify-between">
-                                    <label className="block text-xs font-bold text-[#334155] uppercase tracking-wider">
-                                      Select Time Slot (4 Hours Each) *
-                                    </label>
-                                    <button
-                                      type="button"
-                                      onClick={handleSelectBoth}
-                                      className={`text-[11px] font-bold px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                                        isBothSelected
-                                          ? (isParksMode ? 'bg-emerald-600 text-white shadow-sm' : 'bg-blue-600 text-white shadow-sm')
-                                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                                      }`}
-                                    >
-                                      {isBothSelected ? '✓ Both Slots Selected (Full Day: 08:00 AM – 05:00 PM)' : '+ Book Both Slots (Full Day: 08:00 AM – 05:00 PM)'}
-                                    </button>
-                                  </div>
-
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    {/* Morning Slot Box */}
-                                    <div
-                                      onClick={() => handleToggleSlot('morning')}
-                                      className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 select-none ${
-                                        isMorningSelected
-                                          ? isParksMode
-                                            ? 'bg-emerald-50/90 border-emerald-500 text-emerald-950 shadow-sm ring-1 ring-emerald-500/30'
-                                            : 'bg-blue-50/90 border-blue-500 text-blue-950 shadow-sm ring-1 ring-blue-500/30'
-                                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                                      }`}
-                                    >
-                                      <div className="pt-0.5 shrink-0">
-                                        {isMorningSelected ? (
-                                          <CheckSquare className={`w-5 h-5 ${isParksMode ? 'text-emerald-600' : 'text-blue-600'}`} />
-                                        ) : (
-                                          <Square className="w-5 h-5 text-slate-400" />
-                                        )}
-                                      </div>
-                                      <div className="space-y-0.5 flex-1">
-                                        <div className="flex items-center justify-between">
-                                          <span className="font-extrabold text-xs sm:text-sm">Morning Slot</span>
-                                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                            isMorningSelected ? (isParksMode ? 'bg-emerald-200 text-emerald-900' : 'bg-blue-200 text-blue-900') : 'bg-slate-100 text-slate-600'
-                                          }`}>
-                                            4 Hours
-                                          </span>
-                                        </div>
-                                        <p className="text-xs text-slate-500 font-medium">08:00 AM – 12:00 PM</p>
-                                        <p className="text-xs font-bold text-emerald-600 pt-1">
-                                          ₱{mPrice.toLocaleString()}.00 <span className="text-[10px] font-normal text-slate-500">/ slot</span>
-                                        </p>
-                                      </div>
-                                    </div>
-
-                                    {/* Afternoon Slot Box */}
-                                    <div
-                                      onClick={() => handleToggleSlot('afternoon')}
-                                      className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 select-none ${
-                                        isAfternoonSelected
-                                          ? isParksMode
-                                            ? 'bg-emerald-50/90 border-emerald-500 text-emerald-950 shadow-sm ring-1 ring-emerald-500/30'
-                                            : 'bg-blue-50/90 border-blue-500 text-blue-950 shadow-sm ring-1 ring-blue-500/30'
-                                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                                      }`}
-                                    >
-                                      <div className="pt-0.5 shrink-0">
-                                        {isAfternoonSelected ? (
-                                          <CheckSquare className={`w-5 h-5 ${isParksMode ? 'text-emerald-600' : 'text-blue-600'}`} />
-                                        ) : (
-                                          <Square className="w-5 h-5 text-slate-400" />
-                                        )}
-                                      </div>
-                                      <div className="space-y-0.5 flex-1">
-                                        <div className="flex items-center justify-between">
-                                          <span className="font-extrabold text-xs sm:text-sm">Afternoon Slot</span>
-                                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                            isAfternoonSelected ? (isParksMode ? 'bg-emerald-200 text-emerald-900' : 'bg-blue-200 text-blue-900') : 'bg-slate-100 text-slate-600'
-                                          }`}>
-                                            4 Hours
-                                          </span>
-                                        </div>
-                                        <p className="text-xs text-slate-500 font-medium">01:00 PM – 05:00 PM</p>
-                                        <p className="text-xs font-bold text-emerald-600 pt-1">
-                                          ₱{aPrice.toLocaleString()}.00 <span className="text-[10px] font-normal text-slate-500">/ slot</span>
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        );
-                      })()} {/* End date IIFE */}
-
-                      {/* Live Calculated Fee & Duration Banner */}
-                      <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
-                        isParksMode 
-                          ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950' 
-                          : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 text-blue-950'
-                      }`}>
-                        <div className="space-y-0.5">
-                          <span className={`text-[10px] font-bold uppercase tracking-wider block ${isParksMode ? 'text-emerald-700' : 'text-blue-700'}`}>
-                            ⏱️ Scheduled Slot & Duration:
-                          </span>
-                          <p className="font-semibold text-slate-800">
-                            <strong>{bookingHours} {bookingHours === 1 ? 'Hour' : 'Hours'}</strong> ({reserveForm.start_time} – {reserveForm.end_time})
-                            {bookingHours === 8 && <span className="ml-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">Both Slots Combined (slot price × 2)</span>}
-                          </p>
-                        </div>
-                        <div className={`sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 ${isParksMode ? 'border-emerald-200/60' : 'border-blue-200/60'}`}>
-                          <span className={`text-[10px] font-bold uppercase tracking-wider block ${isParksMode ? 'text-emerald-700' : 'text-blue-700'}`}>
-                            Total Calculated Fee:
-                          </span>
-                          <span className={`text-base font-extrabold font-mono ${isParksMode ? 'text-emerald-800' : 'text-blue-900'}`}>
-                            {bookingTotalFee > 0 ? `₱${bookingTotalFee.toLocaleString()}.00` : 'Free / No Fee (₱0.00)'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* SPECIAL EQUIPMENT — Separate per tab (Facility vs Parks) */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="block text-xs font-semibold text-[#334155]">
-                            {isParksMode ? '🌿 Parks Equipment Requirements:' : '🏛️ Facility Equipment Requirements:'}
-                          </label>
-                          {activeSelectedEquipment.length > 0 && (
-                            <span className={`text-[11px] font-bold ${isParksMode ? 'text-emerald-600' : 'text-blue-600'}`}>
-                              {activeSelectedEquipment.length} selected
-                            </span>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {activeEquipmentList.map((item, idx) => {
-                            const isChecked = activeSelectedEquipment.includes(item);
-                            return (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => toggleEquipment(item)}
-                                className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all flex items-center gap-2.5 text-xs font-medium ${
-                                  isChecked
-                                    ? isParksMode
-                                      ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm ring-1 ring-emerald-500/30'
-                                      : 'bg-blue-50 border-blue-500 text-blue-900 shadow-sm ring-1 ring-blue-500/30'
-                                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                                }`}
-                              >
-                                {isChecked ? (
-                                  <CheckSquare className={`w-4 h-4 shrink-0 ${isParksMode ? 'text-emerald-600' : 'text-blue-600'}`} />
-                                ) : (
-                                  <Square className="w-4 h-4 text-slate-400 shrink-0" />
-                                )}
-                                <span className="flex-1 select-none">{item}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {activeEquipmentList.length === 0 && (
-                          <p className="text-[11px] text-slate-400 italic text-center py-3">No equipment options configured. Contact admin to add equipment items.</p>
-                        )}
-                      </div>
-
-                      {/* AI Slot Check Box */}
-                      {aiConflict && (
-                        <div className={`p-4 rounded-2xl text-white space-y-3 animate-fade-in shadow-medium border ${
-                          aiConflict.isOwnSchedule
-                            ? 'bg-gradient-to-br from-amber-950 via-slate-900 to-slate-950 border-amber-500/50 ring-1 ring-amber-500/20'
-                            : 'bg-gradient-to-br from-indigo-950 to-slate-900 border-indigo-500/30'
-                        }`}>
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <span className={`text-xs font-bold flex items-center gap-2 ${aiConflict.isOwnSchedule ? 'text-amber-300' : 'text-indigo-300'}`}>
-                              <Sparkles className={`w-4 h-4 animate-pulse ${aiConflict.isOwnSchedule ? 'text-amber-400' : 'text-indigo-400'}`} />
-                              <span className="text-sm font-extrabold tracking-wide">{aiConflict.isOwnSchedule ? 'You Already Booked This Date' : 'AI Slot Intelligence'}</span>
-                            </span>
-                            <Badge 
-                              variant={aiConflict.hasConflict ? 'destructive' : 'warning'} 
-                              className={aiConflict.isOwnSchedule ? 'bg-amber-500/20 text-amber-200 border-amber-400/50 text-xs py-1 px-3 font-bold shadow-sm' : ''}
-                            >
-                              {aiConflict.hasConflict ? '⚠️ Schedule Conflict Detected' : aiConflict.isOwnSchedule ? '⚠️ Your Existing Booking Detected' : '✅ Optimal Slot Verified'}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-slate-200 leading-relaxed">
-                            {aiConflict.isOwnSchedule
-                              ? `⚠️ You already have an active booking on this date and time at ${selectedFacilityObj?.name || 'this venue'}. To book another date, select a different date or time slot below. Or view your existing ticket.`
-                              : 'This time slot is already reserved by another party. Please choose a different date or time.'}
-                          </p>
-
-                          {/* Recognized Booking Ticket Card - Clickable to see ticket */}
-                          {aiConflict.isOwnSchedule && (
-                            <div className="pt-1">
-                              <div
-                                onClick={() => {
-                                  const targetRef = aiConflict.existingBooking?.reference_no || resubmittingTicket?.ref_no;
-                                  if (targetRef) {
-                                    navigate(`/my-tickets?ticket=${encodeURIComponent(targetRef)}`, { state: { openTicketRef: targetRef } });
-                                  } else {
-                                    navigate('/my-tickets');
-                                  }
-                                }}
-                                className="p-3.5 bg-gradient-to-r from-emerald-950/80 via-slate-900/90 to-slate-900/95 hover:from-emerald-900/70 hover:to-slate-800 border border-emerald-400/40 hover:border-emerald-300 rounded-xl cursor-pointer transition-all duration-200 shadow-md group relative overflow-hidden"
-                              >
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
-                                  <div className="flex items-start gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center justify-center shrink-0 group-hover:scale-105 group-hover:bg-emerald-500/30 transition-all">
-                                      <FileCheck className="w-5 h-5 text-emerald-400" />
-                                    </div>
-                                    <div className="space-y-0.5">
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Matched Ticket Voucher</span>
-                                        <Badge size="sm" variant="success" className="text-[10px] py-0 px-2 bg-emerald-400/20 text-emerald-200 border-emerald-300/40">
-                                          {aiConflict.existingBooking?.status || resubmittingTicket?.status || 'Active'}
-                                        </Badge>
-                                      </div>
-                                      <h5 className="font-extrabold font-mono text-white group-hover:text-emerald-300 transition-colors text-sm flex items-center gap-1.5">
-                                        {aiConflict.existingBooking?.reference_no || resubmittingTicket?.ref_no || 'RES-SCHEDULE'}
-                                        <span className="text-xs font-sans font-medium text-emerald-200/80">
-                                          • {aiConflict.existingBooking?.facility_name || resubmittingTicket?.title || selectedFacilityObj.name}
-                                        </span>
-                                      </h5>
-                                      <p className="text-[11px] text-slate-300">
-                                        📅 <strong>Booked Slot:</strong> {aiConflict.existingBooking?.event_date || resubmittingTicket?.date || reserveForm.event_date} ({aiConflict.existingBooking?.start_time || resubmittingTicket?.time || `${reserveForm.start_time} - ${reserveForm.end_time}`})
-                                      </p>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0 flex-wrap">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        const existing = aiConflict.existingBooking || resubmittingTicket;
-                                        handleStartResubmitFromBooking(existing);
-                                      }}
-                                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-                                    >
-                                      <Edit className="w-3.5 h-3.5" />
-                                      <span>Re-edit / Resubmit Ticket</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        // Clear the date/time so citizen picks a new slot
-                                        setReserveForm(prev => ({ ...prev, event_date: '', start_time: '08:00 AM', end_time: '12:00 PM' }));
-                                        setAiConflict(null);
-                                      }}
-                                      className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/40 text-amber-200 border border-amber-400/40 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors"
-                                    >
-                                      <Calendar className="w-3.5 h-3.5" />
-                                      Book Another Date
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setViewingRecognizedTicket(aiConflict.existingBooking || resubmittingTicket || {
-                                          reference_no: aiConflict.existingBooking?.reference_no || 'RES-SCHEDULE',
-                                          facility_name: selectedFacilityObj.name,
-                                          event_date: reserveForm.event_date,
-                                          start_time: reserveForm.start_time,
-                                          end_time: reserveForm.end_time,
-                                          status: 'Pending Review',
-                                          purpose: reserveForm.purpose,
-                                          applicant_name: reserveForm.applicant_name,
-                                          applicant_phone: reserveForm.applicant_phone
-                                        });
-                                      }}
-                                      className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-amber-200 border border-amber-400/30 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
-                                    >
-                                      <Eye className="w-3.5 h-3.5" />
-                                      View Ticket
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        const targetRef = aiConflict.existingBooking?.reference_no || resubmittingTicket?.ref_no;
-                                        if (targetRef) {
-                                          navigate(`/my-tickets?ticket=${encodeURIComponent(targetRef)}`, { state: { openTicketRef: targetRef } });
-                                        } else {
-                                          navigate('/my-tickets');
-                                        }
-                                      }}
-                                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm group-hover:scale-105 transition-all"
-                                    >
-                                      <span>My Tickets</span>
-                                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {aiConflict.alternativeSlots && aiConflict.alternativeSlots.filter((s: string) => !s.toLowerCase().includes('next available') && !s.toLowerCase().includes('next day') && !s.toLowerCase().includes('next saturday')).length > 0 && (
-                            <div className="pt-2 space-y-1.5">
-                              <p className="text-[11px] font-bold text-indigo-300">💡 Suggested Alternative Slots (Click to Apply):</p>
-                              <div className="flex flex-wrap gap-2">
-                                {aiConflict.alternativeSlots
-                                  .filter((slot: string) => !slot.toLowerCase().includes('next available') && !slot.toLowerCase().includes('next day') && !slot.toLowerCase().includes('next saturday'))
-                                  .slice(0, 1)
-                                  .map((slot: string, idx: number) => (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      onClick={() => handleApplyAlternativeSlot(slot)}
-                                      className="bg-white/10 hover:bg-white/25 hover:border-emerald-400/50 hover:text-white text-indigo-200 px-3.5 py-1.5 rounded-xl border border-white/20 text-xs font-mono transition-all flex items-center gap-2 cursor-pointer shadow-sm group"
-                                    >
-                                      <span className="font-semibold">{slot}</span>
-                                      <Check className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
-                                    </button>
-                                  ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-
-                      {/* Validation & Submit Error Banner */}
-                      {reserveError && (
-                        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs font-semibold flex items-center gap-2 animate-fade-in shadow-sm">
-                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                          <span>{reserveError}</span>
-                        </div>
-                      )}
-
-                      {/* Single Action Button */}
-                      <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-                        {/* Left: AI status label */}
-                        <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
-                          <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                          {aiConflict?.isOwnSchedule && !activeResubmit
-                            ? <span className="text-amber-700 font-semibold">⚠️ Existing booking detected — resubmit or cancel first</span>
-                            : activeResubmit
-                            ? <span className="text-blue-700 font-semibold">🔄 Resubmitting existing ticket — slot recognized as yours</span>
-                            : aiConflict?.hasConflict
-                            ? <span className="text-red-600 font-semibold">🚫 Slot unavailable — pick a different date or time</span>
-                            : <span>AI-assisted booking schedule <strong className="text-emerald-600">Active</strong></span>
-                          }
-                        </div>
-                        <Button 
-                          type="submit" 
-                          size="md" 
-                          disabled={reserveSubmitting || Boolean(aiConflict?.hasConflict) || isPaxExceeded || (Boolean(aiConflict?.isOwnSchedule) && !activeResubmit)}
-                          className={`w-full sm:w-auto px-8 font-bold ${
-                            reserveSubmitting || isPaxExceeded || aiConflict?.hasConflict || (aiConflict?.isOwnSchedule && !activeResubmit)
-                              ? 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300' 
-                              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
-                          }`}
-                        >
-                          {reserveSubmitting
-                            ? '⏳ Submitting Reservation...'
-                            : isPaxExceeded 
-                            ? `🚫 Exceeds Max Capacity (${selectedFacilityObj.capacity} Pax)` 
-                            : aiConflict?.hasConflict 
-                            ? '🚫 Slot Already Booked' 
-                            : aiConflict?.isOwnSchedule && !activeResubmit
-                            ? '🚫 Resubmit or Cancel Existing Ticket First'
-                            : activeResubmit
-                            ? 'Confirm & Resubmit Reservation'
-                            : 'Submit Reservation'}
-                        </Button>
-                      </div>
-                    </form>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
+            <ParksFacilitiesBookingAssistant
+              key={isParksMode ? 'parks-assistant' : 'facility-assistant'}
+              mode={isParksMode ? 'parks' : 'facility'}
+              userRole="citizen"
+              onBookingComplete={(res) => setReservationSuccess(res)}
+            />
           )}
         </div>
       )}
