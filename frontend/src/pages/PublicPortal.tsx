@@ -884,6 +884,12 @@ export function PublicPortal() {
                         </span>
                       </div>
                       <p className="font-bold text-slate-900 text-sm leading-tight">{selectedFacilityObj.name}</p>
+                      {selectedFacilityObj.location && (
+                        <p className="text-[11px] text-slate-600 font-medium flex items-center gap-1 mt-0.5">
+                          <span>📍</span>
+                          <span><strong className="text-slate-800 font-semibold">Location:</strong> {selectedFacilityObj.location}</span>
+                        </p>
+                      )}
                       <p className="text-[11px] text-slate-600 font-medium">Max Capacity: <span className="text-blue-700 font-bold">{selectedFacilityObj.capacity} Attendees</span> • Rate: <span className="font-bold text-slate-800">₱{selectedFacilityObj.hourly_rate}/hr</span></p>
                       <p className="text-[10px] text-slate-500">{selectedFacilityObj.amenities}</p>
                     </div>

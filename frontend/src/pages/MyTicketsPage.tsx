@@ -333,6 +333,7 @@ export function MyTicketsPage() {
         facility_category: isPark ? 'Park & Recreation' : 'Government Facility',
         type: isPark ? 'Park & Recreation Grounds Scheduling' : 'Government Facility Reservation',
         title: r.facility_name || (isPark ? 'Municipal Park / Ground' : 'Government Facility'),
+        location: (r as any).facility_location || (r as any).location || '',
         event_name: (r as any).event_name,
         activity_type: (r as any).activity_type || (isLGU ? 'LGU Activity' : undefined),
         sponsorship_photo_url: (r as any).sponsorship_photo_url,
@@ -725,6 +726,12 @@ export function MyTicketsPage() {
                           <p className="font-extrabold text-slate-900 truncate max-w-[220px]">{item.event_name}</p>
                         )}
                         <p className={item.event_name ? "text-[11px] font-semibold text-slate-600 truncate max-w-[220px]" : "font-bold text-slate-900"}>{item.title}</p>
+                        {item.location && (
+                          <p className="text-[10px] text-slate-500 truncate max-w-[200px]">
+                            <span>📍 </span>
+                            <span className="font-semibold text-slate-700">Location:</span> {item.location}
+                          </p>
+                        )}
                         <p className="text-[10px] text-slate-500 truncate max-w-[200px]">{item.details}</p>
                       </td>
                       <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap">
@@ -1013,6 +1020,9 @@ export function MyTicketsPage() {
                 </p>
               )}
               <p className="text-slate-800"><strong>Title / Service:</strong> {selectedSubmission.title}</p>
+              {selectedSubmission.location && (
+                <p className="text-slate-800"><strong>Location:</strong> {selectedSubmission.location}</p>
+              )}
               <p className="text-slate-800"><strong>Date & Time Logged:</strong> <span className="font-mono font-bold text-blue-700">{selectedSubmission.created_at}</span></p>
               <p className="text-slate-800"><strong>Details / Purpose:</strong> {selectedSubmission.details}</p>
               <p className="text-slate-800"><strong>Schedule / Date:</strong> {selectedSubmission.date} ({selectedSubmission.time})</p>

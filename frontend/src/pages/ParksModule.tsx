@@ -60,13 +60,14 @@ export function ParksModule() {
     name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0',
     morning_rate: '0', afternoon_rate: '0',
     status: 'Available', amenities: '',
+    location: 'Public Recreation Ground Sector',
     image_url: '',
     image_url_2: ''
   });
 
   const openAddPark = () => {
     setEditingPark(null);
-    setParkForm({ name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', morning_rate: '0', afternoon_rate: '0', status: 'Available', amenities: '', image_url: '', image_url_2: '' });
+    setParkForm({ name: '', category: 'Park & Recreation', capacity: '300', hourly_rate: '0', morning_rate: '0', afternoon_rate: '0', status: 'Available', amenities: '', location: 'Public Recreation Ground Sector', image_url: '', image_url_2: '' });
     setIsParkFormOpen(true);
   };
 
@@ -81,6 +82,7 @@ export function ParksModule() {
       afternoon_rate: String((p as any).afternoon_rate ?? p.hourly_rate ?? 0),
       status: (p as any).status === 'Not Available' ? 'Not Available' : 'Available',
       amenities: p.amenities || '',
+      location: p.location || 'Public Recreation Ground Sector',
       image_url: p.image_url || '',
       image_url_2: p.image_url_2 || ''
     });
@@ -106,7 +108,7 @@ export function ParksModule() {
       const afternoonRate = parseFloat(parkForm.afternoon_rate) || 0;
       const payload = {
         ...parkForm,
-        location: editingPark?.location || 'Public Recreation Ground Sector',
+        location: parkForm.location.trim() || 'Public Recreation Ground Sector',
         amenities: parkForm.amenities.trim() || 'Standard Park & Recreation Amenities',
         image_url: parkForm.image_url || null,
         image_url_2: parkForm.image_url_2 || null,
@@ -707,24 +709,6 @@ export function ParksModule() {
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-right whitespace-nowrap space-x-1.5">
-                          {rProof && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-purple-700 border-purple-300 hover:bg-purple-50 text-[11px] font-bold"
-                              leftIcon={<Eye className="w-3.5 h-3.5 text-purple-600" />}
-                              onClick={() => {
-                                setLightboxProof({
-                                  url: rProof,
-                                  title: eventName || r.purpose || 'LGU Sponsorship Proof',
-                                  applicant: r.applicant_name,
-                                  ref: r.reference_no
-                                });
-                              }}
-                            >
-                              Proof
-                            </Button>
-                          )}
                           <Button
                             size="sm"
                             variant="secondary"
@@ -1095,6 +1079,13 @@ export function ParksModule() {
             value={parkForm.name}
             onChange={e => setParkForm({ ...parkForm, name: e.target.value })}
             placeholder="e.g. Camarin Green Urban Recreation Park"
+          />
+          <Input
+            label="Location / Address Tag *"
+            required
+            value={parkForm.location}
+            onChange={e => setParkForm({ ...parkForm, location: e.target.value })}
+            placeholder="e.g. Public Recreation Ground Sector, Camarin Road"
           />
           <div className="grid grid-cols-3 gap-3">
             <div>

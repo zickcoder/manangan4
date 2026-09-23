@@ -59,13 +59,14 @@ export function FacilitiesModule() {
     name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500',
     morning_rate: '500', afternoon_rate: '500',
     status: 'Available', amenities: '',
+    location: 'Civic Complex, Mindanao Ave.',
     image_url: '',
     image_url_2: ''
   });
 
   const openAddFacility = () => {
     setEditingFacility(null);
-    setFacilityForm({ name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500', morning_rate: '500', afternoon_rate: '500', status: 'Available', amenities: '', image_url: '', image_url_2: '' });
+    setFacilityForm({ name: '', category: 'Government Facility', capacity: '100', hourly_rate: '500', morning_rate: '500', afternoon_rate: '500', status: 'Available', amenities: '', location: 'Civic Complex, Mindanao Ave.', image_url: '', image_url_2: '' });
     setIsFacilityFormOpen(true);
   };
 
@@ -80,6 +81,7 @@ export function FacilitiesModule() {
       afternoon_rate: String((fac as any).afternoon_rate ?? fac.hourly_rate ?? 500),
       status: (fac as any).status === 'Not Available' ? 'Not Available' : 'Available',
       amenities: fac.amenities || '',
+      location: fac.location || 'Civic Complex, Mindanao Ave.',
       image_url: fac.image_url || '',
       image_url_2: fac.image_url_2 || ''
     });
@@ -105,7 +107,7 @@ export function FacilitiesModule() {
       const afternoonRate = parseFloat(facilityForm.afternoon_rate) || 0;
       const payload = {
         ...facilityForm,
-        location: editingFacility?.location || 'Civic Complex, Mindanao Ave.',
+        location: facilityForm.location.trim() || 'Civic Complex, Mindanao Ave.',
         amenities: facilityForm.amenities.trim() || 'Standard Facility Amenities',
         image_url: facilityForm.image_url || null,
         image_url_2: facilityForm.image_url_2 || null,
@@ -711,24 +713,6 @@ export function FacilitiesModule() {
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-right whitespace-nowrap space-x-1.5">
-                      {rProof && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-purple-700 border-purple-300 hover:bg-purple-50 text-[11px] font-bold"
-                          leftIcon={<Eye className="w-3.5 h-3.5 text-purple-600" />}
-                          onClick={() => {
-                            setLightboxProof({
-                              url: rProof,
-                              title: eventName || r.purpose || 'LGU Sponsorship Proof',
-                              applicant: r.applicant_name,
-                              ref: r.reference_no
-                            });
-                          }}
-                        >
-                          Proof
-                        </Button>
-                      )}
                       <Button
                         size="sm"
                         variant="secondary"
@@ -1061,6 +1045,13 @@ export function FacilitiesModule() {
             value={facilityForm.name}
             onChange={e => setFacilityForm({ ...facilityForm, name: e.target.value })}
             placeholder="e.g. Barangay 178 Multi-Purpose Civic Center"
+          />
+          <Input
+            label="Location / Address Tag *"
+            required
+            value={facilityForm.location}
+            onChange={e => setFacilityForm({ ...facilityForm, location: e.target.value })}
+            placeholder="e.g. Civic Complex, Mindanao Ave."
           />
           <div className="grid grid-cols-3 gap-3">
             <div>

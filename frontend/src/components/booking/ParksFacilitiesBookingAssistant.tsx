@@ -104,6 +104,44 @@ export function ParksFacilitiesBookingAssistant({
   const [applicantPhone, setApplicantPhone] = useState(currentUser?.phone || '09171234567');
   const [specialEquipment, setSpecialEquipment] = useState<string[]>([]);
 
+  // ─── Equipment List (admin-managed via localStorage) ───
+  const DEFAULT_FACILITY_EQUIPMENT = [
+    'Sound System & 2 Wireless Microphones',
+    'Monoblock Chairs (100 - 300 units)',
+    'Foldable Tables & Canopies',
+    'Stage Lighting & Spotlights',
+    'Basketball Electronic Scoreboard',
+    'Standby Diesel Generator (15kVA)',
+    'High-Definition Projector & Screen',
+    'Video Streaming Setup',
+  ];
+  const DEFAULT_PARKS_EQUIPMENT = [
+    'Heavy-Duty Outdoor Tents (3x3m)',
+    'Portable Sound System',
+    'Foldable Tables & Canopies',
+    'Portable Stage Platform',
+    'Mobile Generator (5kVA)',
+    'Safety Barricades & Crowd Control',
+    'Trash Bins & Sanitation Supplies',
+    'Sports Equipment Set (Basketball / Volleyball)',
+  ];
+  const getEquipList = (key: string, fallback: string[]) => {
+    try {
+      const stored = localStorage.getItem(`govserve_equipment_${key}`);
+      if (stored) { const p = JSON.parse(stored); if (Array.isArray(p) && p.length > 0) return p; }
+    } catch {}
+    return fallback;
+  };
+  const equipmentOptions = mode === 'parks'
+    ? getEquipList('parks', DEFAULT_PARKS_EQUIPMENT)
+    : getEquipList('facility', DEFAULT_FACILITY_EQUIPMENT);
+
+  const toggleEquipment = (item: string) => {
+    setSpecialEquipment(prev =>
+      prev.includes(item) ? prev.filter(e => e !== item) : [...prev, item]
+    );
+  };
+
   // ─── Step 4: LGU Proof Document Upload ───
   const [proofFile, setProofFile] = useState<{ url: string; name: string } | null>(null);
   const [uploadingProof, setUploadingProof] = useState(false);
@@ -518,6 +556,14 @@ export function ParksFacilitiesBookingAssistant({
                     </option>
                   ))}
                 </select>
+                {selectedFacility?.location && (
+                  <p className="text-[11px] text-white/90 mt-1.5 flex items-center gap-1">
+                    <span>📍</span>
+                    <span className="truncate">
+                      <span className="font-bold text-white">Location:</span> {selectedFacility.location}
+                    </span>
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -535,10 +581,12 @@ export function ParksFacilitiesBookingAssistant({
               }`}>
                 <div className="flex items-center gap-2">
                   <span className="text-sm">🖼️</span>
-                  <span className={`text-[11px] font-black uppercase tracking-wider ${
+                  <span className={`text-base font-black ${
                     mode === 'facility' ? 'text-indigo-700' : 'text-emerald-700'
                   }`}>
-                    {selectedFacility.name} — Venue Photos
+                    {selectedFacility.location
+                      ? <>Location: {selectedFacility.location} <span className="font-normal text-slate-400 text-xs mx-1">—</span> Venue Photos</>
+                      : <>Venue Photos</>}
                   </span>
                 </div>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -1084,6 +1132,61 @@ export function ParksFacilitiesBookingAssistant({
                           );
                         })}
                       </div>
+                    </div>
+
+                    {/* Special Equipment Selection */}
+                    <div className="pt-2 border-t border-slate-100 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-bold text-slate-900 uppercase tracking-wide">
+                          Special Equipment Requirements
+                        </label>
+                        <span className="text-[10px] text-slate-400">
+                          {specialEquipment.length} selected
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">
+                        Select any additional equipment you require for the event (optional).
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {equipmentOptions.map((item) => {
+                          const isChosen = specialEquipment.includes(item);
+                          return (
+                            <button
+                              key={item}
+                              type="button"
+                              onClick={() => toggleEquipment(item)}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-left text-xs transition-all ${
+                                isChosen
+                                  ? mode === 'facility'
+                                    ? 'bg-indigo-50 border-indigo-400 text-indigo-900 font-bold ring-1 ring-indigo-300'
+                                    : 'bg-emerald-50 border-emerald-400 text-emerald-900 font-bold ring-1 ring-emerald-300'
+                                  : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              <span className={`w-4 h-4 rounded flex items-center justify-center shrink-0 border ${
+                                isChosen
+                                  ? mode === 'facility' ? 'bg-indigo-600 border-indigo-600' : 'bg-emerald-600 border-emerald-600'
+                                  : 'border-slate-300 bg-white'
+                              }`}>
+                                {isChosen && <Check className="w-3 h-3 text-white" />}
+                              </span>
+                              <span className="leading-tight">{item}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {specialEquipment.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {specialEquipment.map((eq) => (
+                            <span key={eq} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              mode === 'facility' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                            }`}>
+                              {eq}
+                              <button type="button" onClick={() => toggleEquipment(eq)} className="hover:text-red-600 ml-0.5"><X className="w-3 h-3" /></button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {/* Step 5 AI Smart Slot Suggestions Card */}
