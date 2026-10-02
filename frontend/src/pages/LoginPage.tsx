@@ -14,7 +14,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { loginStaff, loginCitizen, registerCitizen, getLockoutTimeRemaining, recordFailedAttempt, recordSuccessfulLogin } from '../lib/api';
-
+import { ThemeToggle } from '../components/ui/ThemeToggle';
 import { ForgotPasswordModal } from '../components/auth/ForgotPasswordModal';
 
 export function LoginPage() {
@@ -182,7 +182,7 @@ export function LoginPage() {
         <div className="w-full max-w-md space-y-6">
           
           {/* Back to Homepage Button */}
-          <div>
+          <div className="flex items-center gap-2.5">
             <Link 
               to="/" 
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-xs"
@@ -190,6 +190,7 @@ export function LoginPage() {
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back to homepage</span>
             </Link>
+            <ThemeToggle className="p-1.5 rounded-full text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-xs" />
           </div>
 
           {/* Form Card */}

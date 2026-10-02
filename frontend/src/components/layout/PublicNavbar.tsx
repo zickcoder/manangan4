@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Menu, X, ShieldCheck } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { ThemeToggle } from '../ui/ThemeToggle';
 
 export function PublicNavbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-white/80 backdrop-blur-md border-b border-slate-200">
+    <header className="sticky top-0 z-40 w-full bg-white border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Brand */}
         <Link to="/" className="flex items-center gap-3 group">
@@ -28,10 +29,11 @@ export function PublicNavbar() {
           </div>
         </Link>
 
-
-
         {/* Actions (Desktop) */}
-        <div className="hidden md:flex items-center gap-2.5">
+        <div className="hidden md:flex items-center gap-2">
+          {/* Dark Mode Toggle before Staff Portal wording */}
+          <ThemeToggle className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer" />
+
           <Link to="/admin/login">
             <Button size="sm" variant="ghost" className="text-slate-600 text-xs font-bold hover:text-slate-900">
               Staff Portal →
@@ -39,8 +41,9 @@ export function PublicNavbar() {
           </Link>
         </div>
 
-        {/* Mobile: Hamburger */}
-        <div className="flex md:hidden items-center gap-2">
+        {/* Mobile: Toggle & Hamburger */}
+        <div className="flex md:hidden items-center gap-1.5">
+          <ThemeToggle className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer" />
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -54,19 +57,19 @@ export function PublicNavbar() {
 
       {/* Mobile Dropdown Menu */}
       {isMobileMenuOpen && (
-        <div className="md:hidden border-t border-slate-200 bg-white/95 backdrop-blur-md px-4 pt-3 pb-5 space-y-3 shadow-xl animate-fade-in">
-
-          <div className="pt-2 border-t border-slate-100">
+        <div className="md:hidden border-t border-slate-200 bg-white px-4 pt-3 pb-5 space-y-3 shadow-xl animate-fade-in">
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ThemeToggle className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer" />
+              <span className="text-xs text-slate-500 font-medium">Dark Mode</span>
+            </div>
             <Link
               to="/admin/login"
               onClick={() => setIsMobileMenuOpen(false)}
-              className="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
             >
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-purple-600" />
-                <span>Staff &amp; Admin Portal</span>
-              </div>
-              <span className="text-slate-400">→</span>
+              <ShieldCheck className="w-4 h-4 text-purple-600" />
+              <span>Staff Portal →</span>
             </Link>
           </div>
         </div>

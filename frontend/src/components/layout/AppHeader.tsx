@@ -11,6 +11,7 @@ import {
   User
 } from 'lucide-react';
 import { Badge } from '../ui/Badge';
+import { ThemeToggle } from '../ui/ThemeToggle';
 import { 
   getNotificationsForUser, 
   markNotificationAsRead, 
@@ -215,6 +216,9 @@ export function AppHeader({ onToggleSidebar, onOpenProfile, title, subtitle }: H
             {liveTime.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
           </span>
         </div>
+
+        {/* Dark Mode Toggle (Before Notification Bell) */}
+        <ThemeToggle className="p-2 rounded-xl text-[#64748b] hover:text-[#0f172a] hover:bg-[#f1f5f9] transition-colors cursor-pointer" />
 
         {/* Live Notifications Popover */}
         <div className="relative" ref={popoverRef}>

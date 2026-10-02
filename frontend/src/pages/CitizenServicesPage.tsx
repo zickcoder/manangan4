@@ -235,6 +235,28 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     '50+ Households (Community-wide / Major Zone)'
   ];
 
+  const QC_BARANGAYS = [
+    'Alicia', 'Amihan', 'Apolonio Samson', 'Araneta', 'Ardiente', 'Bagbag', 'Bagong Lipunan ng Crame',
+    'Bagong Pag-Asa', 'Bagong Silangan', 'Bagong Silang', 'Balingasa', 'Balong Bato', 'Batasan Hills',
+    'Bungad', 'Camp Aguinaldo', 'Capri', 'Claro', 'Commonwealth', 'Culiat', 'Damayan', 'Damayan Lagi',
+    'Damar', 'Damayang Lagi', 'Del Monte', 'Dioquino Zobel', 'Don Manuel', 'Doña Aurora', 'Doña Faustina',
+    'Doña Imelda', 'Duyan-Duyan', 'E. Rodriguez', 'East Kamias', 'Escopa I', 'Escopa II', 'Escopa III',
+    'Escopa IV', 'Fairview', 'Francisville', 'Gulod', 'Holy Spirit', 'Horseshoe', 'Immaculate Concepcion',
+    'Kaligayahan', 'Kalusugan', 'Kamuning', 'Katipunan', 'Kaunlaran', 'Kristong Hari', 'Krus na Ligas',
+    'Laging Handa', 'Libis', 'Lourdes', 'Loyola Heights', 'Maharlika', 'Malaya', 'Manresa', 'Mariana',
+    'Masambong', 'Matandang Balara', 'Mayon', 'Milagrosa', 'N.S. Amoranto', 'Nagkaisang Nayon', 'Nayong Kanluran',
+    'New Era', 'Novaliches Proper', 'Obrero', 'Old Capitol Site', 'Paang Bundok', 'Pag-Ibig sa Nayon',
+    'Paligsahan', 'Paltok', 'Pansol', 'Paraiso', 'Pasong Putik Proper', 'Pasong Tamo', 'Phil-Am',
+    'Pinagkaisahan', 'Pinahan', 'Pingkian', 'Project 6', 'Project 7', 'Project 8', 'Quezon City Hall',
+    'Ramon Magsaysay', 'Roxas', 'Sacred Heart', 'Saint Ignatius', 'Saint Peter', 'Salvacion', 'San Agustin',
+    'San Antonio', 'San Bartolome', 'San Isidro', 'San Isidro Labrador', 'San Jose', 'San Martin de Porres',
+    'San Roque', 'Santo Cristo', 'Santo Domingo', 'Santo Niño', 'Santol', 'Sauyo', 'Siena', 'Sikatuna Village',
+    'Silangan', 'Socorro', 'South Triangle', 'Tag-Ilog', 'Tagumpay', 'Talayan', 'Talipapa', 'Tandang Sora',
+    'Tatalon', 'Teachers Village East', 'Teachers Village West', 'U.P. Campus', 'U.P. Village',
+    'Ugong Norte', 'Vasra', 'Veterans Village', 'Villa Maria Clara', 'West Kamias', 'West Triangle',
+    'White Plains', 'Payatas', 'Pasong Putik'
+  ].sort();
+
   const [utilityForm, setUtilityForm] = useState({
     citizen_name: currentUser?.name || 'Juan M. Dela Cruz',
     citizen_phone: currentUser?.phone ? currentUser.phone.replace(/\D/g, '').slice(0, 11) : '09171234567',
@@ -246,6 +268,15 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
     description: '',
     urgency: 'Urgent',
   });
+  // Location sub-fields (compose into utilityForm.location)
+  const [utilityBarangay, setUtilityBarangay] = useState('');
+  const [utilityLotBlock, setUtilityLotBlock] = useState('');
+  const utilityAddressPreview = [
+    utilityLotBlock ? utilityLotBlock : '',
+    utilityBarangay ? `Brgy. ${utilityBarangay}` : '',
+    'Quezon City'
+  ].filter(Boolean).join(', ');
+
   const [utilitySuccess, setUtilitySuccess] = useState<any>(null);
   const [utilitySubmitting, setUtilitySubmitting] = useState(false);
   const [utilityError, setUtilityError] = useState('');
@@ -1070,13 +1101,76 @@ export function CitizenServicesPage({ defaultTab = 'facility' }: CitizenServices
                     </div>
                   </div>
 
-                  <Input
-                    label="Specific Location / Landmark Address *"
-                    required
-                    placeholder="e.g. Mindanao Ave. Corner Camarin St., near Zone 4 Health Center"
-                    value={utilityForm.location}
-                    onChange={(e) => setUtilityForm({ ...utilityForm, location: e.target.value })}
-                  />
+                  {/* Location: City (locked) + Barangay dropdown + Lot/Block + Address Preview */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold text-[#334155] mb-0.5">
+                      Specific Location / Incident Address *
+                    </label>
+
+                    {/* Row 1: City (locked) + Barangay dropdown */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* City — locked to Quezon City */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">City</label>
+                        <div className="flex items-center gap-2 w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-xs text-slate-500 font-semibold cursor-not-allowed select-none">
+                          <span className="text-base">🏙️</span>
+                          <span>Quezon City</span>
+                          <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-400 uppercase tracking-wide">Locked</span>
+                        </div>
+                      </div>
+
+                      {/* Barangay dropdown */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Barangay *</label>
+                        <select
+                          required
+                          value={utilityBarangay}
+                          onChange={(e) => {
+                            setUtilityBarangay(e.target.value);
+                            const newAddr = [utilityLotBlock, e.target.value ? `Brgy. ${e.target.value}` : '', 'Quezon City'].filter(Boolean).join(', ');
+                            setUtilityForm(prev => ({ ...prev, location: newAddr }));
+                          }}
+                          className="w-full rounded-xl border border-slate-300 bg-white p-2.5 text-xs sm:text-sm font-medium focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-200"
+                        >
+                          <option value="">— Select Barangay —</option>
+                          {QC_BARANGAYS.map((b) => (
+                            <option key={b} value={b}>{b}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Row 2: Lot / Block / Street */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Lot / Block / Street <span className="normal-case font-normal text-slate-400">(optional but recommended)</span></label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Block 5 Lot 12, Camarin St. near Health Center"
+                        value={utilityLotBlock}
+                        onChange={(e) => {
+                          setUtilityLotBlock(e.target.value);
+                          const newAddr = [e.target.value, utilityBarangay ? `Brgy. ${utilityBarangay}` : '', 'Quezon City'].filter(Boolean).join(', ');
+                          setUtilityForm(prev => ({ ...prev, location: newAddr }));
+                        }}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs sm:text-sm font-medium focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-200"
+                      />
+                    </div>
+
+                    {/* Address Preview */}
+                    <div className={`flex items-start gap-2 px-3 py-2.5 rounded-xl border text-xs transition-all ${
+                      utilityAddressPreview && utilityAddressPreview !== 'Quezon City'
+                        ? 'bg-cyan-50 border-cyan-200 text-cyan-900'
+                        : 'bg-slate-50 border-slate-200 text-slate-400'
+                    }`}>
+                      <span className="text-base shrink-0 mt-0.5">📍</span>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-wider mb-0.5 text-slate-500">Address Preview</p>
+                        <p className="font-semibold break-words leading-snug">
+                          {utilityAddressPreview || 'Select barangay to preview full address'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
 
                   {/* Photo attachment — Real Upload Only & Mandatory */}
                   <div>

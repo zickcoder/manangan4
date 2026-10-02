@@ -15,6 +15,7 @@ import {
   Sparkles,
   Clock
 } from 'lucide-react';
+import { ThemeToggle } from '../components/ui/ThemeToggle';
 import emailjs from '@emailjs/browser';
 import { 
   loginStaff, 
@@ -479,7 +480,7 @@ export function StaffLoginPage() {
           <div className="absolute inset-0 bg-gradient-to-t from-[#0B1E3D] via-transparent to-[#0B1E3D]/80" />
         </div>
 
-        <div className="relative z-10">
+        <div className="relative z-10 flex items-center gap-2.5">
           <Link 
             to="/" 
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/20 transition-all shadow-xs backdrop-blur-sm"
@@ -487,6 +488,7 @@ export function StaffLoginPage() {
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Back to homepage</span>
           </Link>
+          <ThemeToggle className="p-1.5 rounded-full text-white/90 hover:text-white bg-white/10 hover:bg-white/20 border border-white/20 transition-all shadow-xs backdrop-blur-sm" />
         </div>
 
         <div className="relative z-10 my-auto py-8 lg:py-12 space-y-4 max-w-xl text-center mx-auto">

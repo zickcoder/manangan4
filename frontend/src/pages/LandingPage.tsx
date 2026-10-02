@@ -54,12 +54,12 @@ export function LandingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-canvas flex flex-col selection:bg-blue-600 selection:text-white">
+    <div className="min-h-screen bg-white flex flex-col selection:bg-blue-600 selection:text-white">
       <PublicNavbar />
 
       {/* Hero Section */}
-      <section className="relative overflow-hidden pt-8 pb-8 lg:pt-14 lg:pb-10 border-b border-[#e2e8f0]">
-        <div className="absolute inset-0 bg-gradient-to-b from-blue-50/50 via-white to-canvas pointer-events-none" />
+      <section className="relative overflow-hidden pt-8 pb-8 lg:pt-14 lg:pb-10 border-b border-slate-200">
+        <div className="absolute inset-0 bg-white pointer-events-none" />
         
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
           <div className="text-center max-w-3xl mx-auto space-y-4">
@@ -94,7 +94,7 @@ export function LandingPage() {
       </section>
 
       {/* Services Grid Section */}
-      <section id="services" className="pt-8 pb-12 bg-white border-b border-[#e2e8f0]">
+      <section id="services" className="pt-8 pb-12 bg-white border-b border-slate-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-6">
             <h2 className="text-2xl sm:text-3xl font-extrabold font-display text-[#0f172a]">

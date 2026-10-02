@@ -28,10 +28,7 @@ import { Input } from '../ui/Input';
 import { 
   fetchFacilities, 
   fetchReservations, 
-  createReservation, 
-  checkDoubleBooking,
-  calculateSlotFee,
-  calculateBookingHours
+  createReservation
 } from '../../lib/api';
 import { compressImage } from '../../lib/imageCompressor';
 import { Facility, FacilityReservation } from '../../types';
@@ -45,7 +42,24 @@ interface BookingAssistantProps {
 
 export type ActivityType = 'LGU Activity' | 'Sports Activity' | 'Other / Private Event';
 export type SlotType = 'Morning Slot' | 'Afternoon Slot' | 'Whole Day Slot';
+export type BookingMode = 'single' | 'multi';
 export type DayFilterType = 'all' | 'weekday' | 'weekend' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat';
+
+/** Generate 30-minute interval time options from 6:00 AM to 10:00 PM */
+function generateTimeSlots(): string[] {
+  const slots: string[] = [];
+  for (let h = 6; h <= 22; h++) {
+    for (const m of [0, 30]) {
+      if (h === 22 && m === 30) break;
+      const hour12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
+      const ampm = h < 12 ? 'AM' : 'PM';
+      const minStr = m === 0 ? '00' : '30';
+      slots.push(`${hour12}:${minStr} ${ampm}`);
+    }
+  }
+  return slots;
+}
+const TIME_SLOTS = generateTimeSlots();
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -104,6 +118,10 @@ export function ParksFacilitiesBookingAssistant({
   const [applicantPhone, setApplicantPhone] = useState(currentUser?.phone || '09171234567');
   const [specialEquipment, setSpecialEquipment] = useState<string[]>([]);
 
+  // ─── Booking Mode: Single Day vs Multi-Day (toggled in Step 1) ───
+  const [bookingMode, setBookingMode] = useState<BookingMode>('single');
+  const [multiDayDates, setMultiDayDates] = useState<string[]>([]); // additional dates for multi-day
+
   // ─── Equipment List (admin-managed via localStorage) ───
   const DEFAULT_FACILITY_EQUIPMENT = [
     'Sound System & 2 Wireless Microphones',
@@ -151,6 +169,7 @@ export function ParksFacilitiesBookingAssistant({
     text: string;
     suggestedDate?: string;
     suggestedSlot?: SlotType;
+    suggestedMultiDates?: string[];
   } | null>(null);
 
   // Submission State
@@ -204,11 +223,21 @@ export function ParksFacilitiesBookingAssistant({
     return facilities.find(f => f.id === selectedFacilityId) || facilities[0] || null;
   }, [facilities, selectedFacilityId]);
 
-  // ─── Time Slot Definitions (Strict Step 3 Blocks) ───
-  const SLOT_CONFIG: Record<SlotType, { start: string; end: string; hours: number; label: string }> = {
-    'Morning Slot': { start: '08:00 AM', end: '12:00 PM', hours: 4, label: '08:00 AM – 12:00 PM (4 Hours)' },
-    'Afternoon Slot': { start: '01:00 PM', end: '05:00 PM', hours: 4, label: '01:00 PM – 05:00 PM (4 Hours)' },
-    'Whole Day Slot': { start: '08:00 AM', end: '05:00 PM', hours: 8, label: '08:00 AM – 05:00 PM (8 Hours, 1h break)' }
+  // ─── Time Slot Definitions — admin configures rates via Morning/Afternoon Slot Rate ───
+  // morning_rate / afternoon_rate set in admin panel override the per-hour rate for that slot
+  const SLOT_CONFIG: Record<SlotType, { start: string; end: string; hours: number }> = {
+    'Morning Slot':   { start: '08:00 AM', end: '12:00 PM', hours: 4 },
+    'Afternoon Slot': { start: '01:00 PM', end: '05:00 PM', hours: 4 },
+    'Whole Day Slot': { start: '08:00 AM', end: '05:00 PM', hours: 8 },
+  };
+
+  /** Returns the fee for a slot based on admin-configured rates */
+  const getSlotFee = (slot: SlotType, facility: Facility | null): number => {
+    if (!facility) return 0;
+    if (slot === 'Morning Slot')   return facility.morning_rate   ?? facility.hourly_rate * 4;
+    if (slot === 'Afternoon Slot') return facility.afternoon_rate ?? facility.hourly_rate * 4;
+    // Whole Day = morning + afternoon (or hourly × 8)
+    return (facility.morning_rate ?? facility.hourly_rate * 4) + (facility.afternoon_rate ?? facility.hourly_rate * 4);
   };
 
   // ─── Computed Daily Availability for Selected Month ───
@@ -247,15 +276,36 @@ export function ParksFacilitiesBookingAssistant({
       // Check slot bookings on this date
       const dayBookings = facilityRes.filter(r => {
         if (!r.event_date) return false;
-        return r.event_date.split('T')[0] === dateStr;
+        const mainD = r.event_date.split('T')[0];
+        if (mainD === dateStr) return true;
+        if (Array.isArray((r as any).event_dates) && (r as any).event_dates.includes(dateStr)) return true;
+        return false;
       });
 
       let morningBooked = false;
       let afternoonBooked = false;
+      let hasLguBooking = false;
 
       dayBookings.forEach(r => {
         const s = (r.start_time || '').toLowerCase();
         const e = (r.end_time || '').toLowerCase();
+        // Detect LGU bookings
+        const actType = (r.activity_type || r.purpose || r.status || '').toString();
+        if (
+          actType.toLowerCase().includes('lgu') ||
+          actType.includes('LGU Activity') ||
+          actType.includes('LGU Endorsed') ||
+          actType.includes('Pending Review')
+        ) {
+          hasLguBooking = true;
+        }
+
+        // Multi-day bookings take full 24 hours of the day
+        if ((r as any).booking_mode === 'multi' || (Array.isArray((r as any).event_dates) && (r as any).event_dates.includes(dateStr))) {
+          morningBooked = true;
+          afternoonBooked = true;
+        }
+
         if (s.includes('08') || s.includes('8:')) {
           if (e.includes('05') || e.includes('5:')) {
             morningBooked = true;
@@ -286,6 +336,7 @@ export function ParksFacilitiesBookingAssistant({
         afternoonBooked,
         wholeDayBooked,
         fullyBooked,
+        hasLguBooking,
         bookingCount: dayBookings.length
       });
     }
@@ -308,13 +359,87 @@ export function ParksFacilitiesBookingAssistant({
     return true;
   }, [selectedDayInfo, selectedSlot]);
 
-  // ─── Step 5: AI Smart Slot Suggestions Trigger ───
+  // Check if all multi-day dates are 100% available for 24h occupancy
+  const isMultiDayAvailable = useMemo(() => {
+    if (bookingMode !== 'multi') return true;
+    if (!selectedDate) return false;
+    const allDates = [selectedDate, ...multiDayDates];
+    return allDates.every(dStr => {
+      const d = calendarDays.find(cd => cd.dateStr === dStr);
+      if (!d) return false;
+      if (d.isPast) return false;
+      if (d.fullyBooked || d.morningBooked || d.afternoonBooked) return false;
+      return true;
+    });
+  }, [bookingMode, selectedDate, multiDayDates, calendarDays]);
+
+  // ─── Step 5: AI Smart Slot & Multi-Day Consecutive Suggestions Trigger ───
   useEffect(() => {
     if (!selectedDate || !selectedDayInfo) {
       setAiSuggestion(null);
       return;
     }
 
+    // MULTI-DAY MODE AI RECOMMENDATION
+    if (bookingMode === 'multi') {
+      const allDates = [selectedDate, ...multiDayDates].sort();
+      const count = allDates.length >= 2 ? allDates.length : 2;
+
+      // Check if any date in the multi-day selection has a conflict
+      const conflictDate = allDates.find(dStr => {
+        const d = calendarDays.find(cd => cd.dateStr === dStr);
+        return d && (d.isPast || d.fullyBooked || d.morningBooked || d.afternoonBooked);
+      });
+
+      if (conflictDate) {
+        const conflictFormatted = new Date(conflictDate + 'T12:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+        
+        // Find the nearest block of `count` consecutive days with 0 bookings
+        let foundConsecutive: string[] | null = null;
+        
+        for (let i = 0; i <= calendarDays.length - count; i++) {
+          const win = calendarDays.slice(i, i + count);
+          const allFree = win.every(d => !d.isPast && !d.fullyBooked && !d.morningBooked && !d.afternoonBooked);
+          
+          if (allFree) {
+            let consecutive = true;
+            for (let j = 0; j < win.length - 1; j++) {
+              const d1 = new Date(win[j].dateStr + 'T12:00:00');
+              const d2 = new Date(win[j + 1].dateStr + 'T12:00:00');
+              const diffDays = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+              if (diffDays !== 1) {
+                consecutive = false;
+                break;
+              }
+            }
+            if (consecutive) {
+              foundConsecutive = win.map(w => w.dateStr);
+              break;
+            }
+          }
+        }
+
+        if (foundConsecutive && foundConsecutive.length > 0) {
+          const startDateStr = new Date(foundConsecutive[0] + 'T12:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+          const endDateStr = new Date(foundConsecutive[foundConsecutive.length - 1] + 'T12:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+          setAiSuggestion({
+            text: `🤖 AI Conflict Notice: ${conflictFormatted} is already booked! AI found ${count} consecutive available days for your multi-day event from ${startDateStr} to ${endDateStr}.`,
+            suggestedDate: foundConsecutive[0],
+            suggestedMultiDates: foundConsecutive
+          });
+        } else {
+          setAiSuggestion({
+            text: `⚠️ Date ${conflictFormatted} has an existing booking. Try selecting an alternative start date on the schedule matrix.`,
+          });
+        }
+        return;
+      } else {
+        setAiSuggestion(null);
+        return;
+      }
+    }
+
+    // SINGLE-DAY MODE AI RECOMMENDATION
     if (selectedDayInfo.isSunday) {
       setAiSuggestion({
         text: '⚠️ Operating days are Monday through Saturday. Sunday is closed for municipal maintenance. We suggest booking Saturday or Monday instead.',
@@ -363,20 +488,22 @@ export function ParksFacilitiesBookingAssistant({
     } else {
       setAiSuggestion(null);
     }
-  }, [selectedDate, selectedSlot, isCurrentSlotAvailable, selectedDayInfo, calendarDays]);
+  }, [selectedDate, selectedSlot, isCurrentSlotAvailable, selectedDayInfo, calendarDays, bookingMode, multiDayDates]);
+
 
   // ─── Fee Calculation ───
   const computedFee = useMemo(() => {
-    if (activityType === 'LGU Activity') {
-      return 0; // Free for LGU
-    }
+    if (activityType === 'LGU Activity') return 0;
     if (!selectedFacility) return 0;
-    const slotInfo = SLOT_CONFIG[selectedSlot];
-    const mRate = Number((selectedFacility as any).morning_rate ?? selectedFacility.hourly_rate ?? 500);
-    const aRate = Number((selectedFacility as any).afternoon_rate ?? selectedFacility.hourly_rate ?? 500);
-    const feeData = calculateSlotFee(slotInfo.start, slotInfo.end, mRate, aRate);
-    return feeData.fee;
-  }, [activityType, selectedFacility, selectedSlot]);
+    if (bookingMode === 'multi') {
+      // Multi-day: 24 hrs × hourly_rate × total days (continuous automatic)
+      const totalDays = 1 + multiDayDates.length;
+      return 24 * (selectedFacility.hourly_rate ?? 500) * totalDays;
+    }
+    // Single day: use admin-configured morning/afternoon slot rates
+    return getSlotFee(selectedSlot, selectedFacility);
+  }, [activityType, selectedFacility, bookingMode, multiDayDates, selectedSlot]);
+
 
   // ─── Proof File Handler ───
   const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -403,15 +530,15 @@ export function ParksFacilitiesBookingAssistant({
       return;
     }
     if (!eventName.trim()) {
-      setSubmitError('Event Name is mandatory. (e.g., Community Basketball Tournament)');
+      setSubmitError('Event Name is mandatory. (e.g., "Community Basketball Tournament")');
       return;
     }
     if (!selectedDate) {
       setSubmitError('Please select an event date from the Schedule Availability Matrix.');
       return;
     }
-    if (!isCurrentSlotAvailable) {
-      setSubmitError('The selected slot is already booked. Please choose an available slot or accept the AI suggestion.');
+    if (bookingMode === 'single' && !isCurrentSlotAvailable) {
+      setSubmitError('The selected date/time conflicts with an existing booking. Please choose a different time or accept the AI suggestion.');
       return;
     }
     if (activityType === 'LGU Activity' && !proofFile) {
@@ -420,6 +547,10 @@ export function ParksFacilitiesBookingAssistant({
     }
 
     const slotInfo = SLOT_CONFIG[selectedSlot];
+    const startTime = bookingMode === 'multi' ? '12:00 AM' : slotInfo.start;
+    const endTime   = bookingMode === 'multi' ? '11:59 PM' : slotInfo.end;
+    const hours     = bookingMode === 'multi' ? 24 * (1 + multiDayDates.length) : slotInfo.hours;
+    const allDates  = bookingMode === 'multi' ? [selectedDate, ...multiDayDates].sort() : [selectedDate];
 
     try {
       setIsSubmitting(true);
@@ -436,9 +567,11 @@ export function ParksFacilitiesBookingAssistant({
         activity_type: activityType,
         purpose: `${eventName.trim()} (${activityType})`,
         event_date: selectedDate,
-        start_time: slotInfo.start,
-        end_time: slotInfo.end,
-        hours: slotInfo.hours,
+        event_dates: allDates,
+        start_time: startTime,
+        end_time: endTime,
+        hours,
+        booking_mode: bookingMode,
         attendees: parseInt(attendees, 10) || 50,
         fee_amount: activityType === 'LGU Activity' ? 0 : computedFee,
         hourly_rate: selectedFacility.hourly_rate,
@@ -694,18 +827,125 @@ export function ParksFacilitiesBookingAssistant({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 text-[10px] font-bold">
+              <div className="flex items-center gap-2 flex-wrap text-[10px] font-bold">
                 <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" /> Open Slot
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" /> Open
                 </span>
                 <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
-                  <span className="w-2 h-2 rounded-full bg-amber-500" /> Partial (1 Slot Left)
+                  <span className="w-2 h-2 rounded-full bg-amber-500" /> Partial
                 </span>
                 <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200">
-                  <span className="w-2 h-2 rounded-full bg-rose-500" /> Booked
+                  <span className="w-2 h-2 rounded-full bg-rose-500" /> Citizen Booked
+                </span>
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 border border-purple-200">
+                  <span className="w-2 h-2 rounded-full bg-purple-500" /> 🏛️ LGU
                 </span>
               </div>
             </div>
+
+            {/* Booking Duration Mode Selection (Single Day vs Multi-Day) */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-gradient-to-r from-slate-50 via-slate-50 to-indigo-50/40 rounded-2xl border border-slate-200">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                    Booking Duration Mode
+                  </span>
+                  <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${
+                    bookingMode === 'multi' ? 'bg-violet-100 text-violet-800 border border-violet-200' : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                  }`}>
+                    {bookingMode === 'multi' ? '📅 Multi-Day (24h/Day Automatic)' : '☀️ Single Day (Morning / Afternoon / Whole Day)'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  {bookingMode === 'multi' 
+                    ? '2 or more days are automatically booked for 24 hours per day (continuous access).'
+                    : 'Book a single date with admin-configured Morning (8am–12pm), Afternoon (1pm–5pm), or Whole Day slots.'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200 shadow-xs shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBookingMode('single');
+                    setMultiDayDates([]);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    bookingMode === 'single'
+                      ? mode === 'facility' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  ☀️ Single Day
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBookingMode('multi');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    bookingMode === 'multi'
+                      ? 'bg-violet-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  📅 Multi-Day
+                </button>
+              </div>
+            </div>
+
+            {/* If Multi-Day Mode: Quick Duration selector */}
+            {bookingMode === 'multi' && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl animate-fade-in text-xs">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-extrabold text-emerald-950 text-xs">
+                    Quick Consecutive Duration:
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {[2, 3, 4, 5].map((numDays) => {
+                      const isMatch = 1 + multiDayDates.length === numDays;
+                      return (
+                        <button
+                          key={numDays}
+                          type="button"
+                          onClick={() => {
+                            if (isMatch) {
+                              setMultiDayDates([]);
+                              return;
+                            }
+                            const baseDate = selectedDate || calendarDays.find(d => !d.isPast && !d.fullyBooked)?.dateStr;
+                            if (!baseDate) return;
+                            if (!selectedDate) setSelectedDate(baseDate);
+                            const extra: string[] = [];
+                            const baseD = new Date(baseDate + 'T12:00:00');
+                            for (let i = 1; i < numDays; i++) {
+                              const nextD = new Date(baseD);
+                              nextD.setDate(baseD.getDate() + i);
+                              const yyyy = nextD.getFullYear();
+                              const mm = String(nextD.getMonth() + 1).padStart(2, '0');
+                              const dd = String(nextD.getDate()).padStart(2, '0');
+                              extra.push(`${yyyy}-${mm}-${dd}`);
+                            }
+                            setMultiDayDates(extra);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold transition-all border ${
+                            isMatch
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                              : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                          }`}
+                        >
+                          {numDays} Days
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <span className="text-[10px] text-emerald-700 font-medium">
+                  {selectedDate ? `Selected: ${1 + multiDayDates.length} day${1 + multiDayDates.length > 1 ? 's' : ''} (24h/day)` : 'Pick a start date below or click a duration'}
+                </span>
+              </div>
+            )}
 
             {/* Filter Controls Bar: 1. Year, 2. Month, 3. Operating Days */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80">
@@ -745,7 +985,7 @@ export function ParksFacilitiesBookingAssistant({
                 >
                   {MONTH_NAMES.map((m, idx) => (
                     <option key={idx} value={idx}>
-                      {m} {selectedYear}
+                      {m}
                     </option>
                   ))}
                 </select>
@@ -812,14 +1052,24 @@ export function ParksFacilitiesBookingAssistant({
               {/* Grid of days */}
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
                 {calendarDays.filter(d => d.matchesFilter).map((dayInfo) => {
-                  const isSelected = selectedDate === dayInfo.dateStr;
+                  const isSelected = bookingMode === 'multi'
+                    ? (selectedDate === dayInfo.dateStr || multiDayDates.includes(dayInfo.dateStr))
+                    : (selectedDate === dayInfo.dateStr);
                   const isSunday = dayInfo.isSunday;
+
+                  // Determine if LGU has the whole day
+                  const isLguDay = (dayInfo as any).hasLguBooking && dayInfo.fullyBooked;
 
                   let cardStyle = 'bg-white border-slate-200 text-slate-800 hover:border-emerald-400';
                   if (dayInfo.isPast) {
                     cardStyle = 'bg-slate-50 border-slate-200 text-slate-400 opacity-60 cursor-not-allowed';
                   } else if (isSunday) {
                     cardStyle = 'bg-slate-100/70 border-slate-200 text-slate-400 opacity-50 cursor-not-allowed';
+                  } else if (isLguDay) {
+                    cardStyle = 'bg-purple-50 border-purple-300 text-purple-900';
+                  } else if ((dayInfo as any).hasLguBooking) {
+                    // LGU has partial booking
+                    cardStyle = 'bg-purple-50/60 border-purple-200 text-purple-900';
                   } else if (dayInfo.fullyBooked) {
                     cardStyle = 'bg-rose-50 border-rose-200 text-rose-900';
                   } else if (dayInfo.morningBooked || dayInfo.afternoonBooked) {
@@ -838,14 +1088,42 @@ export function ParksFacilitiesBookingAssistant({
                     <button
                       key={dayInfo.dateStr}
                       type="button"
-                      disabled={dayInfo.isPast || isSunday}
+                      disabled={dayInfo.isPast || (isSunday && bookingMode === 'single')}
                       onClick={() => {
-                        setSelectedDate(dayInfo.dateStr);
-                        // Default to available slot
-                        if (dayInfo.morningBooked && !dayInfo.afternoonBooked) {
-                          setSelectedSlot('Afternoon Slot');
-                        } else if (!dayInfo.morningBooked) {
-                          setSelectedSlot('Morning Slot');
+                        if (bookingMode === 'multi') {
+                          // In multi-day mode: toggle date selection
+                          if (isSelected) {
+                            // Deselect this day -> green goes away
+                            if (dayInfo.dateStr === selectedDate) {
+                              const remaining = multiDayDates.filter(d => d !== dayInfo.dateStr);
+                              if (remaining.length > 0) {
+                                const [nextPrimary, ...rest] = remaining.slice().sort();
+                                setSelectedDate(nextPrimary);
+                                setMultiDayDates(rest);
+                              } else {
+                                setSelectedDate('');
+                                setMultiDayDates([]);
+                              }
+                            } else {
+                              setMultiDayDates(prev => prev.filter(d => d !== dayInfo.dateStr));
+                            }
+                          } else {
+                            // Select this day -> turns green
+                            if (!selectedDate) {
+                              setSelectedDate(dayInfo.dateStr);
+                            } else {
+                              setMultiDayDates(prev => (prev.includes(dayInfo.dateStr) ? prev : [...prev, dayInfo.dateStr].sort()));
+                            }
+                          }
+                        } else {
+                          // In single-day mode: toggle date selection
+                          if (selectedDate === dayInfo.dateStr) {
+                            // Clicked already selected date -> Deselect it, green goes away!
+                            setSelectedDate('');
+                          } else {
+                            // Select this date -> turns green
+                            setSelectedDate(dayInfo.dateStr);
+                          }
                         }
                       }}
                       className={`p-2.5 rounded-2xl border text-left flex flex-col justify-between min-h-[105px] transition-all relative group cursor-pointer ${cardStyle}`}
@@ -885,24 +1163,29 @@ export function ParksFacilitiesBookingAssistant({
                       {/* Slot Micro Badges (Morning & Afternoon) */}
                       {!dayInfo.isPast && !isSunday ? (
                         <div className="space-y-1 w-full text-[8px] font-bold">
+                          {(dayInfo as any).hasLguBooking && !isSelected && (
+                            <div className="flex items-center justify-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
+                              <span>🏛️ LGU</span>
+                            </div>
+                          )}
                           <div className={`flex items-center justify-between px-1.5 py-0.5 rounded ${
                             isSelected 
                               ? 'bg-emerald-700/80 text-white' 
                               : dayInfo.morningBooked 
-                              ? 'bg-rose-100 text-rose-700' 
+                              ? (dayInfo as any).hasLguBooking ? 'bg-purple-100 text-purple-800' : 'bg-rose-100 text-rose-700'
                               : 'bg-emerald-100 text-emerald-800'
                           }`}>
-                            <span>AM (8-12)</span>
+                            <span>AM</span>
                             <span>{dayInfo.morningBooked ? '✕' : '✓'}</span>
                           </div>
                           <div className={`flex items-center justify-between px-1.5 py-0.5 rounded ${
                             isSelected 
                               ? 'bg-emerald-700/80 text-white' 
                               : dayInfo.afternoonBooked 
-                              ? 'bg-rose-100 text-rose-700' 
+                              ? (dayInfo as any).hasLguBooking ? 'bg-purple-100 text-purple-800' : 'bg-rose-100 text-rose-700'
                               : 'bg-emerald-100 text-emerald-800'
                           }`}>
-                            <span>PM (1-5)</span>
+                            <span>PM</span>
                             <span>{dayInfo.afternoonBooked ? '✕' : '✓'}</span>
                           </div>
                         </div>
@@ -918,12 +1201,26 @@ export function ParksFacilitiesBookingAssistant({
 
               {/* Selected Date Indicator Banner */}
               {selectedDate && (
-                <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-2xl flex items-center justify-between animate-fade-in text-xs">
+                <div className="p-3 border rounded-2xl flex items-center justify-between animate-fade-in text-xs bg-emerald-50 border-emerald-300">
                   <div className="flex items-center gap-2 text-emerald-900">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
                     <span>
-                      Selected Schedule: <strong>{new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</strong>
-                      {selectedDayInfo?.isWeekend && <span className="ml-2 font-bold px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-[10px]">Weekend Schedule</span>}
+                      {bookingMode === 'multi' ? (
+                        <>
+                          Selected Dates: <strong>{new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</strong>
+                          {multiDayDates.length > 0 && (
+                            <> to <strong>{new Date(multiDayDates.slice().sort()[multiDayDates.length - 1] + 'T12:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</strong></>
+                          )}
+                          <span className="ml-2 font-bold px-2 py-0.5 bg-emerald-200 text-emerald-900 rounded-full text-[10px]">
+                            {1 + multiDayDates.length} Day{1 + multiDayDates.length > 1 ? 's' : ''} · 24h/Day
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          Selected Schedule: <strong>{new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</strong>
+                          {selectedDayInfo?.isWeekend && <span className="ml-2 font-bold px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-[10px]">Weekend Schedule</span>}
+                        </>
+                      )}
                     </span>
                   </div>
                   <span className="text-[11px] font-bold text-emerald-700">✓ Step 1 Complete</span>
@@ -1072,66 +1369,124 @@ export function ParksFacilitiesBookingAssistant({
                       </div>
                     </div>
 
-                    {/* 4 & 5. Step 3: Strictly Defined Time Slot Blocks */}
-                    <div className="pt-2 border-t border-slate-100 space-y-2">
+                    {/* Step 3: Available Time Slot Selection */}
+                    <div className="pt-2 border-t border-slate-100 space-y-3">
                       <div className="flex items-center justify-between">
                         <label className="block text-xs font-bold text-slate-900 uppercase tracking-wide">
-                          Step 3: Available Time Slot Selection
+                          Step 3: Time Slot Selection
                         </label>
-                        <span className="text-[10px] text-slate-500">
-                          Strict 4h & 8h booking blocks
-                        </span>
+                        {bookingMode === 'single' && (
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            Admin-configured time blocks
+                          </span>
+                        )}
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        {(['Morning Slot', 'Afternoon Slot', 'Whole Day Slot'] as SlotType[]).map((slotKey) => {
-                          const isSelected = selectedSlot === slotKey;
-                          const slotDef = SLOT_CONFIG[slotKey];
-                          
-                          // Check if blocked on selected day
-                          let isBlocked = false;
-                          if (selectedDayInfo) {
-                            if (slotKey === 'Morning Slot' && selectedDayInfo.morningBooked) isBlocked = true;
-                            if (slotKey === 'Afternoon Slot' && selectedDayInfo.afternoonBooked) isBlocked = true;
-                            if (slotKey === 'Whole Day Slot' && selectedDayInfo.wholeDayBooked) isBlocked = true;
-                          }
+                      {/* ── Single Day: Morning / Afternoon / Whole Day Slots ── */}
+                      {bookingMode === 'single' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 animate-fade-in">
+                          {(['Morning Slot', 'Afternoon Slot', 'Whole Day Slot'] as SlotType[]).map((slotKey) => {
+                            const isSelected = selectedSlot === slotKey;
+                            const slotDef = SLOT_CONFIG[slotKey];
+                            const slotFee = getSlotFee(slotKey, selectedFacility);
 
-                          return (
-                            <button
-                              key={slotKey}
-                              type="button"
-                              disabled={isBlocked}
-                              onClick={() => setSelectedSlot(slotKey)}
-                              className={`p-3 rounded-2xl border text-left transition-all ${
-                                isBlocked
-                                  ? 'bg-slate-50 border-slate-200 text-slate-400 opacity-60 cursor-not-allowed'
-                                  : isSelected
-                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400'
-                                  : 'bg-white border-slate-200 text-slate-800 hover:border-emerald-300'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs font-black">
-                                  {slotKey === 'Morning Slot' ? '🌅 Morning' : slotKey === 'Afternoon Slot' ? '☀️ Afternoon' : '🏛️ Whole Day'}
-                                </span>
-                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                                  isSelected ? 'bg-white/20 text-white' : isBlocked ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'
-                                }`}>
-                                  {isBlocked ? 'Booked' : `${slotDef.hours}h`}
-                                </span>
-                              </div>
-                              <p className={`text-[10px] font-mono ${isSelected ? 'text-emerald-100' : 'text-slate-500'}`}>
-                                {slotDef.start} – {slotDef.end}
-                              </p>
-                              {slotKey === 'Whole Day Slot' && (
-                                <p className={`text-[8px] mt-0.5 ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
-                                  (12:00 – 01:00 PM Break)
+                            // Check if blocked on selected day
+                            let isBlocked = false;
+                            if (selectedDayInfo) {
+                              if (slotKey === 'Morning Slot' && selectedDayInfo.morningBooked) isBlocked = true;
+                              if (slotKey === 'Afternoon Slot' && selectedDayInfo.afternoonBooked) isBlocked = true;
+                              if (slotKey === 'Whole Day Slot' && selectedDayInfo.wholeDayBooked) isBlocked = true;
+                            }
+
+                            return (
+                              <button
+                                key={slotKey}
+                                type="button"
+                                disabled={isBlocked}
+                                onClick={() => setSelectedSlot(slotKey)}
+                                className={`p-3 rounded-2xl border text-left transition-all ${
+                                  isBlocked
+                                    ? 'bg-slate-50 border-slate-200 text-slate-400 opacity-60 cursor-not-allowed'
+                                    : isSelected
+                                    ? mode === 'facility'
+                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-400'
+                                      : 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-400'
+                                    : 'bg-white border-slate-200 text-slate-800 hover:border-emerald-300'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-black">
+                                    {slotKey === 'Morning Slot' ? '🌅 Morning' : slotKey === 'Afternoon Slot' ? '☀️ Afternoon' : '🏛️ Whole Day'}
+                                  </span>
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                    isSelected ? 'bg-white/20 text-white' : isBlocked ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                    {isBlocked ? 'Booked' : `${slotDef.hours}h`}
+                                  </span>
+                                </div>
+                                <p className={`text-[10px] font-mono ${isSelected ? 'text-emerald-100' : 'text-slate-500'}`}>
+                                  {slotDef.start} – {slotDef.end}
                                 </p>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
+                                {activityType !== 'LGU Activity' && (
+                                  <p className={`text-[10px] font-bold mt-1 ${isSelected ? 'text-white/90' : 'text-slate-700'}`}>
+                                    ₱{slotFee.toLocaleString()}
+                                  </p>
+                                )}
+                                {slotKey === 'Whole Day Slot' && (
+                                  <p className={`text-[8px] mt-0.5 ${isSelected ? 'text-white/70' : 'text-slate-400'}`}>
+                                    (incl. 1h lunch break)
+                                  </p>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* ── Multi-Day: Shows selected dates summary ── */}
+                      {bookingMode === 'multi' && (
+                        <div className="space-y-2 animate-fade-in">
+                          <div className="p-3 bg-violet-50 border border-violet-200 rounded-2xl space-y-1.5">
+                            <div className="flex items-center gap-1.5 text-violet-900 font-bold text-xs">
+                              <Calendar className="w-4 h-4 text-violet-600" />
+                              <span>Multi-Day Booking</span>
+                              <span className="ml-auto px-2 py-0.5 rounded-full bg-violet-200 text-violet-800 text-[9px] font-black">24 HRS / DAY</span>
+                            </div>
+                            <p className="text-[10px] text-violet-800 leading-relaxed">
+                              Each day is booked as a full <strong>24-hour slot</strong>. Citizens retain access continuously from Day 1 start through the final day.
+                            </p>
+                            <p className="text-[10px] text-violet-700 font-bold">
+                              Fee: ₱{selectedFacility?.hourly_rate ?? 500}/hr × 24 hrs × {1 + multiDayDates.length} day{1 + multiDayDates.length > 1 ? 's' : ''} = ₱{computedFee.toLocaleString()}.00
+                            </p>
+                          </div>
+
+                          <p className="text-[10px] text-slate-500">
+                            Primary date: <strong>{selectedDate ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' }) : 'None selected'}</strong>.
+                            Click additional dates from the calendar in Step 1 to add more days.
+                          </p>
+
+                          {multiDayDates.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {multiDayDates.map((d) => (
+                                <span key={d} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                                  {new Date(d + 'T12:00:00').toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                  <button
+                                    type="button"
+                                    onClick={() => setMultiDayDates(prev => prev.filter(x => x !== d))}
+                                    className="hover:text-rose-600 ml-0.5"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <p className="text-[10px] text-violet-600 font-semibold">
+                            Total: {1 + multiDayDates.length} day{1 + multiDayDates.length > 1 ? 's' : ''} selected
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Special Equipment Selection */}
@@ -1202,14 +1557,19 @@ export function ParksFacilitiesBookingAssistant({
                           </div>
                         </div>
 
-                        {(aiSuggestion.suggestedDate || aiSuggestion.suggestedSlot) && (
+                        {(aiSuggestion.suggestedDate || aiSuggestion.suggestedSlot || aiSuggestion.suggestedMultiDates) && (
                           <div className="flex justify-end pt-1">
                             <Button
                               size="sm"
                               type="button"
                               onClick={() => {
-                                if (aiSuggestion.suggestedDate) setSelectedDate(aiSuggestion.suggestedDate);
-                                if (aiSuggestion.suggestedSlot) setSelectedSlot(aiSuggestion.suggestedSlot);
+                                if (aiSuggestion.suggestedMultiDates && aiSuggestion.suggestedMultiDates.length > 0) {
+                                  setSelectedDate(aiSuggestion.suggestedMultiDates[0]);
+                                  setMultiDayDates(aiSuggestion.suggestedMultiDates.slice(1));
+                                } else {
+                                  if (aiSuggestion.suggestedDate) setSelectedDate(aiSuggestion.suggestedDate);
+                                  if (aiSuggestion.suggestedSlot) setSelectedSlot(aiSuggestion.suggestedSlot);
+                                }
                               }}
                               className="text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs"
                             >
@@ -1319,20 +1679,35 @@ export function ParksFacilitiesBookingAssistant({
                     /* Path B: Private / Non-LGU Booking */
                     <div className="space-y-4">
                       {/* Price Display */}
-                      <div className="p-4 bg-emerald-100/70 border border-emerald-300 rounded-2xl space-y-1">
-                        <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider block">
-                          Municipal Pre-Configured Rate
+                      <div className={`p-4 border rounded-2xl space-y-1 ${
+                        bookingMode === 'multi'
+                          ? 'bg-violet-50/80 border-violet-300'
+                          : 'bg-emerald-100/70 border-emerald-300'
+                      }`}>
+                        <span className={`text-[10px] font-black uppercase tracking-wider block ${
+                          bookingMode === 'multi' ? 'text-violet-700' : 'text-emerald-700'
+                        }`}>
+                          {bookingMode === 'multi' ? '📅 Multi-Day Rate (24h/Day)' : 'Municipal Pre-Configured Rate'}
                         </span>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-3xl font-black text-emerald-900 font-mono">
+                          <span className={`text-3xl font-black font-mono ${
+                            bookingMode === 'multi' ? 'text-violet-900' : 'text-emerald-900'
+                          }`}>
                             ₱{computedFee.toLocaleString()}.00
                           </span>
-                          <span className="text-xs font-bold text-emerald-700">
-                            ({SLOT_CONFIG[selectedSlot].hours} Hours · {selectedSlot})
+                          <span className={`text-xs font-bold ${
+                            bookingMode === 'multi' ? 'text-violet-700' : 'text-emerald-700'
+                          }`}>
+                            {bookingMode === 'multi'
+                              ? `(24h × ${1 + multiDayDates.length} day${1 + multiDayDates.length > 1 ? 's' : ''})`
+                              : `(${SLOT_CONFIG[selectedSlot].hours}h · ${selectedSlot})`
+                            }
                           </span>
                         </div>
-                        <p className="text-[10px] text-emerald-800">
-                          Automatically computed based on slot duration. No document upload required.
+                        <p className="text-[10px] text-slate-600">
+                          {bookingMode === 'multi'
+                            ? 'Multi-day booking computed automatically at 24 hours per day continuously.'
+                            : 'Automatically computed based on slot duration. No document upload required.'}
                         </p>
                       </div>
 
@@ -1341,10 +1716,29 @@ export function ParksFacilitiesBookingAssistant({
                           <span>Venue Hourly Base:</span>
                           <span>₱{selectedFacility?.hourly_rate || 500}/hr</span>
                         </div>
-                        <div className="flex justify-between font-bold text-slate-700">
-                          <span>Slot Duration:</span>
-                          <span>{SLOT_CONFIG[selectedSlot].hours} Hours</span>
-                        </div>
+                        {bookingMode === 'multi' ? (
+                          <>
+                            <div className="flex justify-between font-bold text-slate-700">
+                              <span>Hours per Day:</span>
+                              <span>24 hrs / day</span>
+                            </div>
+                            <div className="flex justify-between font-bold text-slate-700">
+                              <span>Total Days:</span>
+                              <span>{1 + multiDayDates.length} day${1 + multiDayDates.length > 1 ? 's' : ''}</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex justify-between font-bold text-slate-700">
+                              <span>Selected Slot:</span>
+                              <span>{selectedSlot} ({SLOT_CONFIG[selectedSlot].start} – {SLOT_CONFIG[selectedSlot].end})</span>
+                            </div>
+                            <div className="flex justify-between font-bold text-slate-700">
+                              <span>Slot Duration:</span>
+                              <span>{SLOT_CONFIG[selectedSlot].hours} Hours</span>
+                            </div>
+                          </>
+                        )}
                         <div className="flex justify-between font-extrabold text-emerald-800 pt-1 border-t border-slate-100 text-xs">
                           <span>Total Payable:</span>
                           <span>₱{computedFee.toLocaleString()}.00</span>
@@ -1369,10 +1763,17 @@ export function ParksFacilitiesBookingAssistant({
                   <Button
                     type="submit"
                     size="lg"
-                    disabled={isSubmitting || !selectedDate || !isCurrentSlotAvailable}
+                    disabled={
+                      isSubmitting ||
+                      !selectedDate ||
+                      (bookingMode === 'single' && !isCurrentSlotAvailable) ||
+                      (bookingMode === 'multi' && (!isMultiDayAvailable || multiDayDates.length === 0))
+                    }
                     className={`w-full font-black text-sm shadow-md transition-all ${
                       activityType === 'LGU Activity'
                         ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                        : bookingMode === 'multi'
+                        ? 'bg-violet-600 hover:bg-violet-700 text-white'
                         : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                     }`}
                   >
@@ -1380,7 +1781,9 @@ export function ParksFacilitiesBookingAssistant({
                       ? 'Submitting Booking Request...'
                       : activityType === 'LGU Activity'
                       ? '🏛️ Submit LGU Ticket for Admin Approval'
-                      : '✓ Confirm & Finalize Booking'}
+                      : bookingMode === 'multi'
+                      ? `📅 Confirm Multi-Day Booking (${1 + multiDayDates.length} Day${1 + multiDayDates.length > 1 ? 's' : ''})`
+                      : `✓ Confirm & Finalize Booking (${selectedSlot})`}
                   </Button>
                 </Card>
               </div>
