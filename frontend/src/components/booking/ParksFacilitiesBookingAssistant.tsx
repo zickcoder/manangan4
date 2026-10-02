@@ -102,9 +102,11 @@ export function ParksFacilitiesBookingAssistant({
   const [loading, setLoading] = useState(true);
 
   // ─── Step 1: Viewing Filters ───
-  const currentYear = new Date().getFullYear();
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-11
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth()); // 0-11
+  const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth); // 0-11
   const [dayFilter, setDayFilter] = useState<DayFilterType>('all');
 
   // ─── Step 2: Event Requirements Intake Form ───
@@ -246,6 +248,10 @@ export function ParksFacilitiesBookingAssistant({
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    // Bookings require at least 2 days advance notice (today and tomorrow are not bookable)
+    const minAdvanceDate = new Date(today);
+    minAdvanceDate.setDate(today.getDate() + 2);
+
     const facilityRes = reservations.filter(r => 
       !['Rejected', 'Cancelled'].includes(r.status) &&
       (r.facility_id === selectedFacilityId || (selectedFacility && r.facility_name === selectedFacility.name))
@@ -260,7 +266,8 @@ export function ParksFacilitiesBookingAssistant({
       const isWeekday = dow >= 1 && dow <= 5;
       
       const dateStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const isPast = dateObj < today;
+      const isPast = dateObj < minAdvanceDate;
+      const isTooSoon = dateObj >= today && dateObj < minAdvanceDate;
 
       // Filter based on day filter
       let matchesFilter = true;
@@ -331,6 +338,7 @@ export function ParksFacilitiesBookingAssistant({
         isWeekend,
         isWeekday,
         isPast,
+        isTooSoon,
         matchesFilter,
         morningBooked,
         afternoonBooked,
@@ -536,6 +544,20 @@ export function ParksFacilitiesBookingAssistant({
     if (!selectedDate) {
       setSubmitError('Please select an event date from the Schedule Availability Matrix.');
       return;
+    }
+    const minAdvance = new Date();
+    minAdvance.setHours(0, 0, 0, 0);
+    minAdvance.setDate(minAdvance.getDate() + 2);
+    if (new Date(selectedDate + 'T00:00:00') < minAdvance) {
+      setSubmitError('Reservations require at least 2 days advance notice. Today and tomorrow cannot be booked.');
+      return;
+    }
+    if (bookingMode === 'multi') {
+      const hasTooSoon = multiDayDates.some(d => new Date(d + 'T00:00:00') < minAdvance);
+      if (hasTooSoon) {
+        setSubmitError('All dates in a multi-day reservation must be at least 2 days in advance.');
+        return;
+      }
     }
     if (bookingMode === 'single' && !isCurrentSlotAvailable) {
       setSubmitError('The selected date/time conflicts with an existing booking. Please choose a different time or accept the AI suggestion.');
@@ -960,7 +982,12 @@ export function ParksFacilitiesBookingAssistant({
                     <button
                       key={yr}
                       type="button"
-                      onClick={() => setSelectedYear(yr)}
+                      onClick={() => {
+                        setSelectedYear(yr);
+                        if (yr === currentYear && selectedMonth < currentMonth) {
+                          setSelectedMonth(currentMonth);
+                        }
+                      }}
                       className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
                         selectedYear === yr
                           ? mode === 'facility' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-emerald-600 text-white shadow-xs'
@@ -983,11 +1010,15 @@ export function ParksFacilitiesBookingAssistant({
                   onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))}
                   className="w-full bg-white text-slate-800 font-bold text-xs rounded-xl px-3 py-2.5 border border-slate-200 focus:outline-none focus:border-emerald-600"
                 >
-                  {MONTH_NAMES.map((m, idx) => (
-                    <option key={idx} value={idx}>
-                      {m}
-                    </option>
-                  ))}
+                  {MONTH_NAMES.map((m, idx) => {
+                    // Hide past months when current year is selected
+                    if (selectedYear === currentYear && idx < currentMonth) return null;
+                    return (
+                      <option key={idx} value={idx}>
+                        {m}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -1021,20 +1052,24 @@ export function ParksFacilitiesBookingAssistant({
 
             {/* Quick Month Navigator Pills */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              {MONTH_NAMES.map((m, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => setSelectedMonth(idx)}
-                  className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${
-                    selectedMonth === idx
-                      ? mode === 'facility' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {m.slice(0, 3)}
-                </button>
-              ))}
+              {MONTH_NAMES.map((m, idx) => {
+                // Hide past months from pills when current year is selected
+                if (selectedYear === currentYear && idx < currentMonth) return null;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setSelectedMonth(idx)}
+                    className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${
+                      selectedMonth === idx
+                        ? mode === 'facility' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {m.slice(0, 3)}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Schedule Display: Render Availability Matrix distinguishing Weekday vs Weekend */}
@@ -1191,7 +1226,7 @@ export function ParksFacilitiesBookingAssistant({
                         </div>
                       ) : (
                         <p className={`text-[9px] font-medium italic ${isSelected ? 'text-emerald-100' : 'text-slate-400'}`}>
-                          {isSunday ? 'Maintenance' : 'Past date'}
+                          {isSunday ? 'Maintenance' : (dayInfo as any).isTooSoon ? '2-Day Adv.' : 'Past date'}
                         </p>
                       )}
                     </button>

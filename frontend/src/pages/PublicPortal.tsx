@@ -521,6 +521,14 @@ export function PublicPortal() {
       return;
     }
 
+    const minAdv = new Date();
+    minAdv.setHours(0, 0, 0, 0);
+    minAdv.setDate(minAdv.getDate() + 2);
+    if (new Date(activeDate + 'T00:00:00') < minAdv) {
+      alert('Reservations must be booked at least 2 days in advance. Today and tomorrow cannot be booked.');
+      return;
+    }
+
     const finalPurpose = reserveForm.purpose === 'Other Government / Civic Activity' && reserveForm.custom_purpose
       ? reserveForm.custom_purpose
       : reserveForm.purpose;
@@ -1102,9 +1110,14 @@ export function PublicPortal() {
                         <div className="space-y-4">
                           <div className="max-w-xs">
                             <Input
-                              label="Event Date *"
+                              label="Event Date * (Min. 2 Days in Advance)"
                               type="date"
                               required
+                              min={(() => {
+                                const d = new Date();
+                                d.setDate(d.getDate() + 2);
+                                return d.toISOString().split('T')[0];
+                              })()}
                               value={reserveForm.event_date}
                               onChange={(e) => setReserveForm({ ...reserveForm, event_date: e.target.value })}
                             />
