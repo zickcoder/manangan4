@@ -1375,11 +1375,6 @@ export function ParksFacilitiesBookingAssistant({
                         <label className="block text-xs font-bold text-slate-900 uppercase tracking-wide">
                           Step 3: Time Slot Selection
                         </label>
-                        {bookingMode === 'single' && (
-                          <span className="text-[10px] text-slate-500 font-medium">
-                            Admin-configured time blocks
-                          </span>
-                        )}
                       </div>
 
                       {/* ── Single Day: Morning / Afternoon / Whole Day Slots ── */}
@@ -1744,10 +1739,6 @@ export function ParksFacilitiesBookingAssistant({
                           <span>₱{computedFee.toLocaleString()}.00</span>
                         </div>
                       </div>
-
-                      <p className="text-[10px] text-slate-500">
-                        ⚡ Proceeds directly to confirmation and ticket issuance. Document upload step skipped.
-                      </p>
                     </div>
                   )}
 

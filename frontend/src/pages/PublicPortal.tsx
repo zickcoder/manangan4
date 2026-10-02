@@ -563,11 +563,13 @@ export function PublicPortal() {
     if (
       !utilityForm.citizen_name?.trim() ||
       !utilityForm.citizen_phone?.trim() ||
+      !utilityBarangay?.trim() ||
+      !utilityLotBlock?.trim() ||
       !utilityForm.location?.trim() ||
       !utilityForm.description?.trim() ||
       !utilityForm.service_type?.trim()
     ) {
-      alert('Please complete all required fields: Citizen Name, Phone, Location, Incident Type, and Description.');
+      alert('Please complete all required fields: Citizen Name, Phone, Barangay, Lot / Block / Street, Incident Type, and Description.');
       return;
     }
 
@@ -1582,7 +1584,6 @@ export function PublicPortal() {
                               <div className="flex items-center gap-2 w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-xs text-slate-500 font-semibold cursor-not-allowed select-none">
                                 <span className="text-base">🏙️</span>
                                 <span>Quezon City</span>
-                                <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-400 uppercase tracking-wide">Locked</span>
                               </div>
                             </div>
                             <div>
@@ -1607,10 +1608,11 @@ export function PublicPortal() {
 
                           <div>
                             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                              Lot / Block / Street <span className="normal-case font-normal text-slate-400">(optional)</span>
+                              Lot / Block / Street *
                             </label>
                             <input
                               type="text"
+                              required
                               placeholder="e.g. Block 5 Lot 12, Camarin St. near Health Center"
                               value={utilityLotBlock}
                               onChange={(e) => {
